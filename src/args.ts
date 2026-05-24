@@ -4,7 +4,7 @@ export function parseArgs(argv: string[]): CliArgs {
   const args: CliArgs = { _: [] };
 
   for (let index = 0; index < argv.length; index += 1) {
-    const value = argv[index] ?? "";
+    const value = argv[index]!;
 
     if (!value.startsWith("--")) {
       args._.push(value);
@@ -45,4 +45,10 @@ export function numberOption(value: unknown, defaultValue: number): number {
   }
 
   return number;
+}
+
+export function optionalNumberOption(value: unknown): number | undefined {
+  if (value === undefined) return undefined;
+  if (value === true) throw new Error("Expected a positive number, got true.");
+  return numberOption(value, 0);
 }

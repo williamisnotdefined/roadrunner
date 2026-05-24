@@ -58,7 +58,14 @@ Use this skill for all Roadrunner repository work.
 
 - `npm run typecheck`
 - `npm test`
+- `npm run coverage`
 - `npm run ai:check`
+
+## E2E
+
+- Keep deterministic e2e tests in the normal Vitest suite with fake providers.
+- Keep real provider e2e tests behind explicit opt-in scripts such as `npm run e2e:real`.
+- Write e2e target projects under `test-output/`.
 
 ## ai/rules/ai-rules.md
 
@@ -87,6 +94,7 @@ Core modules:
 - `src/cli.ts`: command dispatch.
 - `src/init.ts`: target project bootstrap.
 - `src/queue.ts`: queue validation and mutation.
+- `src/roadmap.ts`: Markdown roadmap import into queue state.
 - `src/runner.ts`: plan/execute/verify flow.
 - `src/process-registry.ts`: safe child-process tracking.
 - `src/providers/opencode.ts`: OpenCode provider adapter.
@@ -96,6 +104,15 @@ Core modules:
 # AI Knowledge System
 
 Roadrunner AI guidance is canonical under `ai` and routed to supported tools by `scripts/ai/sync-routes.ts`.
+
+Canonical content lives in:
+
+- `ai/skills/` for skill instructions.
+- `ai/rules/` for reusable rules.
+- `ai/architecture/` for reusable architecture notes.
+- `ai/registry.json` for route declarations and tool-specific metadata.
+
+Generated route files are integration artifacts for individual tools. They intentionally duplicate the canonical content so each tool receives a self-contained instruction file. Do not edit generated route files directly; edit `ai/**`, then run `npm run ai:sync`.
 
 Generated outputs:
 

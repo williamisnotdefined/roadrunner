@@ -1,0 +1,193 @@
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { describe, expect, test } from "vitest";
+
+import { defaultModel, defaultVariant, loadContext, writeJson } from "../src/config.js";
+import { importRoadmap, queueFileFromRoadmap, queueFileFromRoadmapFile } from "../src/roadmap.js";
+import type { QueueFile } from "../src/queue.js";
+
+describe("roadmap", () => {
+  test("parses roadmap markdown into queue file", () => {
+    const queueFile = queueFileFromRoadmap(sampleRoadmap(), { goalsPath: "GOALS.md", sourcePath: "ROADMAP.md" });
+
+    expect(queueFile.source).toBe("ROADMAP.md");
+    expect(queueFile.goals).toBe("GOALS.md");
+    expect(queueFile.queue.length).toBe(1);
+    expect(queueFile.queue[0]?.id).toBe("first-step");
+    expect(queueFile.queue[0]?.title).toBe("Build first step");
+    expect(queueFile.queue[0]?.scope).toEqual(["README.md", "src/feature.ts"]);
+    expect(queueFile.queue[0]?.verification).toEqual(["npm run check"]);
+  });
+
+  test("parses alternate heading forms and comma-separated scope", () => {
+    const queueFile = queueFileFromRoadmap(
+      `# Roadmap
+
+## Notes
+
+This heading is documentation, not a queue step.
+
+Unknown: ignored until a known field appears.
+
+## second-step - Build second step
+
+Phase: Bootstrap
+Scope: README.md, src/index.ts
+Prompt: Do the second thing.
+Acceptance:
+1. works
+Acceptance:
+2. still works
+Verification:
+1) npm test
+Commit Message: Build second step
+
+### [third-step] Build third step
+
+Phase: Bootstrap
+Scope:
+* package.json
+Prompt: Do the third thing.
+Acceptance:
+* works too
+Verification:
+* npm run check
+Commit: Build third step
+`,
+      { goalsPath: "/tmp/GOALS.md", sourcePath: "/tmp/ROADMAP.md" },
+    );
+
+    expect(queueFile.queue.map((step) => step.id)).toEqual(["second-step", "third-step"]);
+    expect(queueFile.queue[0]?.scope).toEqual(["README.md", "src/index.ts"]);
+    expect(queueFile.queue[0]?.acceptance).toEqual(["works", "still works"]);
+    expect(queueFile.queue[0]?.commitMessage).toBe("Build second step");
+  });
+
+  test("rejects roadmap steps with missing required fields", () => {
+    expect(() => queueFileFromRoadmap("## first-step: Build first step\n\nPhase: Bootstrap\n", { goalsPath: "GOALS.md", sourcePath: "ROADMAP.md" })).toThrow(
+      /missing scope field/,
+    );
+  });
+
+  test("rejects roadmaps without steps and duplicate IDs", () => {
+    expect(() => queueFileFromRoadmap("# Empty\n", { goalsPath: "GOALS.md", sourcePath: "ROADMAP.md" })).toThrow(/at least one step/);
+    expect(() => queueFileFromRoadmap(sampleRoadmap(), { goalsPath: "GOALS.md", model: "bad", sourcePath: "ROADMAP.md" })).toThrow(/queue.model/);
+    expect(() =>
+      queueFileFromRoadmap(`${sampleRoadmap()}\n${sampleRoadmap()}`, { goalsPath: "GOALS.md", sourcePath: "ROADMAP.md" }),
+    ).toThrow(/duplicate roadmap step id/);
+  });
+
+  test("importRoadmap preserves closed queue records", async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "roadrunner-roadmap-"));
+    try {
+      await writeFile(
+        path.join(tempDir, "ROADMAP.md"),
+        `${sampleRoadmap()}\n\n## completed-step: Completed\n\nPhase: Done\nScope: README.md\nPrompt: Already done.\nAcceptance:\n- done\nVerification:\n- npm test\nCommit: Completed step\n`,
+      );
+      const context = await loadContext(tempDir, { _: [] });
+      const existing: QueueFile = {
+      version: 2,
+      source: "old.md",
+      goals: "GOALS.md",
+      model: defaultModel,
+      variant: defaultVariant,
+      updatedAt: null,
+      queue: [],
+      history: [
+        {
+          id: "completed-step",
+          phase: "Done",
+          title: "Completed",
+          scope: ["README.md"],
+          prompt: "Already done.",
+          acceptance: ["done"],
+          verification: ["npm test"],
+          commitMessage: "Completed step",
+        },
+      ],
+      blocked: [],
+    };
+      await writeJson(context.paths.queue, existing);
+
+      const imported = await importRoadmap(context);
+      const written = JSON.parse(await readFile(context.paths.queue, "utf8")) as QueueFile;
+
+      expect(imported.queue.map((step) => step.id)).toEqual(["first-step"]);
+      expect(written.queue.map((step) => step.id)).toEqual(["first-step"]);
+      expect(written.history.length).toBe(1);
+    } finally {
+      await rm(tempDir, { force: true, recursive: true });
+    }
+  });
+
+  test("importRoadmap writes a queue when no existing queue is present", async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "roadrunner-roadmap-new-"));
+    try {
+      await writeFile(path.join(tempDir, "ROADMAP.md"), sampleRoadmap());
+      const context = await loadContext(tempDir, { _: [] });
+
+      const imported = await importRoadmap(context);
+
+      expect(imported.queue.map((step) => step.id)).toEqual(["first-step"]);
+      expect(JSON.parse(await readFile(context.paths.queue, "utf8")).queue).toHaveLength(1);
+    } finally {
+      await rm(tempDir, { force: true, recursive: true });
+    }
+  });
+
+  test("importRoadmap rejects invalid existing queues", async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "roadrunner-roadmap-invalid-existing-"));
+    try {
+      await writeFile(path.join(tempDir, "ROADMAP.md"), sampleRoadmap());
+      const context = await loadContext(tempDir, { _: [] });
+      await writeJson(context.paths.queue, { version: 1 });
+
+      await expect(importRoadmap(context)).rejects.toThrow(/queue.version must be 2/);
+    } finally {
+      await rm(tempDir, { force: true, recursive: true });
+    }
+  });
+
+  test("queueFileFromRoadmapFile keeps absolute paths outside the root", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "roadrunner-roadmap-root-"));
+    const outside = await mkdtemp(path.join(os.tmpdir(), "roadrunner-roadmap-outside-"));
+    try {
+      const roadmapPath = path.join(outside, "ROADMAP.md");
+      await writeFile(roadmapPath, sampleRoadmap());
+      const queueFile = await queueFileFromRoadmapFile({
+        config: { allowNestedOpenCode: false, model: defaultModel, paths: {}, provider: "opencode", variant: defaultVariant },
+        paths: { goals: path.join(root, "GOALS.md"), roadmap: roadmapPath } as never,
+        root,
+      });
+
+      expect(queueFile.source).toBe(roadmapPath);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+      await rm(outside, { force: true, recursive: true });
+    }
+  });
+});
+
+function sampleRoadmap(): string {
+  return `# Roadmap
+
+## first-step: Build first step
+
+Phase: Bootstrap
+Scope:
+- README.md
+- src/feature.ts
+
+Prompt: Implement the first concrete step.
+
+Acceptance:
+- docs explain the behavior
+- tests cover the behavior
+
+Verification:
+- npm run check
+
+Commit: Build first step
+`;
+}

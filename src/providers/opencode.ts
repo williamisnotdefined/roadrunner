@@ -30,6 +30,11 @@ export class OpenCodeProvider {
   }
 
   async run({ agent, context, env = {}, logPath, prompt, role, skipPermissions = true }: ProviderRunInput): Promise<ProviderRunResult> {
+    const nestedIndicator = nestedOpenCodeIndicator(process.env);
+    if (nestedIndicator && !context.config.allowNestedOpenCode) {
+      throw new Error(`Refusing to launch nested OpenCode session (${nestedIndicator} is set). Set allowNestedOpenCode: true to override.`);
+    }
+
     await mkdir(path.dirname(logPath), { recursive: true });
     const args = ["run", "--model", this.model, "--variant", this.variant, "--agent", agent];
 
@@ -72,6 +77,7 @@ export class OpenCodeProvider {
     return new Promise((resolve) => {
       child.on("error", async (error: Error) => {
         output += `${error.message}\n`;
+        /* v8 ignore next -- spawn errors normally happen before Node exposes a pid. */
         if (registered && child.pid) await unregisterProcess(child.pid, context);
         await writeFile(logPath, output);
         resolve({ code: 1, output });
@@ -83,4 +89,11 @@ export class OpenCodeProvider {
       });
     });
   }
+}
+
+function nestedOpenCodeIndicator(env: NodeJS.ProcessEnv): string | null {
+  for (const key of ["OPENCODE_SESSION", "OPENCODE_SESSION_ID", "OPENCODE_SERVER", "OPENCODE_WORKSPACE", "OPENCODE_APP_INFO"]) {
+    if (env[key]) return key;
+  }
+  return null;
 }

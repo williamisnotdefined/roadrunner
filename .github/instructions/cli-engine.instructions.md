@@ -31,7 +31,7 @@ Use this skill when changing Roadrunner CLI commands, queue logic, init template
 
 ## Always
 
-- Keep commands explicit: `init`, `check`, `status`, `next`, `plan`, `run`, and `cleanup`.
+- Keep commands explicit: `init`, `check`, `status`, `next`, `import-roadmap`, `plan`, `run`, and `cleanup`.
 - Keep target project state under `.roadrunner`.
 - Avoid dependencies until there is a clear need.
 
@@ -54,7 +54,14 @@ Use this skill when changing Roadrunner CLI commands, queue logic, init template
 
 - `npm run typecheck`
 - `npm test`
+- `npm run coverage`
 - `npm run ai:check`
+
+## E2E
+
+- Keep deterministic e2e tests in the normal Vitest suite with fake providers.
+- Keep real provider e2e tests behind explicit opt-in scripts such as `npm run e2e:real`.
+- Write e2e target projects under `test-output/`.
 
 ## ai/architecture/project-architecture.md
 
@@ -67,6 +74,7 @@ Core modules:
 - `src/cli.ts`: command dispatch.
 - `src/init.ts`: target project bootstrap.
 - `src/queue.ts`: queue validation and mutation.
+- `src/roadmap.ts`: Markdown roadmap import into queue state.
 - `src/runner.ts`: plan/execute/verify flow.
 - `src/process-registry.ts`: safe child-process tracking.
 - `src/providers/opencode.ts`: OpenCode provider adapter.
@@ -82,3 +90,5 @@ Plan -> Execute -> Verify -> Commit -> Reconcile
 ```
 
 The queue lives in the configured queue file, defaulting to `.roadrunner/queue.json` in the target project. The first queued item is the only current task.
+
+Roadmaps may be imported from Markdown into the queue. Import preserves existing `history` and `blocked` records and only queues steps that have not already been closed.

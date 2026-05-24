@@ -1,31 +1,122 @@
-import test from "node:test";
-import assert from "node:assert/strict";
+import { describe, expect, test } from "vitest";
 
 import { defaultModel, defaultVariant } from "../src/config.js";
-import { formatStep, markDone, nextStep, validateQueueFile, type QueueFile } from "../src/queue.js";
+import { formatStep, markBlocked, markDone, nextStep, validateGoals, validateQueueFile, type QueueFile } from "../src/queue.js";
+import { tempDir, removeDir } from "./helpers.js";
+import { writeFile } from "node:fs/promises";
+import path from "node:path";
 
-test("validates queue shape", () => {
-  const queueFile = sampleQueue();
+describe("queue", () => {
+  test("validates queue shape", () => {
+    const queueFile = sampleQueue();
 
-  assert.deepEqual(validateQueueFile(queueFile), []);
-});
+    expect(validateQueueFile(queueFile)).toEqual([]);
+  });
 
-test("returns queue[0] as next step", () => {
-  const step = nextStep(sampleQueue());
+  test("returns queue[0] as next step", () => {
+    const step = nextStep(sampleQueue());
 
-  assert.equal(step?.id, "first-step");
-  assert.match(formatStep(step), /first-step/);
-});
+    expect(step?.id).toBe("first-step");
+    expect(formatStep(step)).toMatch(/first-step/);
+    expect(nextStep({ ...sampleQueue(), queue: [] })).toBeNull();
+    expect(formatStep(null)).toBe("No queued step.");
+  });
 
-test("moves completed queue item to history", () => {
-  const queueFile = sampleQueue();
+  test("moves completed queue item to history", () => {
+    const queueFile = sampleQueue();
 
-  markDone(queueFile, "first-step");
+    markDone(queueFile, "first-step");
 
-  assert.equal(queueFile.queue.length, 0);
-  assert.equal(queueFile.history.length, 1);
-  assert.equal(queueFile.history[0]?.id, "first-step");
-  assert.equal(typeof queueFile.history[0]?.completedAt, "string");
+    expect(queueFile.queue.length).toBe(0);
+    expect(queueFile.history.length).toBe(1);
+    expect(queueFile.history[0]?.id).toBe("first-step");
+    expect(typeof queueFile.history[0]?.completedAt).toBe("string");
+  });
+
+  test("rejects non-string array entries", () => {
+    const queueFile = sampleQueue();
+    queueFile.queue[0]!.verification = [123 as unknown as string];
+
+    expect(validateQueueFile(queueFile)).toEqual(["queue[0].verification[0] must be a non-empty string."]);
+  });
+
+  test("moves blocked queue item to blocked list", () => {
+    const queueFile = sampleQueue();
+
+    markBlocked(queueFile, "first-step", "blocked reason");
+
+    expect(queueFile.queue).toEqual([]);
+    expect(queueFile.blocked[0]).toMatchObject({ blockedReason: "blocked reason", id: "first-step" });
+    expect(typeof queueFile.blocked[0]?.blockedAt).toBe("string");
+  });
+
+  test("rejects completing or blocking non-current steps", () => {
+    const queueFile = sampleQueue();
+
+    expect(() => markDone(queueFile, "other-step")).toThrow(/Can only complete queue\[0]/);
+    expect(() => markBlocked(queueFile, "other-step", "reason")).toThrow(/Can only block queue\[0]/);
+  });
+
+  test("reports queue shape errors", () => {
+    expect(validateQueueFile({ version: 1, model: "bad", variant: "bad", queue: {}, history: {}, blocked: {} })).toEqual([
+      "queue.version must be 2.",
+      "queue.model must be openai/gpt-5.5.",
+      "queue.variant must be xhigh.",
+      "queue.queue must be an array.",
+      "queue.history must be an array.",
+      "queue.blocked must be an array.",
+    ]);
+    expect(validateQueueFile(null)).toEqual([
+      "queue.version must be 2.",
+      "queue.model must be openai/gpt-5.5.",
+      "queue.variant must be xhigh.",
+      "queue.queue must be an array.",
+      "queue.history must be an array.",
+      "queue.blocked must be an array.",
+    ]);
+  });
+
+  test("reports invalid step fields", () => {
+    const queueFile = sampleQueue();
+    queueFile.queue[0] = {
+      acceptance: [],
+      commitMessage: "",
+      id: "Bad ID",
+      phase: "",
+      prompt: "",
+      scope: [],
+      title: "",
+      verification: [],
+    };
+
+    expect(validateQueueFile(queueFile)).toEqual([
+      "queue[0].id must be kebab-case.",
+      "queue[0].phase must be a non-empty string.",
+      "queue[0].title must be a non-empty string.",
+      "queue[0].prompt must be a non-empty string.",
+      "queue[0].commitMessage must be a non-empty string.",
+      "queue[0].scope must be a non-empty array.",
+      "queue[0].acceptance must be a non-empty array.",
+      "queue[0].verification must be a non-empty array.",
+    ]);
+
+    expect(validateQueueFile({ ...sampleQueue(), queue: [undefined as never] })).toContain("queue[0].id must be kebab-case.");
+  });
+
+  test("validates goals file", async () => {
+    const directory = await tempDir("roadrunner-goals-");
+    try {
+      const context = { paths: { goals: path.join(directory, "GOALS.md") } } as Parameters<typeof validateGoals>[0];
+
+      expect(await validateGoals(context)).toEqual(["GOALS.md must exist."]);
+      await writeFile(context.paths.goals, "\n");
+      expect(await validateGoals(context)).toEqual(["GOALS.md must not be empty."]);
+      await writeFile(context.paths.goals, "# Goals\n");
+      expect(await validateGoals(context)).toEqual([]);
+    } finally {
+      await removeDir(directory);
+    }
+  });
 });
 
 function sampleQueue(): QueueFile {

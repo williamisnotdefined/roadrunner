@@ -9,7 +9,11 @@ export const defaultVariant = "xhigh";
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 const sourceRoot = path.resolve(moduleDir, "..");
-export const packageRoot = path.basename(sourceRoot) === "dist" ? path.resolve(sourceRoot, "..") : sourceRoot;
+export const packageRoot = packageRootFromSourceRoot(sourceRoot);
+
+export function packageRootFromSourceRoot(sourceRootPath: string): string {
+  return path.basename(sourceRootPath) === "dist" ? path.resolve(sourceRootPath, "..") : sourceRootPath;
+}
 
 export interface PathOverrides {
   config?: string;
@@ -20,6 +24,7 @@ export interface PathOverrides {
   processes?: string;
   prompts?: string;
   queue?: string;
+  roadmap?: string;
 }
 
 export interface ProjectPaths {
@@ -30,9 +35,11 @@ export interface ProjectPaths {
   processRegistry: string;
   prompts: string;
   queue: string;
+  roadmap: string;
 }
 
 export interface RoadrunnerConfig {
+  allowNestedOpenCode?: boolean;
   provider?: string;
   model?: string;
   variant?: string;
@@ -40,7 +47,7 @@ export interface RoadrunnerConfig {
 }
 
 export interface ProjectContext {
-  config: Required<Pick<RoadrunnerConfig, "provider" | "model" | "variant">> & { paths?: PathOverrides };
+  config: Required<Pick<RoadrunnerConfig, "provider" | "model" | "variant">> & { allowNestedOpenCode: boolean; paths?: PathOverrides };
   paths: ProjectPaths;
   root: string;
 }
@@ -54,6 +61,7 @@ export function projectPaths(projectRoot = process.cwd(), overrides: PathOverrid
     processRegistry: resolveProjectPath(projectRoot, overrides.processes ?? ".roadrunner/processes.json"),
     prompts: resolveProjectPath(projectRoot, overrides.prompts ?? ".roadrunner/prompts"),
     queue: resolveProjectPath(projectRoot, overrides.queue ?? ".roadrunner/queue.json"),
+    roadmap: resolveProjectPath(projectRoot, overrides.roadmap ?? "ROADMAP.md"),
   };
 }
 
@@ -65,6 +73,7 @@ export async function loadContext(projectRoot = process.cwd(), args: CliArgs = {
 
   return {
     config: {
+      allowNestedOpenCode: fileConfig.allowNestedOpenCode ?? false,
       provider: fileConfig.provider ?? "opencode",
       model: fileConfig.model ?? defaultModel,
       variant: fileConfig.variant ?? defaultVariant,
@@ -86,6 +95,7 @@ export function pathOverridesFromArgs(args: CliArgs): PathOverrides {
     ["processes", args.processes],
     ["prompts", args.prompts],
     ["queue", args.queue],
+    ["roadmap", args.roadmap],
   ];
 
   for (const [key, value] of options) {

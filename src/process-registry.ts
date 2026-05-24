@@ -1,5 +1,6 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 
 import { type ProjectContext, pathExists } from "./config.js";
 
@@ -80,7 +81,8 @@ async function isSameProcess(record: ProcessRecord): Promise<boolean> {
 async function readProcessInfo(pid: number): Promise<{ startTimeTicks: string } | null> {
   try {
     const stat = await readFile(`/proc/${pid}/stat`, "utf8");
-    return { startTimeTicks: stat.slice(stat.lastIndexOf(")") + 2).trim().split(/\s+/)[19] ?? "" };
+    const fields = stat.slice(stat.lastIndexOf(")") + 2).trim().split(/\s+/);
+    return { startTimeTicks: fields[19]! };
   } catch {
     return null;
   }
@@ -94,8 +96,4 @@ function signalProcessGroup(pid: number, signal: NodeJS.Signals): boolean {
     if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
     return false;
   }
-}
-
-function sleep(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }

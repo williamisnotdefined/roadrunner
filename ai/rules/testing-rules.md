@@ -10,4 +10,11 @@
 
 - `npm run typecheck`
 - `npm test`
+- `npm run coverage`
 - `npm run ai:check`
+
+## E2E
+
+- Keep deterministic e2e tests in the normal Vitest suite with fake providers.
+- Keep real provider e2e tests behind explicit opt-in scripts such as `npm run e2e:real`.
+- Write e2e target projects under `test-output/`.

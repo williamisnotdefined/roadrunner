@@ -44,6 +44,7 @@ export function validateQueueFile(queueFile: unknown): string[] {
     history: value?.history ?? [],
     queue: value?.queue ?? [],
   })) {
+    if (!Array.isArray(records)) continue;
     for (const [index, step] of records.entries()) validateStep(step, `${collection}[${index}]`, errors);
   }
 
@@ -82,15 +83,15 @@ export function formatStep(step: QueueStep | null): string {
 export function markDone(queueFile: QueueFile, stepId: string): void {
   const step = queueFile.queue[0];
   if (!step || step.id !== stepId) throw new Error(`Can only complete queue[0], got ${stepId}.`);
-  const completed = queueFile.queue.shift();
-  if (completed) queueFile.history.push({ ...completed, completedAt: new Date().toISOString() });
+  const [completed] = queueFile.queue.splice(0, 1);
+  queueFile.history.push({ ...completed!, completedAt: new Date().toISOString() });
 }
 
 export function markBlocked(queueFile: QueueFile, stepId: string, reason: string): void {
   const step = queueFile.queue[0];
   if (!step || step.id !== stepId) throw new Error(`Can only block queue[0], got ${stepId}.`);
-  const blocked = queueFile.queue.shift();
-  if (blocked) queueFile.blocked.push({ ...blocked, blockedAt: new Date().toISOString(), blockedReason: reason });
+  const [blocked] = queueFile.queue.splice(0, 1);
+  queueFile.blocked.push({ ...blocked!, blockedAt: new Date().toISOString(), blockedReason: reason });
 }
 
 function validateStep(step: QueueStep, field: string, errors: string[]): void {
@@ -99,6 +100,13 @@ function validateStep(step: QueueStep, field: string, errors: string[]): void {
     if (typeof step?.[key] !== "string" || step[key].length === 0) errors.push(`${field}.${key} must be a non-empty string.`);
   }
   for (const key of ["scope", "acceptance", "verification"] as const) {
-    if (!Array.isArray(step?.[key]) || step[key].length === 0) errors.push(`${field}.${key} must be a non-empty array.`);
+    if (!Array.isArray(step?.[key]) || step[key].length === 0) {
+      errors.push(`${field}.${key} must be a non-empty array.`);
+      continue;
+    }
+
+    for (const [index, item] of step[key].entries()) {
+      if (typeof item !== "string" || item.length === 0) errors.push(`${field}.${key}[${index}] must be a non-empty string.`);
+    }
   }
 }
