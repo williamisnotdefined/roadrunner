@@ -44,7 +44,7 @@ Use this skill when changing Roadrunner AI registry, skills, rules, architecture
 
 # AI Knowledge System
 
-Roadrunner AI guidance is canonical under `ai` and routed to supported tools by `scripts/ai/sync-routes.mjs`.
+Roadrunner AI guidance is canonical under `ai` and routed to supported tools by `scripts/ai/sync-routes.ts`.
 
 Generated outputs:
 

@@ -2,7 +2,7 @@
 
 Goal-directed autonomous software engineering loop.
 
-Roadrunner turns a project goal and an execution queue into a repeatable cycle:
+Roadrunner turns a project goal and a task queue into a repeatable cycle:
 
 ```txt
 Plan -> Execute -> Verify -> Commit -> Reconcile
@@ -13,13 +13,13 @@ It is designed to run coding agents safely over small roadmap steps, with explic
 ## Commands
 
 ```bash
-node src/cli.mjs init
-node src/cli.mjs status
-node src/cli.mjs next
-node src/cli.mjs plan
-node src/cli.mjs run --max-steps 1
-node src/cli.mjs run --max-steps 999 --max-hours 72
-node src/cli.mjs cleanup
+tsx src/cli.ts init
+tsx src/cli.ts status
+tsx src/cli.ts next
+tsx src/cli.ts plan
+tsx src/cli.ts run --max-steps 1
+tsx src/cli.ts run --max-steps 999 --max-hours 72
+tsx src/cli.ts cleanup
 ```
 
 During development in this repo:
@@ -38,7 +38,7 @@ npm run check
 GOALS.md
 .roadrunner/
   config.json
-  execution.json
+  queue.json
   prompts/
   logs/
 ```
@@ -46,10 +46,10 @@ GOALS.md
 ## Safety Model
 
 - `GOALS.md` is read-only product direction for autonomous runs.
-- `.roadrunner/execution.json` is the mutable queue.
+- `.roadrunner/queue.json` is the mutable queue.
 - `queue[0]` is always the current task.
 - Planning is mandatory before execution.
-- The reconciler may only edit `.roadrunner/execution.json`.
+- The reconciler may only edit the configured queue file, defaulting to `.roadrunner/queue.json`.
 - Cleanup only targets subprocesses registered by Roadrunner itself.
 - Nested OpenCode is rejected by default.
 

@@ -1,5 +1,5 @@
 ---
-applyTo: "src/providers/**/*.mjs,src/process-registry.mjs,templates/prompts/*.md"
+applyTo: "src/providers/**/*.ts,src/process-registry.ts,templates/prompts/*.md"
 ---
 
 Generated from `ai/registry.json`. Do not edit manually.

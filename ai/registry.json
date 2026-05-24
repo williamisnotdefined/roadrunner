@@ -26,7 +26,7 @@
     },
     {
       "name": "cli-engine",
-      "description": "Use when changing Roadrunner CLI commands, execution queue logic, init templates, or project configuration.",
+      "description": "Use when changing Roadrunner CLI commands, queue logic, init templates, or project configuration.",
       "canonicalPath": "ai/skills/cli-engine.md",
       "references": ["ai/rules/cli-rules.md", "ai/rules/testing-rules.md", "ai/architecture/project-architecture.md", "ai/architecture/roadmap-loop.md"],
       "routes": {
@@ -35,8 +35,8 @@
         "github": ".github/instructions/cli-engine.instructions.md"
       },
       "toolConfig": {
-        "cursor": { "globs": "src/**/*.mjs,templates/**/*,package.json", "alwaysApply": false },
-        "github": { "applyTo": "src/**/*.mjs,templates/**/*,package.json" }
+        "cursor": { "globs": "src/**/*.ts,templates/**/*,package.json", "alwaysApply": false },
+        "github": { "applyTo": "src/**/*.ts,templates/**/*,package.json" }
       }
     },
     {
@@ -50,13 +50,13 @@
         "github": ".github/instructions/provider-opencode.instructions.md"
       },
       "toolConfig": {
-        "cursor": { "globs": "src/providers/**/*.mjs,src/process-registry.mjs,templates/prompts/*.md", "alwaysApply": false },
-        "github": { "applyTo": "src/providers/**/*.mjs,src/process-registry.mjs,templates/prompts/*.md" }
+        "cursor": { "globs": "src/providers/**/*.ts,src/process-registry.ts,templates/prompts/*.md", "alwaysApply": false },
+        "github": { "applyTo": "src/providers/**/*.ts,src/process-registry.ts,templates/prompts/*.md" }
       }
     },
     {
       "name": "roadmap-executor",
-      "description": "Use when changing Roadrunner autonomous roadmap execution, plan-execute-verify-commit-reconcile behavior, or execution queue semantics.",
+      "description": "Use when changing Roadrunner autonomous roadmap runs, plan-execute-verify-commit-reconcile behavior, or queue semantics.",
       "canonicalPath": "ai/skills/roadmap-executor.md",
       "references": ["ai/rules/roadmap-autopilot-rules.md", "ai/rules/process-supervisor-rules.md", "ai/architecture/roadmap-loop.md", "ai/architecture/process-supervision.md"],
       "routes": {
@@ -65,8 +65,8 @@
         "github": ".github/instructions/roadmap-executor.instructions.md"
       },
       "toolConfig": {
-        "cursor": { "globs": "src/runner.mjs,src/execution.mjs,src/process-registry.mjs,templates/prompts/*.md", "alwaysApply": false },
-        "github": { "applyTo": "src/runner.mjs,src/execution.mjs,src/process-registry.mjs,templates/prompts/*.md" }
+        "cursor": { "globs": "src/runner.ts,src/queue.ts,src/process-registry.ts,templates/prompts/*.md", "alwaysApply": false },
+        "github": { "applyTo": "src/runner.ts,src/queue.ts,src/process-registry.ts,templates/prompts/*.md" }
       }
     },
     {
@@ -80,8 +80,8 @@
         "github": ".github/instructions/ai-knowledge-maintainer.instructions.md"
       },
       "toolConfig": {
-        "cursor": { "globs": "ai/**/*,scripts/ai/**/*.mjs,.opencode/skills/**/*.md,.cursor/rules/*.mdc,.github/instructions/*.md", "alwaysApply": false },
-        "github": { "applyTo": "ai/**/*,scripts/ai/**/*.mjs,.opencode/skills/**/*.md,.cursor/rules/*.mdc,.github/instructions/*.md" }
+        "cursor": { "globs": "ai/**/*,scripts/ai/**/*.ts,.opencode/skills/**/*.md,.cursor/rules/*.mdc,.github/instructions/*.md", "alwaysApply": false },
+        "github": { "applyTo": "ai/**/*,scripts/ai/**/*.ts,.opencode/skills/**/*.md,.cursor/rules/*.mdc,.github/instructions/*.md" }
       }
     }
   ]

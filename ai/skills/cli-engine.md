@@ -1,6 +1,6 @@
 # CLI Engine
 
-Use this skill when changing Roadrunner CLI commands, execution queue logic, init templates, or project configuration.
+Use this skill when changing Roadrunner CLI commands, queue logic, init templates, or project configuration.
 
 ## Read First
 

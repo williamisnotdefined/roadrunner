@@ -1,14 +1,40 @@
 #!/usr/bin/env node
 
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+type ToolName = "opencode" | "cursor" | "github";
+
+interface Registry {
+  canonicalRoot: string;
+  skills: Skill[];
+  version: number;
+}
+
+interface Skill {
+  canonicalPath: string;
+  description: string;
+  name: string;
+  references: string[];
+  routes: Record<ToolName, string>;
+  toolConfig: {
+    cursor: { alwaysApply: boolean; globs: string };
+    github: { applyTo: string };
+  };
+}
+
+interface SkillContext {
+  canonical: string;
+  references: Array<{ content: string; referencePath: string }>;
+}
+
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const rootDir = path.basename(path.resolve(scriptDir, "../..")) === "dist" ? path.resolve(scriptDir, "../../..") : path.resolve(scriptDir, "../..");
 const checkOnly = process.argv.includes("--check");
-const registry = JSON.parse(await readFile(path.join(rootDir, "ai/registry.json"), "utf8"));
+const registry = JSON.parse(await readFile(path.join(rootDir, "ai/registry.json"), "utf8")) as Registry;
 const notice = "Generated from `ai/registry.json`. Do not edit manually.";
-const tools = ["opencode", "cursor", "github"];
+const tools: ToolName[] = ["opencode", "cursor", "github"];
 
 const errors = validateRegistry(registry);
 if (errors.length > 0) {
@@ -16,25 +42,24 @@ if (errors.length > 0) {
   process.exit(1);
 }
 
-const expectedRoutes = new Map();
+const expectedRoutes = new Map<string, string>();
 
 for (const skill of registry.skills) {
   const context = await readContext(skill);
   for (const tool of tools) {
     const routePath = skill.routes[tool];
-    expectedRoutes.set(routePath, renderRoute(tool, skill, routePath, context));
+    expectedRoutes.set(routePath, renderRoute(tool, skill, context));
   }
 }
 
-const stale = [];
+const stale: string[] = [];
 for (const [routePath, content] of expectedRoutes) {
   const absolutePath = path.join(rootDir, routePath);
   const current = await readOptional(absolutePath);
 
   if (current === content) continue;
-  if (checkOnly) {
-    stale.push(routePath);
-  } else {
+  if (checkOnly) stale.push(routePath);
+  else {
     await mkdir(path.dirname(absolutePath), { recursive: true });
     await writeFile(absolutePath, content);
   }
@@ -53,13 +78,13 @@ if (stale.length > 0) {
 
 console.log(`AI routes ${checkOnly ? "checked" : "synced"}: ${registry.skills.length} skills.`);
 
-function validateRegistry(value) {
-  const errors = [];
+function validateRegistry(value: Registry): string[] {
+  const errors: string[] = [];
   if (value.version !== 1) errors.push("registry.version must be 1.");
   if (value.canonicalRoot !== "ai/skills") errors.push("registry.canonicalRoot must be ai/skills.");
   if (!Array.isArray(value.skills)) errors.push("registry.skills must be an array.");
 
-  const seen = new Set();
+  const seen = new Set<string>();
   for (const skill of value.skills ?? []) {
     if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(skill.name ?? "")) errors.push(`${skill.name}: invalid skill name.`);
     if (seen.has(skill.name)) errors.push(`${skill.name}: duplicate skill.`);
@@ -74,7 +99,7 @@ function validateRegistry(value) {
   return errors;
 }
 
-async function readContext(skill) {
+async function readContext(skill: Skill): Promise<SkillContext> {
   return {
     canonical: await readFile(path.join(rootDir, skill.canonicalPath), "utf8"),
     references: await Promise.all(
@@ -86,7 +111,7 @@ async function readContext(skill) {
   };
 }
 
-function renderRoute(tool, skill, routePath, context) {
+function renderRoute(tool: ToolName, skill: Skill, context: SkillContext): string {
   const body = `${notice}\n\n# ${skill.name}\n\n${context.canonical.trim()}\n\n# Referenced Context\n\n${context.references
     .map((reference) => `## ${reference.referencePath}\n\n${reference.content.trim()}`)
     .join("\n\n")}\n`;
@@ -98,7 +123,7 @@ function renderRoute(tool, skill, routePath, context) {
   return `---\napplyTo: ${JSON.stringify(skill.toolConfig.github.applyTo)}\n---\n\n${body}`;
 }
 
-async function readOptional(filePath) {
+async function readOptional(filePath: string): Promise<string | null> {
   try {
     return await readFile(filePath, "utf8");
   } catch {
@@ -106,8 +131,8 @@ async function readOptional(filePath) {
   }
 }
 
-async function generatedRouteFiles() {
-  const files = [];
+async function generatedRouteFiles(): Promise<string[]> {
+  const files: string[] = [];
   for (const root of [".opencode/skills", ".cursor/rules", ".github/instructions"]) {
     for (const file of await listFiles(root)) {
       const content = await readOptional(path.join(rootDir, file));
@@ -117,15 +142,15 @@ async function generatedRouteFiles() {
   return files;
 }
 
-async function listFiles(relativeDirectory) {
-  const { readdir } = await import("node:fs/promises");
+async function listFiles(relativeDirectory: string): Promise<string[]> {
   let entries;
   try {
     entries = await readdir(path.join(rootDir, relativeDirectory), { withFileTypes: true });
   } catch {
     return [];
   }
-  const files = [];
+
+  const files: string[] = [];
   for (const entry of entries) {
     const entryPath = path.posix.join(relativeDirectory, entry.name);
     if (entry.isDirectory()) files.push(...(await listFiles(entryPath)));

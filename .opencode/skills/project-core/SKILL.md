@@ -85,18 +85,18 @@ Roadrunner is a CLI for autonomous software engineering loops.
 
 Core modules:
 
-- `src/cli.mjs`: command dispatch.
-- `src/init.mjs`: target project bootstrap.
-- `src/execution.mjs`: queue validation and mutation.
-- `src/runner.mjs`: plan/execute/verify flow.
-- `src/process-registry.mjs`: safe child-process tracking.
-- `src/providers/opencode.mjs`: OpenCode provider adapter.
+- `src/cli.ts`: command dispatch.
+- `src/init.ts`: target project bootstrap.
+- `src/queue.ts`: queue validation and mutation.
+- `src/runner.ts`: plan/execute/verify flow.
+- `src/process-registry.ts`: safe child-process tracking.
+- `src/providers/opencode.ts`: OpenCode provider adapter.
 
 ## ai/architecture/ai-knowledge-system.md
 
 # AI Knowledge System
 
-Roadrunner AI guidance is canonical under `ai` and routed to supported tools by `scripts/ai/sync-routes.mjs`.
+Roadrunner AI guidance is canonical under `ai` and routed to supported tools by `scripts/ai/sync-routes.ts`.
 
 Generated outputs:
 

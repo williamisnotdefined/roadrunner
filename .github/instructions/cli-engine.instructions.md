@@ -1,5 +1,5 @@
 ---
-applyTo: "src/**/*.mjs,templates/**/*,package.json"
+applyTo: "src/**/*.ts,templates/**/*,package.json"
 ---
 
 Generated from `ai/registry.json`. Do not edit manually.
@@ -8,7 +8,7 @@ Generated from `ai/registry.json`. Do not edit manually.
 
 # CLI Engine
 
-Use this skill when changing Roadrunner CLI commands, execution queue logic, init templates, or project configuration.
+Use this skill when changing Roadrunner CLI commands, queue logic, init templates, or project configuration.
 
 ## Read First
 
@@ -64,12 +64,12 @@ Roadrunner is a CLI for autonomous software engineering loops.
 
 Core modules:
 
-- `src/cli.mjs`: command dispatch.
-- `src/init.mjs`: target project bootstrap.
-- `src/execution.mjs`: queue validation and mutation.
-- `src/runner.mjs`: plan/execute/verify flow.
-- `src/process-registry.mjs`: safe child-process tracking.
-- `src/providers/opencode.mjs`: OpenCode provider adapter.
+- `src/cli.ts`: command dispatch.
+- `src/init.ts`: target project bootstrap.
+- `src/queue.ts`: queue validation and mutation.
+- `src/runner.ts`: plan/execute/verify flow.
+- `src/process-registry.ts`: safe child-process tracking.
+- `src/providers/opencode.ts`: OpenCode provider adapter.
 
 ## ai/architecture/roadmap-loop.md
 
@@ -81,4 +81,4 @@ Roadrunner executes a queue of small tasks. Each task follows:
 Plan -> Execute -> Verify -> Commit -> Reconcile
 ```
 
-The queue lives in `.roadrunner/execution.json` in the target project. The first queued item is the only current task.
+The queue lives in the configured queue file, defaulting to `.roadrunner/queue.json` in the target project. The first queued item is the only current task.

@@ -4,18 +4,24 @@
   "private": true,
   "type": "module",
   "bin": {
-    "roadrunner": "src/cli.mjs"
+    "roadrunner": "dist/src/cli.js"
   },
   "scripts": {
-    "ai:check": "node scripts/ai/sync-routes.mjs --check",
-    "ai:sync": "node scripts/ai/sync-routes.mjs",
-    "check": "node --check src/*.mjs src/providers/*.mjs scripts/ai/sync-routes.mjs && npm test && npm run ai:check",
+    "ai:check": "tsx scripts/ai/sync-routes.ts --check",
+    "ai:sync": "tsx scripts/ai/sync-routes.ts",
+    "build": "tsc -p tsconfig.json",
+    "check": "npm run typecheck && npm test && npm run ai:check && npm run build",
     "format": "npm run ai:sync",
     "lint": "npm run ai:check",
-    "test": "node --test tests/*.test.mjs",
-    "typecheck": "node --check src/*.mjs src/providers/*.mjs scripts/ai/sync-routes.mjs"
+    "test": "node --import tsx --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit"
   },
   "engines": {
     "node": ">=22"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "tsx": "^4.22.3",
+    "typescript": "^6.0.3"
   }
 }

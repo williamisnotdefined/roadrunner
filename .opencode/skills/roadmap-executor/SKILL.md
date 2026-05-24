@@ -1,6 +1,6 @@
 ---
 name: roadmap-executor
-description: "Use when changing Roadrunner autonomous roadmap execution, plan-execute-verify-commit-reconcile behavior, or execution queue semantics."
+description: "Use when changing Roadrunner autonomous roadmap runs, plan-execute-verify-commit-reconcile behavior, or queue semantics."
 ---
 
 Generated from `ai/registry.json`. Do not edit manually.
@@ -9,7 +9,7 @@ Generated from `ai/registry.json`. Do not edit manually.
 
 # Roadmap Executor
 
-Use this skill when changing Roadrunner autonomous roadmap execution, plan-execute-verify-commit-reconcile behavior, or execution queue semantics.
+Use this skill when changing Roadrunner autonomous roadmap runs, plan-execute-verify-commit-reconcile behavior, or queue semantics.
 
 ## Read First
 
@@ -70,7 +70,7 @@ Roadrunner executes a queue of small tasks. Each task follows:
 Plan -> Execute -> Verify -> Commit -> Reconcile
 ```
 
-The queue lives in `.roadrunner/execution.json` in the target project. The first queued item is the only current task.
+The queue lives in the configured queue file, defaulting to `.roadrunner/queue.json` in the target project. The first queued item is the only current task.
 
 ## ai/architecture/process-supervision.md
 

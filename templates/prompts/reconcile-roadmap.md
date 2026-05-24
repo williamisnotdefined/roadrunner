@@ -1,6 +1,6 @@
 # Roadrunner Reconcile Queue
 
-Review project state and update only `.roadrunner/execution.json` if future queue changes are needed.
+Review project state and update only the configured Roadrunner queue file if future queue changes are needed.
 
 Do not edit `GOALS.md`. Preserve `history` and `blocked`.
 
@@ -10,8 +10,8 @@ Do not edit `GOALS.md`. Preserve `history` and `blocked`.
 {{GOALS_MD}}
 ```
 
-## Execution
+## Queue
 
 ```json
-{{EXECUTION_JSON}}
+{{QUEUE_JSON}}
 ```

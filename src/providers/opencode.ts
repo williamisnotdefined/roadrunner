@@ -2,16 +2,34 @@ import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { defaultModel, defaultVariant } from "../config.mjs";
-import { registerProcess, unregisterProcess } from "../process-registry.mjs";
+import { defaultModel, defaultVariant, type ProjectContext } from "../config.js";
+import { registerProcess, unregisterProcess } from "../process-registry.js";
+
+export interface ProviderRunInput {
+  agent: string;
+  context: ProjectContext;
+  env?: Record<string, string>;
+  logPath: string;
+  prompt: string;
+  role: string;
+  skipPermissions?: boolean;
+}
+
+export interface ProviderRunResult {
+  code: number | null;
+  output: string;
+}
 
 export class OpenCodeProvider {
+  readonly model: string;
+  readonly variant: string;
+
   constructor({ model = defaultModel, variant = defaultVariant } = {}) {
     this.model = model;
     this.variant = variant;
   }
 
-  async run({ agent, cwd, env = {}, logPath, prompt, role, skipPermissions = true }) {
+  async run({ agent, context, env = {}, logPath, prompt, role, skipPermissions = true }: ProviderRunInput): Promise<ProviderRunResult> {
     await mkdir(path.dirname(logPath), { recursive: true });
     const args = ["run", "--model", this.model, "--variant", this.variant, "--agent", agent];
 
@@ -19,7 +37,7 @@ export class OpenCodeProvider {
     args.push(prompt);
 
     const child = spawn("opencode", args, {
-      cwd,
+      cwd: context.root,
       detached: true,
       env: { ...process.env, ...env, OPENCODE_MODEL: this.model, OPENCODE_VARIANT: this.variant },
     });
@@ -31,35 +49,35 @@ export class OpenCodeProvider {
       await registerProcess(
         {
           command: ["opencode", "run", "--model", this.model, "--variant", this.variant, "--agent", agent, "<prompt>"],
-          cwd,
+          cwd: context.root,
           pid: child.pid,
           role,
         },
-        cwd,
+        context,
       );
       registered = true;
     }
 
-    child.stdout.on("data", (chunk) => {
+    child.stdout.on("data", (chunk: Buffer) => {
       const text = chunk.toString();
       output += text;
       process.stdout.write(text);
     });
-    child.stderr.on("data", (chunk) => {
+    child.stderr.on("data", (chunk: Buffer) => {
       const text = chunk.toString();
       output += text;
       process.stderr.write(text);
     });
 
     return new Promise((resolve) => {
-      child.on("error", async (error) => {
+      child.on("error", async (error: Error) => {
         output += `${error.message}\n`;
-        if (registered) await unregisterProcess(child.pid, cwd);
+        if (registered && child.pid) await unregisterProcess(child.pid, context);
         await writeFile(logPath, output);
         resolve({ code: 1, output });
       });
-      child.on("close", async (code) => {
-        if (registered) await unregisterProcess(child.pid, cwd);
+      child.on("close", async (code: number | null) => {
+        if (registered && child.pid) await unregisterProcess(child.pid, context);
         await writeFile(logPath, output);
         resolve({ code, output });
       });

@@ -1,5 +1,5 @@
 ---
-applyTo: "ai/**/*,scripts/ai/**/*.mjs,.opencode/skills/**/*.md,.cursor/rules/*.mdc,.github/instructions/*.md"
+applyTo: "ai/**/*,scripts/ai/**/*.ts,.opencode/skills/**/*.md,.cursor/rules/*.mdc,.github/instructions/*.md"
 ---
 
 Generated from `ai/registry.json`. Do not edit manually.
@@ -43,7 +43,7 @@ Use this skill when changing Roadrunner AI registry, skills, rules, architecture
 
 # AI Knowledge System
 
-Roadrunner AI guidance is canonical under `ai` and routed to supported tools by `scripts/ai/sync-routes.mjs`.
+Roadrunner AI guidance is canonical under `ai` and routed to supported tools by `scripts/ai/sync-routes.ts`.
 
 Generated outputs:
 

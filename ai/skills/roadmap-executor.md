@@ -1,6 +1,6 @@
 # Roadmap Executor
 
-Use this skill when changing Roadrunner autonomous roadmap execution, plan-execute-verify-commit-reconcile behavior, or execution queue semantics.
+Use this skill when changing Roadrunner autonomous roadmap runs, plan-execute-verify-commit-reconcile behavior, or queue semantics.
 
 ## Read First
 
