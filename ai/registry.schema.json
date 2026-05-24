@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Roadrunner AI Registry",
+  "type": "object",
+  "required": ["version", "canonicalRoot", "tools", "skills"],
+  "properties": {
+    "version": { "const": 1 },
+    "canonicalRoot": { "const": "ai/skills" },
+    "tools": { "type": "object" },
+    "skills": { "type": "array" }
+  }
+}

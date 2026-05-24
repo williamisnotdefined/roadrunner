@@ -1,0 +1,73 @@
+---
+applyTo: "src/providers/**/*.mjs,src/process-registry.mjs,templates/prompts/*.md"
+---
+
+Generated from `ai/registry.json`. Do not edit manually.
+
+# provider-opencode
+
+# Provider OpenCode
+
+Use this skill when changing the OpenCode provider adapter, model/variant behavior, prompts, or nested OpenCode safety.
+
+## Read First
+
+- `ai/rules/provider-rules.md`
+- `ai/rules/process-supervisor-rules.md`
+- `ai/architecture/provider-system.md`
+- `ai/architecture/process-supervision.md`
+
+## Workflow
+
+- Keep OpenCode invocation details inside the provider adapter.
+- Preserve `openai/gpt-5.5` and `xhigh` defaults.
+- Register provider subprocesses before relying on cleanup.
+
+# Referenced Context
+
+## ai/rules/provider-rules.md
+
+# Provider Rules
+
+## Always
+
+- Keep provider-specific command construction inside `src/providers`.
+- Default OpenCode to `openai/gpt-5.5` and variant `xhigh`.
+- Sanitize prompts from process registries and logs where appropriate.
+
+## Never
+
+- Do not spread OpenCode flags throughout the runner.
+- Do not make provider adapters own queue state transitions.
+
+## ai/rules/process-supervisor-rules.md
+
+# Process Supervisor Rules
+
+## Always
+
+- Register only subprocesses created by Roadrunner.
+- Check PID start-time before signaling a process.
+- Clean only registered Roadrunner-owned subprocesses.
+- Prefer process groups for provider subprocesses.
+
+## Never
+
+- Do not use `pgrep opencode` as a cleanup mechanism.
+- Do not kill editor sessions or external agent processes.
+
+## ai/architecture/provider-system.md
+
+# Provider System
+
+Providers turn Roadrunner prompts into agent executions.
+
+The initial provider is OpenCode. Future providers can wrap other coding agents while preserving the same runner semantics.
+
+## ai/architecture/process-supervision.md
+
+# Process Supervision
+
+Roadrunner registers subprocesses it creates in `.roadrunner/processes.json` in the target project.
+
+Cleanup only signals registered processes after checking PID start-time ticks to reduce PID-reuse risk.

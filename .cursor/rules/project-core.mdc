@@ -1,0 +1,106 @@
+---
+description: "Always-on Roadrunner repository baseline for CLI, agent loop, and AI knowledge maintenance."
+globs: "**/*"
+alwaysApply: true
+---
+
+Generated from `ai/registry.json`. Do not edit manually.
+
+# project-core
+
+# Project Core
+
+Use this skill for all Roadrunner repository work.
+
+## Read First
+
+- `ai/rules/repository-rules.md`
+- `ai/rules/testing-rules.md`
+- `ai/rules/ai-rules.md`
+- `ai/architecture/project-architecture.md`
+- `ai/architecture/ai-knowledge-system.md`
+
+## Workflow
+
+- Preserve plan-first autonomous execution.
+- Keep process cleanup limited to Roadrunner-owned subprocesses.
+- Run relevant Node and AI checks before finishing.
+
+# Referenced Context
+
+## ai/rules/repository-rules.md
+
+# Repository Rules
+
+## Always
+
+- Keep Roadrunner provider-agnostic where possible.
+- Keep OpenCode-specific behavior inside the provider adapter.
+- Keep autonomous runs plan-first and verification-gated.
+- Keep commits small and step-scoped.
+- Treat `GOALS.md` in target projects as read-only during autonomous runs.
+
+## Never
+
+- Do not kill arbitrary editor or agent processes.
+- Do not skip failing verification.
+- Do not let implementation agents commit, push, or mutate queue state directly.
+
+## ai/rules/testing-rules.md
+
+# Testing Rules
+
+## Always
+
+- Add Node tests for pure queue, config, parsing, and process-registry behavior.
+- Test with temporary directories when commands create files.
+- Keep tests deterministic and dependency-light.
+
+## Verification
+
+- `npm run typecheck`
+- `npm test`
+- `npm run ai:check`
+
+## ai/rules/ai-rules.md
+
+# AI Rules
+
+## Always
+
+- Edit canonical files under `ai` first.
+- Register every skill in `ai/registry.json`.
+- Run `npm run ai:sync` after canonical AI changes.
+- Run `npm run ai:check` before finishing.
+
+## Never
+
+- Do not manually edit generated route files.
+- Do not put reusable architecture in skills when it belongs under `ai/architecture`.
+
+## ai/architecture/project-architecture.md
+
+# Project Architecture
+
+Roadrunner is a CLI for autonomous software engineering loops.
+
+Core modules:
+
+- `src/cli.mjs`: command dispatch.
+- `src/init.mjs`: target project bootstrap.
+- `src/execution.mjs`: queue validation and mutation.
+- `src/runner.mjs`: plan/execute/verify flow.
+- `src/process-registry.mjs`: safe child-process tracking.
+- `src/providers/opencode.mjs`: OpenCode provider adapter.
+
+## ai/architecture/ai-knowledge-system.md
+
+# AI Knowledge System
+
+Roadrunner AI guidance is canonical under `ai` and routed to supported tools by `scripts/ai/sync-routes.mjs`.
+
+Generated outputs:
+
+- `.opencode/skills/<skill>/SKILL.md`
+- `.cursor/rules/<skill>.mdc`
+- `.github/instructions/<skill>.instructions.md`

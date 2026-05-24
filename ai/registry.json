@@ -1,0 +1,88 @@
+{
+  "$schema": "./registry.schema.json",
+  "version": 1,
+  "canonicalRoot": "ai/skills",
+  "tools": {
+    "opencode": { "routePattern": ".opencode/skills/{skill}/SKILL.md" },
+    "cursor": { "routePattern": ".cursor/rules/{skill}.mdc" },
+    "github": { "routePattern": ".github/instructions/{skill}.instructions.md" }
+  },
+  "skills": [
+    {
+      "name": "project-core",
+      "description": "Always-on Roadrunner repository baseline for CLI, agent loop, and AI knowledge maintenance.",
+      "global": true,
+      "canonicalPath": "ai/skills/project-core.md",
+      "references": ["ai/rules/repository-rules.md", "ai/rules/testing-rules.md", "ai/rules/ai-rules.md", "ai/architecture/project-architecture.md", "ai/architecture/ai-knowledge-system.md"],
+      "routes": {
+        "opencode": ".opencode/skills/project-core/SKILL.md",
+        "cursor": ".cursor/rules/project-core.mdc",
+        "github": ".github/instructions/project-core.instructions.md"
+      },
+      "toolConfig": {
+        "cursor": { "globs": "**/*", "alwaysApply": true },
+        "github": { "applyTo": "**/*" }
+      }
+    },
+    {
+      "name": "cli-engine",
+      "description": "Use when changing Roadrunner CLI commands, execution queue logic, init templates, or project configuration.",
+      "canonicalPath": "ai/skills/cli-engine.md",
+      "references": ["ai/rules/cli-rules.md", "ai/rules/testing-rules.md", "ai/architecture/project-architecture.md", "ai/architecture/roadmap-loop.md"],
+      "routes": {
+        "opencode": ".opencode/skills/cli-engine/SKILL.md",
+        "cursor": ".cursor/rules/cli-engine.mdc",
+        "github": ".github/instructions/cli-engine.instructions.md"
+      },
+      "toolConfig": {
+        "cursor": { "globs": "src/**/*.mjs,templates/**/*,package.json", "alwaysApply": false },
+        "github": { "applyTo": "src/**/*.mjs,templates/**/*,package.json" }
+      }
+    },
+    {
+      "name": "provider-opencode",
+      "description": "Use when changing the OpenCode provider adapter, model/variant behavior, prompts, or nested OpenCode safety.",
+      "canonicalPath": "ai/skills/provider-opencode.md",
+      "references": ["ai/rules/provider-rules.md", "ai/rules/process-supervisor-rules.md", "ai/architecture/provider-system.md", "ai/architecture/process-supervision.md"],
+      "routes": {
+        "opencode": ".opencode/skills/provider-opencode/SKILL.md",
+        "cursor": ".cursor/rules/provider-opencode.mdc",
+        "github": ".github/instructions/provider-opencode.instructions.md"
+      },
+      "toolConfig": {
+        "cursor": { "globs": "src/providers/**/*.mjs,src/process-registry.mjs,templates/prompts/*.md", "alwaysApply": false },
+        "github": { "applyTo": "src/providers/**/*.mjs,src/process-registry.mjs,templates/prompts/*.md" }
+      }
+    },
+    {
+      "name": "roadmap-executor",
+      "description": "Use when changing Roadrunner autonomous roadmap execution, plan-execute-verify-commit-reconcile behavior, or execution queue semantics.",
+      "canonicalPath": "ai/skills/roadmap-executor.md",
+      "references": ["ai/rules/roadmap-autopilot-rules.md", "ai/rules/process-supervisor-rules.md", "ai/architecture/roadmap-loop.md", "ai/architecture/process-supervision.md"],
+      "routes": {
+        "opencode": ".opencode/skills/roadmap-executor/SKILL.md",
+        "cursor": ".cursor/rules/roadmap-executor.mdc",
+        "github": ".github/instructions/roadmap-executor.instructions.md"
+      },
+      "toolConfig": {
+        "cursor": { "globs": "src/runner.mjs,src/execution.mjs,src/process-registry.mjs,templates/prompts/*.md", "alwaysApply": false },
+        "github": { "applyTo": "src/runner.mjs,src/execution.mjs,src/process-registry.mjs,templates/prompts/*.md" }
+      }
+    },
+    {
+      "name": "ai-knowledge-maintainer",
+      "description": "Use when changing Roadrunner AI registry, skills, rules, architecture docs, or generated AI routes.",
+      "canonicalPath": "ai/skills/ai-knowledge-maintainer.md",
+      "references": ["ai/rules/ai-rules.md", "ai/architecture/ai-knowledge-system.md"],
+      "routes": {
+        "opencode": ".opencode/skills/ai-knowledge-maintainer/SKILL.md",
+        "cursor": ".cursor/rules/ai-knowledge-maintainer.mdc",
+        "github": ".github/instructions/ai-knowledge-maintainer.instructions.md"
+      },
+      "toolConfig": {
+        "cursor": { "globs": "ai/**/*,scripts/ai/**/*.mjs,.opencode/skills/**/*.md,.cursor/rules/*.mdc,.github/instructions/*.md", "alwaysApply": false },
+        "github": { "applyTo": "ai/**/*,scripts/ai/**/*.mjs,.opencode/skills/**/*.md,.cursor/rules/*.mdc,.github/instructions/*.md" }
+      }
+    }
+  ]
+}

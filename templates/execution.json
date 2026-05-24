@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "goals": "GOALS.md",
+  "model": "openai/gpt-5.5",
+  "variant": "xhigh",
+  "updatedAt": null,
+  "queue": [
+    {
+      "id": "bootstrap-first-step",
+      "phase": "Bootstrap",
+      "title": "Define the first implementation step",
+      "scope": ["README.md"],
+      "prompt": "Replace this placeholder with the first concrete implementation step for this project.",
+      "acceptance": ["the step has clear acceptance criteria"],
+      "verification": ["npm run check"],
+      "commitMessage": "Implement first roadmap step"
+    }
+  ],
+  "history": [],
+  "blocked": []
+}

@@ -1,0 +1,21 @@
+{
+  "name": "roadrunner",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "roadrunner": "src/cli.mjs"
+  },
+  "scripts": {
+    "ai:check": "node scripts/ai/sync-routes.mjs --check",
+    "ai:sync": "node scripts/ai/sync-routes.mjs",
+    "check": "node --check src/*.mjs src/providers/*.mjs scripts/ai/sync-routes.mjs && npm test && npm run ai:check",
+    "format": "npm run ai:sync",
+    "lint": "npm run ai:check",
+    "test": "node --test tests/*.test.mjs",
+    "typecheck": "node --check src/*.mjs src/providers/*.mjs scripts/ai/sync-routes.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
