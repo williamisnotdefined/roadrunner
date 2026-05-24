@@ -11,6 +11,14 @@ describe("queue", () => {
     const queueFile = sampleQueue();
 
     expect(validateQueueFile(queueFile)).toEqual([]);
+    expect(validateQueueFile({ ...queueFile, model: "custom", variant: "low" }, { model: "custom", variant: "low" })).toEqual([]);
+  });
+
+  test("rejects duplicate step IDs across queue state", () => {
+    const queueFile = sampleQueue();
+    queueFile.history.push({ ...queueFile.queue[0]! });
+
+    expect(validateQueueFile(queueFile)).toContain("history[0].id duplicates queue[0].id.");
   });
 
   test("returns queue[0] as next step", () => {

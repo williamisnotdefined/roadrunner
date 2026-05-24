@@ -115,6 +115,35 @@ describe("process registry", () => {
     }
   });
 
+  test("does not signal tampered process group ids", async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "roadrunner-process-tampered-pgid-"));
+    const child = spawn("sleep", ["60"], { detached: true, stdio: "ignore" });
+    const context = await loadContext(tempDir, { _: [] });
+    const kill = vi.spyOn(process, "kill").mockImplementation(() => true);
+
+    try {
+      expect(child.pid).toBeTruthy();
+      await registerProcess({ command: ["sleep", "60"], cwd: tempDir, pid: child.pid!, role: "test" }, context);
+      const records = await readProcesses(context);
+      records[0]!.processGroupId = child.pid! + 1;
+      await writeJson(context.paths.processRegistry, { processes: records });
+
+      expect(await cleanupProcesses(context)).toEqual([{ pid: child.pid, role: "test", status: "invalid-process-group" }]);
+      expect(kill).not.toHaveBeenCalled();
+      expect(await readProcesses(context)).toEqual([]);
+    } finally {
+      kill.mockRestore();
+      if (child.pid) {
+        try {
+          process.kill(-child.pid, "SIGKILL");
+        } catch {
+          // already gone
+        }
+      }
+      await rm(tempDir, { force: true, recursive: true });
+    }
+  });
+
   test("handles missing and corrupt registry files", async () => {
     const tempDir = await mkdtemp(path.join(os.tmpdir(), "roadrunner-process-corrupt-"));
     try {

@@ -28,24 +28,39 @@ export interface QueueFile {
   version: 2;
 }
 
-export function validateQueueFile(queueFile: unknown): string[] {
+export interface QueueValidationOptions {
+  model?: string;
+  variant?: string;
+}
+
+export function validateQueueFile(queueFile: unknown, { model = defaultModel, variant = defaultVariant }: QueueValidationOptions = {}): string[] {
   const errors: string[] = [];
   const value = queueFile as Partial<QueueFile> | null | undefined;
 
   if (value?.version !== 2) errors.push("queue.version must be 2.");
-  if (value?.model !== defaultModel) errors.push(`queue.model must be ${defaultModel}.`);
-  if (value?.variant !== defaultVariant) errors.push(`queue.variant must be ${defaultVariant}.`);
+  if (value?.model !== model) errors.push(`queue.model must be ${model}.`);
+  if (value?.variant !== variant) errors.push(`queue.variant must be ${variant}.`);
   if (!Array.isArray(value?.queue)) errors.push("queue.queue must be an array.");
   if (!Array.isArray(value?.history)) errors.push("queue.history must be an array.");
   if (!Array.isArray(value?.blocked)) errors.push("queue.blocked must be an array.");
 
+  const seen = new Map<string, string>();
+
   for (const [collection, records] of Object.entries({
-    blocked: value?.blocked ?? [],
-    history: value?.history ?? [],
     queue: value?.queue ?? [],
+    history: value?.history ?? [],
+    blocked: value?.blocked ?? [],
   })) {
     if (!Array.isArray(records)) continue;
-    for (const [index, step] of records.entries()) validateStep(step, `${collection}[${index}]`, errors);
+    for (const [index, step] of records.entries()) {
+      const field = `${collection}[${index}]`;
+      validateStep(step, field, errors);
+      if (typeof step?.id !== "string" || step.id.length === 0) continue;
+
+      const firstField = seen.get(step.id);
+      if (firstField) errors.push(`${field}.id duplicates ${firstField}.id.`);
+      else seen.set(step.id, field);
+    }
   }
 
   return errors;

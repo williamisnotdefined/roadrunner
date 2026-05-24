@@ -2,7 +2,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
-import { loadContext, readJson, type ProjectContext } from "../src/config.js";
+import { loadContext, pathExists, readJson, type ProjectContext } from "../src/config.js";
 import { parseStatusPaths, plan, run as runRoadrunner, status, verify } from "../src/runner.js";
 import type { QueueFile, QueueStep } from "../src/queue.js";
 import { commitAll, createFakeOpenCodeBin, createInitializedProject, initGit, removeDir, run, sampleRoadmap, tempDir, withPath } from "./helpers.js";
@@ -16,6 +16,12 @@ afterEach(() => {
 describe("runner", () => {
   test("parses git status paths including renames", () => {
     expect(parseStatusPaths(" M file.txt\nR  old.txt -> new.txt\n")).toEqual(["file.txt", "new.txt"]);
+    expect(parseStatusPaths(" M file with spaces.txt\0R  new name.txt\0old name.txt\0C  copy.txt\0source.txt\0?? weird -> name.txt\0")).toEqual([
+      "file with spaces.txt",
+      "new name.txt",
+      "copy.txt",
+      "weird -> name.txt",
+    ]);
   });
 
   test("plans the current step without skipped permissions", async () => {
@@ -122,6 +128,29 @@ describe("runner", () => {
     }
   });
 
+  test("status falls back to default model and variant", async () => {
+    const project = await setupRunnerProject("success");
+    try {
+      project.context.config.model = undefined as never;
+      project.context.config.variant = undefined as never;
+
+      expect((await status(project.context)).queued).toBe(1);
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
+  test("run rejects invalid project state before agents", async () => {
+    const project = await setupRunnerProject("success");
+    try {
+      await writeFile(project.context.paths.queue, `${JSON.stringify({ version: 1 }, null, 2)}\n`);
+
+      await expect(runRoadrunner(project.context)).rejects.toThrow(/queue.version must be 2/);
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
   test("requires a clean worktree", async () => {
     const project = await setupRunnerProject("success");
     try {
@@ -133,10 +162,33 @@ describe("runner", () => {
     }
   });
 
+  test("rejects planning agents that change files", async () => {
+    const project = await setupRunnerProject("plan-dirty");
+    try {
+      await expect(runRoadrunner(project.context)).rejects.toThrow(/Planning changed files: plan-dirty.txt/);
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
+  test("rejects provider changes to GOALS.md", async () => {
+    const project = await setupRunnerProject("goals-dirty");
+    try {
+      await expect(runRoadrunner(project.context)).rejects.toThrow(/GOALS\.md is read-only/);
+      const queue = await readJson<QueueFile>(project.context.paths.queue);
+      expect(queue.queue.map((step) => step.id)).toEqual(["first-step"]);
+      expect(queue.history).toEqual([]);
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
   test("reports renamed dirty files during preflight", async () => {
     const project = await setupRunnerProject("success");
     try {
-      await run("git", ["mv", "GOALS.md", "GOALS2.md"], project.directory);
+      await writeFile(path.join(project.directory, "old.txt"), "old\n");
+      await commitAll(project.directory, "Add old file");
+      await run("git", ["mv", "old.txt", "new.txt"], project.directory);
 
       await expect(runRoadrunner(project.context)).rejects.toThrow(/clean git worktree/);
     } finally {
@@ -172,6 +224,9 @@ describe("runner", () => {
       await writeFile(path.join(project.directory, ".git/index.lock"), "locked\n");
 
       await expect(runRoadrunner(project.context)).rejects.toThrow(/git add failed/);
+      const queue = await readJson<QueueFile>(project.context.paths.queue);
+      expect(queue.queue.map((step) => step.id)).toEqual(["first-step"]);
+      expect(queue.history).toEqual([]);
     } finally {
       await removeDir(project.directory);
     }
@@ -184,6 +239,9 @@ describe("runner", () => {
       await writeFile(hookPath, "#!/bin/sh\nexit 1\n", { mode: 0o755 });
 
       await expect(runRoadrunner(project.context)).rejects.toThrow(/git commit failed/);
+      const queue = await readJson<QueueFile>(project.context.paths.queue);
+      expect(queue.queue.map((step) => step.id)).toEqual(["first-step"]);
+      expect(queue.history).toEqual([]);
     } finally {
       await removeDir(project.directory);
     }
@@ -215,6 +273,8 @@ describe("runner", () => {
     const project = await setupRunnerProject("reconcile-extra");
     try {
       await expect(runRoadrunner(project.context)).rejects.toThrow(/outside .roadrunner\/queue.json/);
+      expect(await pathExists(path.join(project.directory, "unexpected.txt"))).toBe(false);
+      expect((await run("git", ["status", "--short"], project.directory)).stdout).toBe("");
     } finally {
       await removeDir(project.directory);
     }
@@ -234,6 +294,34 @@ describe("runner", () => {
     }
   });
 
+  test("rejects dirty worktrees before reconciliation", async () => {
+    const project = await setupRunnerProject("success");
+    try {
+      const hookPath = path.join(project.directory, ".git/hooks/post-commit");
+      await writeFile(hookPath, "#!/bin/sh\nprintf dirty > post-commit-dirty.txt\n", { mode: 0o755 });
+
+      await expect(runRoadrunner(project.context)).rejects.toThrow(/Expected clean worktree before reconciliation/);
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
+  test("restores queue-only reconciliation changes when the reconcile commit fails", async () => {
+    const project = await setupRunnerProject("reconcile-queue");
+    try {
+      const hookPath = path.join(project.directory, ".git/hooks/commit-msg");
+      await writeFile(hookPath, "#!/bin/sh\ngrep -q 'Reconcile Roadrunner queue' \"$1\" && exit 1\nexit 0\n", { mode: 0o755 });
+
+      await expect(runRoadrunner(project.context)).rejects.toThrow(/git commit failed for reconcile-commit/);
+      const queue = await readJson<QueueFile>(project.context.paths.queue);
+      expect(queue.source).toBe("ROADMAP.md");
+      expect(queue.history.map((step) => step.id)).toEqual(["first-step"]);
+      expect((await run("git", ["status", "--short"], project.directory)).stdout).toBe("");
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
   test("rejects failed reconciliation provider runs", async () => {
     const project = await setupRunnerProject("reconcile-fail");
     try {
@@ -243,10 +331,23 @@ describe("runner", () => {
     }
   });
 
+  test("cleans changes from failed reconciliation provider runs", async () => {
+    const project = await setupRunnerProject("reconcile-fail-dirty");
+    try {
+      await expect(runRoadrunner(project.context)).rejects.toThrow(/Reconciliation failed/);
+      expect(await pathExists(path.join(project.directory, "unexpected.txt"))).toBe(false);
+      expect((await run("git", ["status", "--short"], project.directory)).stdout).toBe("");
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
   test("rejects invalid queue produced during reconciliation", async () => {
     const project = await setupRunnerProject("reconcile-invalid");
     try {
       await expect(runRoadrunner(project.context)).rejects.toThrow(/queue.version must be 2/);
+      expect((await readJson<QueueFile>(project.context.paths.queue)).version).toBe(2);
+      expect((await run("git", ["status", "--short"], project.directory)).stdout).toBe("");
     } finally {
       await removeDir(project.directory);
     }

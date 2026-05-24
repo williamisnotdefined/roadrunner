@@ -98,12 +98,16 @@ if (mode === "fix-fail" && prompt.includes("Roadrunner Fix Failure")) {
 }
 
 if (prompt.includes("Roadrunner Plan Step")) {
+  if (mode === "plan-dirty") fs.writeFileSync("plan-dirty.txt", "nope\\n");
   console.log("Plan: implement the requested step.");
   process.exit(0);
 }
 
 if (prompt.includes("Roadrunner Implement Step")) {
-  if (mode === "todo-e2e") {
+  if (mode === "goals-dirty") {
+    fs.writeFileSync("GOALS.md", "changed\\n");
+    fs.writeFileSync("marker.txt", "ok\\n");
+  } else if (mode === "todo-e2e") {
     fs.mkdirSync("src", { recursive: true });
     fs.mkdirSync("test", { recursive: true });
     fs.writeFileSync("package.json", JSON.stringify({ type: "module", scripts: { test: "node --test" } }, null, 2) + "\\n");
@@ -163,6 +167,11 @@ if (prompt.includes("Roadrunner Fix Failure")) {
 }
 
 if (prompt.includes("Roadrunner Reconcile Queue")) {
+  if (mode === "reconcile-fail-dirty") {
+    fs.writeFileSync("unexpected.txt", "nope\\n");
+    console.error("reconcile failed");
+    process.exit(9);
+  }
   if (mode === "reconcile-fail") {
     console.error("reconcile failed");
     process.exit(9);

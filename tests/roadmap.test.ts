@@ -20,6 +20,13 @@ describe("roadmap", () => {
     expect(queueFile.queue[0]?.verification).toEqual(["npm run check"]);
   });
 
+  test("parses roadmap with configured model and variant", () => {
+    const queueFile = queueFileFromRoadmap(sampleRoadmap(), { goalsPath: "GOALS.md", model: "custom-model", sourcePath: "ROADMAP.md", variant: "low" });
+
+    expect(queueFile.model).toBe("custom-model");
+    expect(queueFile.variant).toBe("low");
+  });
+
   test("parses alternate heading forms and comma-separated scope", () => {
     const queueFile = queueFileFromRoadmap(
       `# Roadmap
@@ -72,7 +79,6 @@ Commit: Build third step
 
   test("rejects roadmaps without steps and duplicate IDs", () => {
     expect(() => queueFileFromRoadmap("# Empty\n", { goalsPath: "GOALS.md", sourcePath: "ROADMAP.md" })).toThrow(/at least one step/);
-    expect(() => queueFileFromRoadmap(sampleRoadmap(), { goalsPath: "GOALS.md", model: "bad", sourcePath: "ROADMAP.md" })).toThrow(/queue.model/);
     expect(() =>
       queueFileFromRoadmap(`${sampleRoadmap()}\n${sampleRoadmap()}`, { goalsPath: "GOALS.md", sourcePath: "ROADMAP.md" }),
     ).toThrow(/duplicate roadmap step id/);
@@ -131,6 +137,22 @@ Commit: Build third step
 
       expect(imported.queue.map((step) => step.id)).toEqual(["first-step"]);
       expect(JSON.parse(await readFile(context.paths.queue, "utf8")).queue).toHaveLength(1);
+    } finally {
+      await rm(tempDir, { force: true, recursive: true });
+    }
+  });
+
+  test("importRoadmap accepts configured model and variant", async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "roadrunner-roadmap-custom-model-"));
+    try {
+      await writeFile(path.join(tempDir, "ROADMAP.md"), sampleRoadmap());
+      await writeJson(path.join(tempDir, ".roadrunner/config.json"), { model: "custom-model", variant: "low" });
+      const context = await loadContext(tempDir, { _: [] });
+
+      const imported = await importRoadmap(context);
+
+      expect(imported.model).toBe("custom-model");
+      expect(imported.variant).toBe("low");
     } finally {
       await rm(tempDir, { force: true, recursive: true });
     }

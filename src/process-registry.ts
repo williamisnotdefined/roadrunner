@@ -49,12 +49,18 @@ export async function cleanupProcesses(context: ProjectContext, { force = false 
       continue;
     }
 
-    const signaled = signalProcessGroup(record.processGroupId ?? record.pid, "SIGTERM");
+    const processGroupId = safeProcessGroupId(record);
+    if (processGroupId === null) {
+      results.push({ pid: record.pid, role: record.role, status: "invalid-process-group" });
+      continue;
+    }
+
+    const signaled = signalProcessGroup(processGroupId, "SIGTERM");
     results.push({ pid: record.pid, role: record.role, signal: "SIGTERM", status: signaled ? "signaled" : "missing" });
     await sleep(1000);
 
     if (force && (await isSameProcess(record))) {
-      signalProcessGroup(record.processGroupId ?? record.pid, "SIGKILL");
+      signalProcessGroup(processGroupId, "SIGKILL");
       results.push({ pid: record.pid, role: record.role, signal: "SIGKILL", status: "signaled" });
     }
 
@@ -86,6 +92,11 @@ async function readProcessInfo(pid: number): Promise<{ startTimeTicks: string } 
   } catch {
     return null;
   }
+}
+
+function safeProcessGroupId(record: ProcessRecord): number | null {
+  if (record.processGroupId === undefined) return record.pid;
+  return record.processGroupId === record.pid ? record.processGroupId : null;
 }
 
 function signalProcessGroup(pid: number, signal: NodeJS.Signals): boolean {

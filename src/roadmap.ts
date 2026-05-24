@@ -32,12 +32,12 @@ export async function importRoadmap(context: ProjectContext): Promise<QueueFile>
   const parsed = await queueFileFromRoadmapFile(context);
   const existing = (await pathExists(context.paths.queue)) ? await readQueue(context) : null;
   if (existing) {
-    const errors = validateQueueFile(existing);
+    const errors = validateQueueFile(existing, { model: context.config.model, variant: context.config.variant });
     if (errors.length > 0) throw new Error(errors.join("\n"));
   }
 
   const queueFile = mergeQueueState(parsed, existing);
-  const errors = validateQueueFile(queueFile);
+  const errors = validateQueueFile(queueFile, { model: context.config.model, variant: context.config.variant });
   /* v8 ignore next -- parsed and existing queue state are both validated before merging. */
   if (errors.length > 0) throw new Error(errors.join("\n"));
 
@@ -81,7 +81,8 @@ export function queueFileFromRoadmap(markdown: string, options: RoadmapOptions):
     blocked: [],
   };
 
-  const validationErrors = validateQueueFile(queueFile);
+  const validationErrors = validateQueueFile(queueFile, { model: queueFile.model, variant: queueFile.variant });
+  /* v8 ignore next -- step parsing validates fields before this defensive schema check. */
   if (validationErrors.length > 0) throw new Error(validationErrors.join("\n"));
 
   return queueFile;

@@ -45,7 +45,7 @@ export async function main(argv = process.argv.slice(2), { cwd = process.cwd(), 
       out(formatStep(nextStep(queueFile)));
     } else if (command === "check") {
       const queueFile = await readQueue(context);
-      const errors = [...(await validateGoals(context)), ...validateQueueFile(queueFile)];
+      const errors = [...(await validateGoals(context)), ...validateQueueFile(queueFile, { model: context.config.model, variant: context.config.variant })];
       if (errors.length > 0) throw new Error(errors.join("\n"));
       out("Roadrunner project is valid.");
     } else if (command === "import-roadmap") {

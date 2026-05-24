@@ -20,6 +20,8 @@ export interface ProviderRunResult {
   output: string;
 }
 
+const nestedOpenCodeEnvKeys = ["OPENCODE_SESSION", "OPENCODE_SESSION_ID", "OPENCODE_SERVER", "OPENCODE_WORKSPACE", "OPENCODE_APP_INFO"];
+
 export class OpenCodeProvider {
   readonly model: string;
   readonly variant: string;
@@ -41,10 +43,13 @@ export class OpenCodeProvider {
     if (skipPermissions) args.push("--dangerously-skip-permissions");
     args.push(prompt);
 
+    const childEnv: NodeJS.ProcessEnv = { ...process.env, ...env, OPENCODE_MODEL: this.model, OPENCODE_VARIANT: this.variant };
+    for (const key of nestedOpenCodeEnvKeys) delete childEnv[key];
+
     const child = spawn("opencode", args, {
       cwd: context.root,
       detached: true,
-      env: { ...process.env, ...env, OPENCODE_MODEL: this.model, OPENCODE_VARIANT: this.variant },
+      env: childEnv,
     });
 
     let output = "";
@@ -92,7 +97,7 @@ export class OpenCodeProvider {
 }
 
 function nestedOpenCodeIndicator(env: NodeJS.ProcessEnv): string | null {
-  for (const key of ["OPENCODE_SESSION", "OPENCODE_SESSION_ID", "OPENCODE_SERVER", "OPENCODE_WORKSPACE", "OPENCODE_APP_INFO"]) {
+  for (const key of nestedOpenCodeEnvKeys) {
     if (env[key]) return key;
   }
   return null;
