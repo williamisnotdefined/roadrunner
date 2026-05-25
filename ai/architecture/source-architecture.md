@@ -17,3 +17,5 @@ Roadrunner source code should stay organized around clear responsibility boundar
 - Test files may be larger, but should target 350 lines or fewer before splitting by behavior.
 
 These are review guardrails, not mechanical goals. Prefer small cohesive modules over arbitrary splitting.
+
+`npm run size:check` enforces the current guardrails for authored TypeScript: production `src/**/*.ts` files are limited to 300 lines and `tests/**/*.ts` files are limited to 400 lines.

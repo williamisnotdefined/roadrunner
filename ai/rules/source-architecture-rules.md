@@ -9,6 +9,7 @@
 - Keep process spawning, timeout handling, process-group signaling, and process registry writes behind infrastructure helpers.
 - Use explicit ports or interfaces only when they protect a real boundary, such as providers or process execution.
 - Treat 250 lines as the target production module size and 300 lines as the review threshold.
+- Keep `npm run size:check` passing when adding or growing authored TypeScript files.
 - Update or split tests along the same behavioral boundaries as source refactors.
 
 ## Never

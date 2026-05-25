@@ -8,30 +8,7 @@ import { defaultModel, defaultVariant, type ProjectContext } from "../config.js"
 import { registerProcess, unregisterProcess } from "../process-registry.js";
 import { writePrivateFile } from "../run-artifacts.js";
 import { openCodeCheckTimeoutMs, providerTimeoutMs } from "../timeouts.js";
-
-export interface ProviderRunInput {
-  agent: string;
-  context: ProjectContext;
-  env?: Record<string, string>;
-  logPath: string;
-  onStart?: (event: ProviderStartEvent) => void;
-  prompt: string;
-  role: string;
-  skipPermissions?: boolean;
-}
-
-export interface ProviderStartEvent {
-  command: string[];
-  debug: boolean;
-  logPath: string;
-  pid: number | null;
-  role: string;
-}
-
-export interface ProviderRunResult {
-  code: number | null;
-  output: string;
-}
+import type { Provider, ProviderRunInput, ProviderRunResult } from "./provider.js";
 
 const nestedOpenCodeEnvKeys = ["OPENCODE_SESSION", "OPENCODE_SESSION_ID", "OPENCODE_SERVER", "OPENCODE_WORKSPACE", "OPENCODE_APP_INFO"];
 const forceKillDelayMs = 1_000;
@@ -39,7 +16,7 @@ const promptMessage = "Follow the attached Roadrunner prompt file exactly.";
 const execFileAsync = promisify(execFile);
 const requiredRunFlags = ["--model", "--variant", "--agent", "--file", "--dangerously-skip-permissions"];
 
-export class OpenCodeProvider {
+export class OpenCodeProvider implements Provider {
   readonly model: string;
   readonly variant: string;
 
