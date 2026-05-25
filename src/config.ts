@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { type CliArgs, stringOption } from "./args.js";
+import { defaultAutoRestartIdleMs, defaultMaxAutoRestartsPerStep } from "./restart-policy.js";
 
 export const defaultModel = "openai/gpt-5.5";
 export const defaultVariant = "xhigh";
@@ -40,7 +41,9 @@ export interface ProjectPaths {
 
 export interface RoadrunnerConfig {
   allowNestedOpenCode?: boolean;
+  autoRestartIdleMs?: number;
   dangerouslySkipPermissions?: boolean;
+  maxAutoRestartsPerStep?: number;
   provider?: string;
   model?: string;
   variant?: string;
@@ -48,7 +51,13 @@ export interface RoadrunnerConfig {
 }
 
 export interface ProjectContext {
-  config: Required<Pick<RoadrunnerConfig, "provider" | "model" | "variant">> & { allowNestedOpenCode: boolean; dangerouslySkipPermissions: boolean; paths?: PathOverrides };
+  config: Required<Pick<RoadrunnerConfig, "provider" | "model" | "variant">> & {
+    allowNestedOpenCode: boolean;
+    autoRestartIdleMs: number;
+    dangerouslySkipPermissions: boolean;
+    maxAutoRestartsPerStep: number;
+    paths?: PathOverrides;
+  };
   paths: ProjectPaths;
   root: string;
 }
@@ -75,7 +84,9 @@ export async function loadContext(projectRoot = process.cwd(), args: CliArgs = {
   return {
     config: {
       allowNestedOpenCode: fileConfig.allowNestedOpenCode ?? false,
+      autoRestartIdleMs: fileConfig.autoRestartIdleMs ?? defaultAutoRestartIdleMs,
       dangerouslySkipPermissions: fileConfig.dangerouslySkipPermissions ?? false,
+      maxAutoRestartsPerStep: fileConfig.maxAutoRestartsPerStep ?? defaultMaxAutoRestartsPerStep,
       provider: fileConfig.provider ?? "opencode",
       model: fileConfig.model ?? defaultModel,
       variant: fileConfig.variant ?? defaultVariant,
@@ -125,7 +136,7 @@ export function validateRoadrunnerConfig(value: unknown, filePath = "Roadrunner 
   const errors: string[] = [];
   if (!isRecord(value)) return [`${filePath} must be a JSON object.`];
 
-  const allowedConfigKeys = new Set(["allowNestedOpenCode", "dangerouslySkipPermissions", "provider", "model", "variant", "paths"]);
+  const allowedConfigKeys = new Set(["allowNestedOpenCode", "autoRestartIdleMs", "dangerouslySkipPermissions", "maxAutoRestartsPerStep", "provider", "model", "variant", "paths"]);
   for (const key of Object.keys(value)) {
     if (!allowedConfigKeys.has(key)) errors.push(`${filePath}.${key} is not a supported config key.`);
   }
@@ -136,6 +147,11 @@ export function validateRoadrunnerConfig(value: unknown, filePath = "Roadrunner 
 
   for (const key of ["provider", "model", "variant"] as const) {
     if (value[key] !== undefined && (typeof value[key] !== "string" || value[key].length === 0)) errors.push(`${filePath}.${key} must be a non-empty string.`);
+  }
+
+  for (const key of ["autoRestartIdleMs", "maxAutoRestartsPerStep"] as const) {
+    const numericValue = value[key];
+    if (numericValue !== undefined && (typeof numericValue !== "number" || !Number.isSafeInteger(numericValue) || numericValue < 0)) errors.push(`${filePath}.${key} must be a non-negative integer.`);
   }
 
   if (value.paths !== undefined) {

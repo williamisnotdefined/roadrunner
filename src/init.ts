@@ -22,7 +22,9 @@ export async function initProject(context: ProjectContext): Promise<void> {
   if (!(await pathExists(context.paths.config))) {
     await writeJson(context.paths.config, {
       allowNestedOpenCode: false,
+      autoRestartIdleMs: context.config.autoRestartIdleMs,
       dangerouslySkipPermissions: false,
+      maxAutoRestartsPerStep: context.config.maxAutoRestartsPerStep,
       provider: "opencode",
       model: defaultModel,
       variant: defaultVariant,

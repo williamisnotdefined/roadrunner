@@ -46,6 +46,8 @@ export type RoadrunnerRunEvent =
   | { step: QueueStep; type: "reconcile" }
   | { step: QueueStep; type: "step" }
   | { step: QueueStep; type: "step-complete" }
+  | { idleMs: number; maxRestarts: number; phase: RoadrunnerRunPhase | null; restart: number; step: QueueStep; type: "task-auto-restart-requested" }
+  | { idleMs: number; maxRestarts: number; phase: RoadrunnerRunPhase | null; step: QueueStep; type: "task-auto-restart-limit-exceeded" }
   | { attempt: number; step: QueueStep; type: "task-restart" }
   | { elapsedMs: number; phase: RoadrunnerRunPhase | null; step: QueueStep; type: "task-restart-requested" }
   | { attempt: "fixed" | "initial"; step: QueueStep; type: "verify" }

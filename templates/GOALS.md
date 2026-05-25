@@ -5,7 +5,7 @@ Describe the final product goal here. Roadrunner loads this file once at the sta
 The autonomous loop should move through:
 
 ```txt
-Plan -> Execute -> Verify -> Reconcile
+Plan -> Execute -> Verify -> Reconcile/Optimize
 ```
 
 ## Required Outcome

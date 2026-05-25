@@ -1,6 +1,10 @@
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, test } from "vitest";
 
-import { parseStatusEntries, parseStatusPaths } from "../src/mutation-fingerprint.js";
+import { loadContext } from "../src/config.js";
+import { parseStatusEntries, parseStatusPaths, projectMutationFingerprint } from "../src/mutation-fingerprint.js";
 
 describe("mutation fingerprint", () => {
   test("parses git status paths including renames", () => {
@@ -15,5 +19,23 @@ describe("mutation fingerprint", () => {
       { path: "file.txt", status: " M" },
       { path: "new.txt", status: "R " },
     ]);
+  });
+
+  test("can ignore allowed mutation paths outside git repositories", async () => {
+    const directory = await import("node:fs/promises").then((fs) => fs.mkdtemp(path.join(os.tmpdir(), "roadrunner-fingerprint-ignore-")));
+    try {
+      await mkdir(path.join(directory, ".roadrunner"), { recursive: true });
+      const context = await loadContext(directory, { _: [] });
+      await writeFile(context.paths.queue, "before\n");
+      const before = await projectMutationFingerprint(context, { ignoredPaths: [context.paths.queue] });
+
+      await writeFile(context.paths.queue, "after\n");
+      expect(await projectMutationFingerprint(context, { ignoredPaths: [context.paths.queue] })).toBe(before);
+
+      await writeFile(path.join(directory, "unexpected.txt"), "changed\n");
+      expect(await projectMutationFingerprint(context, { ignoredPaths: [context.paths.queue] })).not.toBe(before);
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
   });
 });

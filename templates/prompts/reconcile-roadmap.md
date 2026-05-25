@@ -1,10 +1,32 @@
-# Roadrunner Reconcile Queue
+# Roadrunner Reconcile And Optimize Queue
 
-Review project state and update the configured Roadrunner queue file if future queue changes are needed.
+Review project state and update the configured Roadrunner queue file as a queue strategist.
 
-Preserve `history` and `blocked` exactly.
+The goal is not only to keep the queue valid. Use this pass to optimize the remaining roadmap so future Roadrunner cycles work on meaningful deliverable capabilities instead of tiny mechanical edits.
 
-Do not move, remove, complete, block, or edit `queue[0]`. Roadrunner owns completion of the current step after reconciliation succeeds. Only change future `queue` items after `queue[0]` when needed.
+Preserve `version`, `model`, `variant`, `history`, `blocked`, and `queue[0]` exactly. Roadrunner owns completion of the current step after reconciliation succeeds.
+
+Only edit future items in `queue[1..]` and only edit the configured queue JSON file. Do not edit source code, docs, prompts, tests, configs, lockfiles, generated files, or runtime artifacts.
+
+When useful, optimize `queue[1..]` by:
+
+- grouping related microtasks that belong to the same capability;
+- splitting tasks that cross too many boundaries or cannot be verified coherently;
+- removing duplicate or obsolete tasks already satisfied by the current code;
+- adding discovered tasks required by the goals and current implementation state;
+- reordering tasks to reduce dependency churn and repeated verification;
+- tightening prompts, acceptance criteria, scope, and verification commands.
+
+Prefer steps that are large enough to justify a full `Plan -> Execute -> Verify -> Reconcile/Optimize` cycle and small enough to verify safely.
+
+In your response, include a short Markdown summary with these headings before or after editing the queue file:
+
+- `Grouped`
+- `Split`
+- `Removed`
+- `Added`
+- `Reordered`
+- `Unchanged`
 
 ## Goals
 

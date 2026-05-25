@@ -1,10 +1,12 @@
 import path from "node:path";
 
+import { recordAttemptActivity, startAutoRestartWatchdog, type RestartableAttemptState } from "./auto-restart-watchdog.js";
 import type { ProjectContext } from "./config.js";
 import { cleanupProcesses } from "./process-registry.js";
 import { formatStep, markDone, type QueueFile, type QueueStep, writeQueue } from "./queue.js";
 import { blockStep } from "./queue-service.js";
 import { providerFor } from "./providers/index.js";
+import { automaticRestartBlockedReason, resolveAutoRestartPolicy } from "./restart-policy.js";
 import type { RunSnapshot } from "./run-snapshot.js";
 import { createLogDir, renderPrompt, writePrivateFile } from "./run-artifacts.js";
 import { planStep } from "./runner-planning.js";
@@ -13,13 +15,7 @@ import { fixFailure, verify as verifyStep } from "./runner-verification.js";
 import { providerEnvForDeadline } from "./timeouts.js";
 import type { RoadrunnerRunActivityEvent, RoadrunnerRunControl, RoadrunnerRunEvent, RoadrunnerRunPhase } from "./runner.js";
 
-export interface CurrentAttemptState {
-  abortController: AbortController;
-  phase: RoadrunnerRunPhase | null;
-  restartRequested: boolean;
-  startedAt: number;
-  step: QueueStep;
-}
+export interface CurrentAttemptState extends RestartableAttemptState {}
 
 export interface RunControlState {
   current: CurrentAttemptState | null;
@@ -43,6 +39,7 @@ export function createRunControl(state: RunControlState, emitEvent: (event: Road
       if (!current) return false;
       if (current.restartRequested) return true;
 
+      current.restartReason = { type: "manual" };
       current.restartRequested = true;
       emitEvent({ elapsedMs: Date.now() - current.startedAt, phase: current.phase, step: current.step, type: "task-restart-requested" });
       current.abortController.abort();
@@ -53,9 +50,21 @@ export function createRunControl(state: RunControlState, emitEvent: (event: Road
 
 export async function runStepWithRestarts({ context, controlState, deadline, emitActivity, emitEvent, queueFile, snapshot, step }: RunStepInput): Promise<void> {
   let attempt = 1;
+  let autoRestartCount = 0;
+  const autoRestartPolicy = resolveAutoRestartPolicy(context.config);
 
   while (true) {
     const attemptState = startAttempt(controlState, step);
+    const stopAutoRestartWatchdog = startAutoRestartWatchdog({
+      current: attemptState,
+      emitEvent,
+      incrementRestartCount: () => {
+        autoRestartCount += 1;
+        return autoRestartCount;
+      },
+      policy: autoRestartPolicy,
+      restartCount: () => autoRestartCount,
+    });
 
     try {
       setAttemptPhase(attemptState, "plan");
@@ -64,8 +73,11 @@ export async function runStepWithRestarts({ context, controlState, deadline, emi
         () =>
           planStep(context, step, snapshot, {
             deadline,
-            onOutput: activityEmitter(emitActivity, step, "plan"),
-            onProviderStart: (event) => emitEvent({ ...event, step, type: "provider-start" }),
+            onOutput: activityEmitter(attemptState, emitActivity, step, "plan"),
+            onProviderStart: (event) => {
+              recordAttemptActivity(attemptState);
+              emitEvent({ ...event, step, type: "provider-start" });
+            },
             signal: attemptState.abortController.signal,
           }),
         attemptState,
@@ -93,8 +105,11 @@ export async function runStepWithRestarts({ context, controlState, deadline, emi
             context,
             env: providerEnvForDeadline(deadline),
             logPath: path.join(logDir, "implement.opencode.log"),
-            onOutput: activityEmitter(emitActivity, step, "implement"),
-            onStart: (event) => emitEvent({ ...event, step, type: "provider-start" }),
+            onOutput: activityEmitter(attemptState, emitActivity, step, "implement"),
+            onStart: (event) => {
+              recordAttemptActivity(attemptState);
+              emitEvent({ ...event, step, type: "provider-start" });
+            },
             prompt,
             role: "implement",
             signal: attemptState.abortController.signal,
@@ -110,7 +125,7 @@ export async function runStepWithRestarts({ context, controlState, deadline, emi
       setAttemptPhase(attemptState, "verify");
       emitEvent({ attempt: "initial", step, type: "verify" });
       let verification = await withRestartCheck(
-        () => verifyStep(context, step, logDir, { deadline, onOutput: activityEmitter(emitActivity, step, "verify"), signal: attemptState.abortController.signal }),
+        () => verifyStep(context, step, logDir, { deadline, onOutput: activityEmitter(attemptState, emitActivity, step, "verify"), signal: attemptState.abortController.signal }),
         attemptState,
       );
       if (!verification.ok) {
@@ -120,8 +135,11 @@ export async function runStepWithRestarts({ context, controlState, deadline, emi
           () =>
             fixFailure(context, step, snapshot, planResult.result.output, verification.output, logDir, {
               deadline,
-              onOutput: activityEmitter(emitActivity, step, "fix"),
-              onProviderStart: (event) => emitEvent({ ...event, step, type: "provider-start" }),
+              onOutput: activityEmitter(attemptState, emitActivity, step, "fix"),
+              onProviderStart: (event) => {
+                recordAttemptActivity(attemptState);
+                emitEvent({ ...event, step, type: "provider-start" });
+              },
               signal: attemptState.abortController.signal,
             }),
           attemptState,
@@ -133,7 +151,7 @@ export async function runStepWithRestarts({ context, controlState, deadline, emi
             () =>
               verifyStep(context, step, logDir, {
                 deadline,
-                onOutput: activityEmitter(emitActivity, step, "verify-fixed"),
+                onOutput: activityEmitter(attemptState, emitActivity, step, "verify-fixed"),
                 prefix: "verify-fixed",
                 signal: attemptState.abortController.signal,
               }),
@@ -154,8 +172,11 @@ export async function runStepWithRestarts({ context, controlState, deadline, emi
           () =>
             reconcileQueue(context, step, snapshot, logDir, {
               deadline,
-              onOutput: activityEmitter(emitActivity, step, "reconcile"),
-              onProviderStart: (event) => emitEvent({ ...event, step, type: "provider-start" }),
+              onOutput: activityEmitter(attemptState, emitActivity, step, "reconcile"),
+              onProviderStart: (event) => {
+                recordAttemptActivity(attemptState);
+                emitEvent({ ...event, step, type: "provider-start" });
+              },
               signal: attemptState.abortController.signal,
             }),
           attemptState,
@@ -173,22 +194,32 @@ export async function runStepWithRestarts({ context, controlState, deadline, emi
       return;
     } catch (error) {
       if (isTaskRestartRequest(error) || attemptState.restartRequested) {
+        if (attemptState.restartReason?.type === "auto-limit") {
+          await blockStep(context, queueFile, step, automaticRestartBlockedReason(autoRestartPolicy));
+          controlState.current = null;
+          throw new Error(`Automatic restart limit exceeded for ${step.id}.`);
+        }
         await restartAttempt(context, controlState, attemptState, attempt + 1, emitEvent);
         attempt += 1;
         continue;
       }
       controlState.current = null;
       throw error;
+    } finally {
+      stopAutoRestartWatchdog();
     }
   }
 }
 
 function startAttempt(state: RunControlState, step: QueueStep): CurrentAttemptState {
+  const now = Date.now();
   const current: CurrentAttemptState = {
     abortController: new AbortController(),
+    lastActivityAt: now,
     phase: null,
+    restartReason: null,
     restartRequested: false,
-    startedAt: Date.now(),
+    startedAt: now,
     step,
   };
   state.current = current;
@@ -197,6 +228,7 @@ function startAttempt(state: RunControlState, step: QueueStep): CurrentAttemptSt
 
 function setAttemptPhase(current: CurrentAttemptState, phase: RoadrunnerRunPhase): void {
   current.phase = phase;
+  recordAttemptActivity(current);
 }
 
 class TaskRestartRequest extends Error {}
@@ -217,6 +249,9 @@ async function restartAttempt(context: ProjectContext, state: RunControlState, c
   emitEvent({ attempt: nextAttempt, step: current.step, type: "task-restart" });
 }
 
-function activityEmitter(emitActivity: (event: RoadrunnerRunActivityEvent) => void, step: QueueStep, phase: RoadrunnerRunPhase): () => void {
-  return () => emitActivity({ phase, step });
+function activityEmitter(current: CurrentAttemptState, emitActivity: (event: RoadrunnerRunActivityEvent) => void, step: QueueStep, phase: RoadrunnerRunPhase): () => void {
+  return () => {
+    recordAttemptActivity(current);
+    emitActivity({ phase, step });
+  };
 }

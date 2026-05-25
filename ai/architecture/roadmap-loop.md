@@ -1,9 +1,9 @@
 # Roadmap Loop
 
-Roadrunner executes a queue of small tasks. Each task follows:
+Roadrunner executes a queue of deliverable tasks. Each task follows:
 
 ```txt
-Plan -> Execute -> Verify -> Reconcile
+Plan -> Execute -> Verify -> Reconcile/Optimize
 ```
 
 The queue lives in the configured queue file, defaulting to `.roadrunner/queue.json` in the target project. It contains `version`, `model`, `variant`, `queue`, `history`, and `blocked`. The first queued item is the only current task.
@@ -12,6 +12,10 @@ The queue lives in the configured queue file, defaulting to `.roadrunner/queue.j
 
 Roadmaps may be imported from Markdown into the queue. Import preserves existing `history` and `blocked` records and only queues steps that have not already been closed.
 
+Reconciliation always runs after a verified step. It may optimize future `queue[1..]` items by grouping microtasks, splitting oversized tasks, reordering dependencies, adding discovered future work, and removing obsolete work. It must preserve `version`, `model`, `variant`, `history`, `blocked`, and the current `queue[0]` item exactly, and it may only mutate the configured queue file.
+
 Roadrunner does not require a clean git worktree, does not restore file changes, and does not create commits. Failures update the queue state by blocking the current step when possible.
 
 Interactive runs may accept a `rstask` control command. It aborts the active Roadrunner-owned subprocess, cleans registered Roadrunner subprocesses, and retries the current `queue[0]` task from planning. Restarting a task does not reset project files, rewrite history, or skip verification.
+
+Provider and verification activity is watched for idle stalls. By default, a task attempt that produces no activity for ten minutes is aborted and restarted from planning. Automatic restarts are limited per step, defaulting to three, after which Roadrunner blocks the current task with a clear idle-restart reason. `ROADRUNNER_AUTO_RESTART_IDLE_MS` and `ROADRUNNER_MAX_AUTO_RESTARTS_PER_STEP` override the defaults; `0` disables the automatic restart path.

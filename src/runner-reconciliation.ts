@@ -1,8 +1,9 @@
 import path from "node:path";
 
 import type { ProjectContext } from "./config.js";
+import { projectMutationFingerprint } from "./mutation-fingerprint.js";
 import type { QueueFile, QueueStep } from "./queue.js";
-import { readValidatedQueue, validateQueueState } from "./queue-service.js";
+import { readValidatedQueue } from "./queue-service.js";
 import { providerFor, type ProviderStartEvent } from "./providers/index.js";
 import type { RunSnapshot } from "./run-snapshot.js";
 import { renderPrompt, writePrivateFile } from "./run-artifacts.js";
@@ -18,6 +19,7 @@ interface ReconcileOptions {
 export async function reconcileQueue(context: ProjectContext, step: QueueStep, snapshot: RunSnapshot, logDir: string, options: ReconcileOptions): Promise<QueueFile> {
   const queueBeforeReconcile = await readValidatedQueue(context);
   const queueText = `${JSON.stringify(queueBeforeReconcile, null, 2)}\n`;
+  const beforeMutationFingerprint = await projectMutationFingerprint(context, { ignoredPaths: [context.paths.queue] });
 
   const prompt = await renderPrompt(context, "reconcile-roadmap.md", {
     GOALS_MD: snapshot.goalsMarkdown,
@@ -39,36 +41,24 @@ export async function reconcileQueue(context: ProjectContext, step: QueueStep, s
   });
   await writePrivateFile(path.join(logDir, "reconcile.md"), result.output);
 
+  const afterMutationFingerprint = await projectMutationFingerprint(context, { ignoredPaths: [context.paths.queue] });
+  if (beforeMutationFingerprint !== null && afterMutationFingerprint !== null && beforeMutationFingerprint !== afterMutationFingerprint) {
+    throw new Error("Reconciliation may only update the Roadrunner queue file.");
+  }
+
   if (result.code !== 0) throw new Error(`Reconciliation failed for ${step.id}.`);
 
   const normalizedQueueFile = await readValidatedQueue(context);
-  const preserveErrors = validateClosedRecordsPreserved(queueBeforeReconcile, normalizedQueueFile, step.id);
+  const preserveErrors = validateReconcileQueueScope(queueBeforeReconcile, normalizedQueueFile, step.id);
   if (preserveErrors.length > 0) throw new Error(preserveErrors.join("\n"));
 
-  const reconciledQueueFile = restoreVerifiedCurrentStep(queueBeforeReconcile, normalizedQueueFile, step.id);
-  const reconciledErrors = validateQueueState(reconciledQueueFile, context);
-  if (reconciledErrors.length > 0) throw new Error(reconciledErrors.join("\n"));
-
-  return reconciledQueueFile;
+  return normalizedQueueFile;
 }
 
-function restoreVerifiedCurrentStep(before: QueueFile, after: QueueFile, stepId: string): QueueFile {
-  const verifiedStep = before.queue[0];
-  if (!verifiedStep || verifiedStep.id !== stepId) throw new Error(`Reconciliation expected ${stepId} at queue[0].`);
-
-  return {
-    ...after,
-    queue: [verifiedStep, ...after.queue.filter((step) => step.id !== stepId)],
-    history: before.history,
-    blocked: before.blocked,
-  };
-}
-
-function validateClosedRecordsPreserved(before: QueueFile, after: QueueFile, currentStepId: string): string[] {
+function validateReconcileQueueScope(before: QueueFile, after: QueueFile, currentStepId: string): string[] {
   const errors: string[] = [];
-  const afterHistory = after.history.filter((step) => step.id !== currentStepId);
-  const afterBlocked = after.blocked.filter((step) => step.id !== currentStepId);
-  if (JSON.stringify(afterHistory) !== JSON.stringify(before.history)) errors.push("Reconciliation must preserve history records.");
-  if (JSON.stringify(afterBlocked) !== JSON.stringify(before.blocked)) errors.push("Reconciliation must preserve blocked records.");
+  if (JSON.stringify(after.history) !== JSON.stringify(before.history)) errors.push("Reconciliation must preserve history records.");
+  if (JSON.stringify(after.blocked) !== JSON.stringify(before.blocked)) errors.push("Reconciliation must preserve blocked records.");
+  if (JSON.stringify(after.queue[0] ?? null) !== JSON.stringify(before.queue[0] ?? null)) errors.push(`Reconciliation must preserve queue[0] for ${currentStepId}.`);
   return errors;
 }

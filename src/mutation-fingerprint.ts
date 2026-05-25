@@ -12,14 +12,19 @@ export interface StatusEntry {
   status: string;
 }
 
+export interface ProjectMutationFingerprintOptions {
+  ignoredPaths?: string[];
+}
+
 const execFileAsync = promisify(execFile);
 const fallbackFingerprintIgnoredDirectories = new Set([".git", "coverage", "dist", "node_modules", "test-output"]);
 
-export async function projectMutationFingerprint(context: ProjectContext): Promise<string | null> {
+export async function projectMutationFingerprint(context: ProjectContext, options: ProjectMutationFingerprintOptions = {}): Promise<string | null> {
+  const ignoredPaths = normalizedIgnoredPaths(context, options.ignoredPaths ?? []);
   const statusOutput = await gitStatusOutput(context);
-  if (statusOutput === null) return filesystemMutationFingerprint(context);
+  if (statusOutput === null) return filesystemMutationFingerprint(context, ignoredPaths);
 
-  const entries = parseStatusEntries(statusOutput).filter((entry) => !isRoadrunnerRuntimePath(context, entry.path));
+  const entries = parseStatusEntries(statusOutput).filter((entry) => !isRoadrunnerRuntimePath(context, entry.path) && !isIgnoredRelativePath(entry.path, ignoredPaths));
   const head = await gitHead(context);
   const fingerprints = await Promise.all(
     entries.map(async (entry) => ({
@@ -61,15 +66,21 @@ export function parseStatusEntries(output: string): StatusEntry[] {
     });
 }
 
-async function filesystemMutationFingerprint(context: ProjectContext): Promise<string> {
+async function filesystemMutationFingerprint(context: ProjectContext, ignoredPaths: Set<string>): Promise<string> {
   const entries: Array<{ content?: string; path: string; target?: string; type: string }> = [];
-  await collectFilesystemFingerprintEntries(context, context.root, entries);
+  await collectFilesystemFingerprintEntries(context, context.root, ignoredPaths, entries);
   entries.sort((left, right) => left.path.localeCompare(right.path));
   return JSON.stringify({ entries, mode: "filesystem" });
 }
 
-async function collectFilesystemFingerprintEntries(context: ProjectContext, absolutePath: string, entries: Array<{ content?: string; path: string; target?: string; type: string }>): Promise<void> {
+async function collectFilesystemFingerprintEntries(
+  context: ProjectContext,
+  absolutePath: string,
+  ignoredPaths: Set<string>,
+  entries: Array<{ content?: string; path: string; target?: string; type: string }>,
+): Promise<void> {
   const relativePath = path.relative(context.root, absolutePath).split(path.sep).join(path.posix.sep);
+  if (relativePath.length > 0 && isIgnoredRelativePath(relativePath, ignoredPaths)) return;
   if (relativePath.length > 0 && isIgnoredFilesystemFingerprintPath(context, relativePath, absolutePath)) return;
 
   let stat: Stats;
@@ -93,7 +104,7 @@ async function collectFilesystemFingerprintEntries(context: ProjectContext, abso
       /* v8 ignore stop */
     }
 
-    await Promise.all(names.sort().map((name) => collectFilesystemFingerprintEntries(context, path.join(absolutePath, name), entries)));
+    await Promise.all(names.sort().map((name) => collectFilesystemFingerprintEntries(context, path.join(absolutePath, name), ignoredPaths, entries)));
     return;
   }
 
@@ -145,6 +156,23 @@ async function fileFingerprint(filePath: string): Promise<string> {
 function isRoadrunnerRuntimePath(context: ProjectContext, relativePath: string): boolean {
   const absolutePath = path.resolve(context.root, relativePath);
   return isSameOrInside(context.paths.logs, absolutePath) || absolutePath === context.paths.processRegistry || absolutePath === context.paths.lock;
+}
+
+function normalizedIgnoredPaths(context: ProjectContext, ignoredPaths: string[]): Set<string> {
+  const normalized = new Set<string>();
+  for (const ignoredPath of ignoredPaths) {
+    const absolutePath = path.isAbsolute(ignoredPath) ? ignoredPath : path.resolve(context.root, ignoredPath);
+    const relativePath = path.relative(context.root, absolutePath).split(path.sep).join(path.posix.sep);
+    if (relativePath.length > 0 && !relativePath.startsWith("../") && !path.isAbsolute(relativePath)) normalized.add(relativePath);
+  }
+  return normalized;
+}
+
+function isIgnoredRelativePath(relativePath: string, ignoredPaths: Set<string>): boolean {
+  for (const ignoredPath of ignoredPaths) {
+    if (relativePath === ignoredPath || relativePath.startsWith(`${ignoredPath}/`)) return true;
+  }
+  return false;
 }
 
 function isIgnoredFilesystemFingerprintPath(context: ProjectContext, relativePath: string, absolutePath: string): boolean {

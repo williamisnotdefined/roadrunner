@@ -152,6 +152,29 @@ if (mode === "hang") {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0);
 }
 
+if (mode === "hang-once-plan" && prompt.includes("Roadrunner Plan Step")) {
+  const marker = ".fake-hang-once-plan";
+  if (!fs.existsSync(marker)) {
+    fs.writeFileSync(marker, "hung\\n");
+    console.log("hanging once");
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0);
+  }
+}
+
+if (mode === "slow-plan-success" && prompt.includes("Roadrunner Plan Step")) {
+  let ticks = 0;
+  const interval = setInterval(() => {
+    ticks += 1;
+    console.log("tick " + ticks);
+    if (ticks === 4) {
+      clearInterval(interval);
+      console.log("Plan: slow success.");
+      process.exit(0);
+    }
+  }, 20);
+  await new Promise(() => {});
+}
+
 if (mode === "spawn-child-on-term") {
   const childPidFile = process.env.ROADRUNNER_FAKE_OPENCODE_CHILD_PID_FILE || "";
   const child = spawn(process.execPath, ["-e", "process.on('SIGTERM', () => {}); if (process.argv[1]) require('node:fs').writeFileSync(process.argv[1], String(process.pid)); setInterval(() => {}, 1000);", childPidFile], { stdio: "ignore" });
@@ -264,7 +287,7 @@ if (prompt.includes("Roadrunner Fix Failure")) {
   process.exit(0);
 }
 
-if (prompt.includes("Roadrunner Reconcile Queue")) {
+if (prompt.includes("Roadrunner Reconcile Queue") || prompt.includes("Roadrunner Reconcile And Optimize Queue")) {
   if (mode === "reconcile-fail-dirty") {
     fs.writeFileSync("unexpected.txt", "nope\\n");
     console.error("reconcile failed");

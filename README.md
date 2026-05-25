@@ -5,10 +5,10 @@ Goal-directed autonomous software engineering loop.
 Roadrunner turns a project goal and a task queue into a repeatable cycle:
 
 ```txt
-Plan -> Execute -> Verify -> Reconcile
+Plan -> Execute -> Verify -> Reconcile/Optimize
 ```
 
-It is designed to run coding agents over small roadmap steps, with explicit planning, verification, process cleanup, and queue reconciliation.
+It is designed to run coding agents over roadmap steps, with explicit planning, verification, process cleanup, and queue reconciliation that can optimize future work.
 
 ## Commands
 
@@ -79,7 +79,7 @@ node /home/wozzp/git/roadrunner/dist/src/cli.js run --max-steps 999 --max-hours 
 For each queued step, `run` performs:
 
 ```txt
-Plan -> Execute -> Verify -> Reconcile
+Plan -> Execute -> Verify -> Reconcile/Optimize
 ```
 
 With `--max-steps 999 --max-hours 72`, Roadrunner will keep working until one of these happens:
@@ -88,6 +88,7 @@ With `--max-steps 999 --max-hours 72`, Roadrunner will keep working until one of
 - 999 steps have completed.
 - 72 hours have elapsed.
 - A provider, verification, or reconciliation failure blocks the run.
+- The current task stays idle past the automatic restart limit and is blocked.
 
 `GOALS.md` is loaded once at the start of `run` and remains the in-memory goal for that execution. `ROADMAP.md` is read only by `init` and `import-roadmap`; after import, `.roadrunner/queue.json` is the live task state. `--goals` and `--roadmap` are resolved relative to the target project directory.
 
@@ -152,16 +153,16 @@ Validates the project, loads `GOALS.md` into memory for the planning prompt, run
 Runs autonomous cycles up to `--max-steps` or `--max-hours`:
 
 ```txt
-Plan -> Execute -> Verify -> Reconcile
+Plan -> Execute -> Verify -> Reconcile/Optimize
 ```
 
 The runner holds `.roadrunner/roadmap.lock` for the duration of the run to avoid concurrent Roadrunner commands mutating the same queue. `import-roadmap` also takes this lock before writing `.roadrunner/queue.json`. Roadrunner does not block because of unrelated user edits, dirty git state, provider git commands, or verification commands that mutate files.
 
 At run start, Roadrunner reads `GOALS.md` once and uses that immutable in-memory snapshot for planning, implementation, fixing, and reconciliation prompts. Edits to `GOALS.md` during a run only affect future runs.
 
-Provider runs default to `ROADRUNNER_PROVIDER_TIMEOUT_MS=1800000`, verification commands default to `ROADRUNNER_VERIFY_TIMEOUT_MS=600000`, and OpenCode CLI validation defaults to `ROADRUNNER_OPENCODE_CHECK_TIMEOUT_MS=10000`. Set provider or verification timeout variables to `0` to disable that timeout. `--max-hours` caps provider and verification timeouts for the current step.
+Provider runs default to `ROADRUNNER_PROVIDER_TIMEOUT_MS=1800000`, verification commands default to `ROADRUNNER_VERIFY_TIMEOUT_MS=600000`, automatic idle restarts default to `ROADRUNNER_AUTO_RESTART_IDLE_MS=600000` and `ROADRUNNER_MAX_AUTO_RESTARTS_PER_STEP=3`, and OpenCode CLI validation defaults to `ROADRUNNER_OPENCODE_CHECK_TIMEOUT_MS=10000`. Set provider, verification, automatic restart idle, or max automatic restart variables to `0` to disable that timeout/restart path. `--max-hours` caps provider and verification timeouts for the current step.
 
-In an interactive terminal, `run` prints a live heartbeat for the active task, including phase, attempt, elapsed task time, elapsed phase time, idle time since the last provider/command output, PID, and log path when available. Type `rstask` and press Enter to abort the current Roadrunner-owned subprocess and restart the current `queue[0]` task from planning. Restarting does not reset or revert project files; it only stops registered Roadrunner subprocesses and repeats the task attempt.
+In an interactive terminal, `run` prints a live heartbeat for the active task, including phase, attempt, elapsed task time, elapsed phase time, idle time since the last provider/command output, PID, and log path when available. Type `rstask` and press Enter to abort the current Roadrunner-owned subprocess and restart the current `queue[0]` task from planning. Roadrunner also auto-restarts idle task attempts from planning when no provider or verification activity arrives before the configured idle threshold. Restarting does not reset or revert project files; it only stops registered Roadrunner subprocesses and repeats the task attempt.
 
 Prompt files, provider logs, verification logs, and runner-generated markdown outputs under `.roadrunner/logs/` are written with restrictive filesystem permissions.
 
@@ -259,7 +260,9 @@ npm run ai:check
 - `queue[0]` is always the current task.
 - Planning is mandatory before execution.
 - Planning fails if the planning agent mutates project files; Roadrunner uses git status in git repositories and a filesystem fingerprint fallback elsewhere.
-- The reconciler updates the configured queue file, defaulting to `.roadrunner/queue.json`; other file changes are not treated as Roadrunner safety violations.
+- The reconciler may optimize future `queue[1..]` work by grouping, splitting, reordering, adding, or removing tasks, but it must preserve `queue[0]`, `history`, `blocked`, and queue metadata.
+- Reconciliation may only update the configured queue file, defaulting to `.roadrunner/queue.json`; other file changes are treated as Roadrunner safety violations.
+- Idle provider or verification phases are automatically restarted from planning up to the configured per-step limit.
 - Cleanup only targets subprocesses registered by Roadrunner itself.
 - Cleanup fails closed when a registered process identity cannot be verified.
 - Nested OpenCode is rejected by default.

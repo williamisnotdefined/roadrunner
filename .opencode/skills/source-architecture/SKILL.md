@@ -119,12 +119,16 @@ Core modules:
 - `src/queue.ts`: queue validation and mutation.
 - `src/queue-service.ts`: application-level queue validation and blocking helpers.
 - `src/roadmap.ts`: Markdown roadmap import into queue state.
-- `src/runner.ts`: public runner facade and plan/execute/verify/reconcile loop.
+- `src/runner.ts`: public runner facade and plan/execute/verify/reconcile-optimize loop.
+- `src/runner-execution.ts`: task attempt orchestration, manual restarts, automatic idle restarts, and step completion.
 - `src/runner-planning.ts`: planning prompt execution and read-only mutation checks.
 - `src/runner-verification.ts`: verification commands and fix-failure provider calls.
-- `src/runner-reconciliation.ts`: queue reconciliation and closed-record preservation.
+- `src/runner-reconciliation.ts`: future-queue optimization, queue-only reconciliation enforcement, and closed-record preservation.
+- `src/auto-restart-watchdog.ts`: idle activity watchdog for automatic task-attempt restarts.
+- `src/restart-policy.ts`: automatic restart defaults and environment overrides.
 - `src/run-snapshot.ts`: run-start in-memory goals snapshot loading.
 - `src/run-artifacts.ts`: private prompt/log artifact helpers.
+- `src/duration.ts`: shared duration formatting.
 - `src/managed-process.ts`: managed shell subprocess execution for verification.
 - `src/mutation-fingerprint.ts`: git/filesystem mutation fingerprints.
 - `src/process-registry.ts`: safe child-process tracking.

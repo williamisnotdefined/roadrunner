@@ -15,46 +15,49 @@ afterEach(() => {
 });
 
 describe("runner reconciliation", () => {
-  test("allows reconciliation changes outside the queue", async () => {
+  test("rejects reconciliation changes outside the queue", async () => {
     const project = await setupRunnerProject("reconcile-extra");
     try {
-      expect(await runRoadrunner(project.context)).toBe(1);
+      await expect(runRoadrunner(project.context)).rejects.toThrow(/only update the Roadrunner queue file/);
       expect(await readFile(path.join(project.directory, "unexpected.txt"), "utf8")).toBe("nope\n");
+      const queue = await readJson<QueueFile>(project.context.paths.queue);
+      expect(queue.blocked[0]).toMatchObject({ id: "first-step" });
     } finally {
       await removeDir(project.directory);
     }
   });
 
-  test("allows reconciliation commits outside Roadrunner", async () => {
+  test("rejects reconciliation commits outside Roadrunner", async () => {
     const project = await setupRunnerProject("reconcile-commit-bypass");
     try {
-      expect(await runRoadrunner(project.context)).toBe(1);
+      await expect(runRoadrunner(project.context)).rejects.toThrow(/only update the Roadrunner queue file/);
       expect((await run("git", ["log", "--oneline", "--grep", "Agent reconcile commit"], project.directory)).stdout).toMatch(/Agent reconcile commit/);
+      const queue = await readJson<QueueFile>(project.context.paths.queue);
+      expect(queue.blocked[0]).toMatchObject({ id: "first-step" });
     } finally {
       await removeDir(project.directory);
     }
   });
 
-  test("preserves verified current step when reconciliation edits it", async () => {
+  test("rejects reconciliation that edits the current step", async () => {
     const project = await setupRunnerProject("reconcile-queue");
     try {
-      expect(await runRoadrunner(project.context)).toBe(1);
+      await expect(runRoadrunner(project.context)).rejects.toThrow(/preserve queue\[0\]/);
       const queue = await readJson<QueueFile>(project.context.paths.queue);
 
-      expect(queue.history[0]).toMatchObject({ id: "first-step", title: "Build first step" });
+      expect(queue.blocked[0]).toMatchObject({ id: "first-step", title: "Build first step" });
     } finally {
       await removeDir(project.directory);
     }
   });
 
-  test("preserves verified current step when reconciliation removes it", async () => {
+  test("rejects reconciliation that removes the current step", async () => {
     const project = await setupRunnerProject("reconcile-removes-current");
     try {
-      expect(await runRoadrunner(project.context)).toBe(1);
+      await expect(runRoadrunner(project.context)).rejects.toThrow(/preserve queue\[0\]/);
       const queue = await readJson<QueueFile>(project.context.paths.queue);
 
-      expect(queue.queue).toEqual([]);
-      expect(queue.history[0]).toMatchObject({ id: "first-step", title: "Build first step" });
+      expect(queue.blocked[0]).toMatchObject({ id: "first-step", title: "Build first step" });
     } finally {
       await removeDir(project.directory);
     }
@@ -93,7 +96,7 @@ describe("runner reconciliation", () => {
   test("marks failed reconciliation provider runs as blocked without cleaning files", async () => {
     const project = await setupRunnerProject("reconcile-fail-dirty");
     try {
-      await expect(runRoadrunner(project.context)).rejects.toThrow(/Reconciliation failed/);
+      await expect(runRoadrunner(project.context)).rejects.toThrow(/only update the Roadrunner queue file/);
       expect(await readFile(path.join(project.directory, "unexpected.txt"), "utf8")).toBe("nope\n");
       const queue = await readJson<QueueFile>(project.context.paths.queue);
       expect(queue.blocked[0]).toMatchObject({ id: "first-step" });

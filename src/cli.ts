@@ -126,11 +126,19 @@ export function formatRunEvent(event: RoadrunnerRunEvent): string {
     case "provider-start":
       return formatProviderStartEvent(event);
     case "reconcile":
-      return formatCliStep(`Reconciling queue after ${event.step.id}`);
+      return formatCliStep(`Reconciling and optimizing queue after ${event.step.id}`);
     case "step":
       return formatCliStep(`Selected step ${event.step.id}: ${event.step.title}`);
     case "step-complete":
       return formatCliSuccess(`Completed ${event.step.id}`);
+    case "task-auto-restart-limit-exceeded": {
+      const phase = event.phase ? ` during ${event.phase}` : "";
+      return formatCliError(`Auto-restart limit exceeded for ${event.step.id}${phase} after idle=${formatDuration(event.idleMs)} max=${event.maxRestarts}`);
+    }
+    case "task-auto-restart-requested": {
+      const phase = event.phase ? ` during ${event.phase}` : "";
+      return formatCliInfo(`Auto-restart requested for ${event.step.id}${phase} after idle=${formatDuration(event.idleMs)} restart=${event.restart}/${event.maxRestarts}`);
+    }
     case "task-restart":
       return formatCliStep(`Restarting ${event.step.id} attempt=${event.attempt}`);
     case "task-restart-requested": {

@@ -225,7 +225,7 @@ Verification:
       const roadmapPath = path.join(outside, "ROADMAP.md");
       await writeFile(roadmapPath, sampleRoadmap());
       const queueFile = await queueFileFromRoadmapFile({
-        config: { allowNestedOpenCode: false, dangerouslySkipPermissions: false, model: defaultModel, paths: {}, provider: "opencode", variant: defaultVariant },
+        config: { allowNestedOpenCode: false, autoRestartIdleMs: 600000, dangerouslySkipPermissions: false, maxAutoRestartsPerStep: 3, model: defaultModel, paths: {}, provider: "opencode", variant: defaultVariant },
         paths: { goals: path.join(root, "GOALS.md"), roadmap: roadmapPath } as never,
         root,
       });
