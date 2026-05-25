@@ -7,7 +7,6 @@ export interface QueueStep {
   acceptance: string[];
   blockedAt?: string;
   blockedReason?: string;
-  commitMessage?: string;
   completedAt?: string;
   id: string;
   phase: string;
@@ -19,12 +18,9 @@ export interface QueueStep {
 
 export interface QueueFile {
   blocked: QueueStep[];
-  goals?: string;
   history: QueueStep[];
   model: string;
   queue: QueueStep[];
-  source?: string;
-  updatedAt?: string | null;
   variant: string;
   version: 2;
 }
@@ -89,8 +85,18 @@ export async function readQueue(context: ProjectContext): Promise<QueueFile> {
 }
 
 export async function writeQueue(queueFile: QueueFile, context: ProjectContext): Promise<void> {
-  queueFile.updatedAt = new Date().toISOString();
-  await writeJson(context.paths.queue, queueFile);
+  await writeJson(context.paths.queue, normalizeQueueFile(queueFile));
+}
+
+export function normalizeQueueFile(queueFile: QueueFile): QueueFile {
+  return {
+    version: queueFile.version,
+    model: queueFile.model,
+    variant: queueFile.variant,
+    queue: queueFile.queue.map(normalizeStep),
+    history: queueFile.history.map(normalizeStep),
+    blocked: queueFile.blocked.map(normalizeStep),
+  };
 }
 
 export function nextStep(queueFile: QueueFile): QueueStep | null {
@@ -126,7 +132,6 @@ function validateStep(step: QueueStep, field: string, errors: string[]): void {
   for (const key of ["phase", "title", "prompt"] as const) {
     if (typeof step?.[key] !== "string" || step[key].length === 0) errors.push(`${field}.${key} must be a non-empty string.`);
   }
-  if (step?.commitMessage !== undefined && (typeof step.commitMessage !== "string" || step.commitMessage.length === 0)) errors.push(`${field}.commitMessage must be a non-empty string.`);
   for (const key of ["scope", "acceptance", "verification"] as const) {
     if (!Array.isArray(step?.[key]) || step[key].length === 0) {
       errors.push(`${field}.${key} must be a non-empty array.`);
@@ -137,6 +142,22 @@ function validateStep(step: QueueStep, field: string, errors: string[]): void {
       if (typeof item !== "string" || item.length === 0) errors.push(`${field}.${key}[${index}] must be a non-empty string.`);
     }
   }
+}
+
+function normalizeStep(step: QueueStep): QueueStep {
+  const normalized: QueueStep = {
+    id: step.id,
+    phase: step.phase,
+    title: step.title,
+    scope: [...step.scope],
+    prompt: step.prompt,
+    acceptance: [...step.acceptance],
+    verification: [...step.verification],
+  };
+  if (step.completedAt !== undefined) normalized.completedAt = step.completedAt;
+  if (step.blockedAt !== undefined) normalized.blockedAt = step.blockedAt;
+  if (step.blockedReason !== undefined) normalized.blockedReason = step.blockedReason;
+  return normalized;
 }
 
 export function goalsPathLabel(context: ProjectContext): string {

@@ -46,9 +46,7 @@ async function defaultQueueFile(context: ProjectContext, templateRoot: string): 
   const queueFile = JSON.parse(await readFile(path.join(templateRoot, "queue.json"), "utf8")) as QueueFile;
   return {
     ...queueFile,
-    goals: relativeToRoot(context, context.paths.goals),
     model: context.config.model,
-    source: relativeToRoot(context, context.paths.roadmap),
     variant: context.config.variant,
   };
 }

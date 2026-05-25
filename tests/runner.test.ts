@@ -335,8 +335,7 @@ describe("runner", () => {
     try {
       expect(await runRoadrunner(project.context)).toBe(1);
       const queue = await readJson<QueueFile>(project.context.paths.queue);
-      expect(queue.source).toBe("implementation-touched-queue.json");
-      expect(queue.history.map((step) => step.id)).toEqual(["first-step"]);
+      expect(queue.history[0]).toMatchObject({ id: "first-step", title: "Implementation touched queue" });
     } finally {
       await removeDir(project.directory);
     }
@@ -414,7 +413,7 @@ describe("runner", () => {
       expect(await runRoadrunner(project.context)).toBe(1);
       const queue = await readJson<QueueFile>(project.context.paths.queue);
 
-      expect(queue.source).toBe("reconciled-roadmap.md");
+      expect(queue.history[0]).toMatchObject({ id: "first-step", title: "Reconciled first step" });
     } finally {
       await removeDir(project.directory);
     }

@@ -51,7 +51,6 @@ Acceptance:
 - project tests pass
 Verification:
 - npm test
-Commit: Implement Todo CRUD
 `,
     );
 

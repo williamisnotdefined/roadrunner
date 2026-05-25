@@ -1,8 +1,7 @@
 import { readFile } from "node:fs/promises";
-import path from "node:path";
 
 import { defaultModel, defaultVariant, pathExists, type ProjectContext } from "./config.js";
-import { readQueue, validateQueueFile, writeQueue, type QueueFile, type QueueStep } from "./queue.js";
+import { normalizeQueueFile, readQueue, validateQueueFile, writeQueue, type QueueFile, type QueueStep } from "./queue.js";
 
 interface RoadmapSection {
   body: string[];
@@ -12,9 +11,7 @@ interface RoadmapSection {
 }
 
 interface RoadmapOptions {
-  goalsPath: string;
   model?: string;
-  sourcePath: string;
   variant?: string;
 }
 
@@ -24,17 +21,16 @@ const fieldAliases: ReadonlyMap<string, string> = new Map([
   ["prompt", "prompt"],
   ["acceptance", "acceptance"],
   ["verification", "verification"],
-  ["commit", "commit"],
-  ["commit message", "commit"],
 ]);
 
 export async function importRoadmap(context: ProjectContext): Promise<QueueFile> {
   const parsed = await queueFileFromRoadmapFile(context);
-  const existing = (await pathExists(context.paths.queue)) ? await readQueue(context) : null;
-  if (existing) {
-    const errors = validateQueueFile(existing, { model: context.config.model, variant: context.config.variant });
+  const existingRaw = (await pathExists(context.paths.queue)) ? await readQueue(context) : null;
+  if (existingRaw) {
+    const errors = validateQueueFile(existingRaw, { model: context.config.model, variant: context.config.variant });
     if (errors.length > 0) throw new Error(errors.join("\n"));
   }
+  const existing = existingRaw ? normalizeQueueFile(existingRaw) : null;
 
   const queueFile = mergeQueueState(parsed, existing);
   const errors = validateQueueFile(queueFile, { model: context.config.model, variant: context.config.variant });
@@ -48,9 +44,7 @@ export async function importRoadmap(context: ProjectContext): Promise<QueueFile>
 export async function queueFileFromRoadmapFile(context: ProjectContext): Promise<QueueFile> {
   const markdown = await readFile(context.paths.roadmap, "utf8");
   return queueFileFromRoadmap(markdown, {
-    goalsPath: relativeToRoot(context, context.paths.goals),
     model: context.config.model,
-    sourcePath: relativeToRoot(context, context.paths.roadmap),
     variant: context.config.variant,
   });
 }
@@ -71,11 +65,8 @@ export function queueFileFromRoadmap(markdown: string, options: RoadmapOptions):
 
   const queueFile: QueueFile = {
     version: 2,
-    source: options.sourcePath,
-    goals: options.goalsPath,
     model: options.model ?? defaultModel,
     variant: options.variant ?? defaultVariant,
-    updatedAt: null,
     queue: steps,
     history: [],
     blocked: [],
@@ -158,6 +149,11 @@ function parseFields(lines: string[]): Map<string, string[]> {
     const match = /^\s{0,3}([A-Za-z][A-Za-z ]+):\s*(.*)$/.exec(line);
     const alias = match ? fieldAliases.get(match[1]!.trim().toLowerCase()) : undefined;
 
+    if (match && !alias) {
+      current = null;
+      continue;
+    }
+
     if (alias) {
       current = alias;
       if (!fields.has(current)) fields.set(current, []);
@@ -204,9 +200,4 @@ function listField(fields: Map<string, string[]>, name: string, section: Roadmap
 
   if (items.length === 0) errors.push(`${section.id}: missing ${name} field near line ${section.line}.`);
   return items;
-}
-
-function relativeToRoot(context: ProjectContext, filePath: string): string {
-  const relative = path.relative(context.root, filePath);
-  return relative.length > 0 && !relative.startsWith("..") ? relative : filePath;
 }

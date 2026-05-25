@@ -8,7 +8,7 @@ import { promisify } from "node:util";
 import { main } from "../../src/cli.js";
 import { readJson, writeJson } from "../../src/config.js";
 import type { QueueFile } from "../../src/queue.js";
-import { commitAll, initGit, run } from "../helpers.js";
+import { run } from "../helpers.js";
 
 const execFileAsync = promisify(execFile);
 const outputRoot = path.resolve("test-output/e2e-real/todo-crud");
@@ -53,7 +53,6 @@ Acceptance:
 - npm test passes
 Verification:
 - npm test
-Commit: Implement Todo CRUD
 `,
 );
 
@@ -61,8 +60,6 @@ await requireOk(main(["init", "--goals", "GOALS.md", "--roadmap", "ROADMAP.md"],
 const configPath = path.join(outputRoot, ".roadrunner/config.json");
 const config = await readJson<Record<string, unknown>>(configPath);
 await writeJson(configPath, { ...config, allowNestedOpenCode: true });
-await initGit(outputRoot);
-await commitAll(outputRoot, "Initial Todo CRUD target");
 
 await requireOk(main(["run", "--max-steps", "1"], { cwd: outputRoot }), "roadrunner run failed");
 
@@ -74,8 +71,6 @@ assert(queue.blocked.length === 0, "Expected blocked queue to be empty.");
 const testResult = await run("npm", ["test"], outputRoot);
 assert(testResult.stdout.includes("todo") || testResult.stdout.includes("CRUD"), "Expected generated Todo tests to run.");
 
-const gitLog = await run("git", ["log", "--oneline"], outputRoot);
-assert(gitLog.stdout.split("\n").filter(Boolean).length >= 2, "Expected Roadrunner to create at least one commit.");
 assert((await readFile(path.join(outputRoot, "src/todos.js"), "utf8")).length > 0, "Expected generated Todo source file.");
 
 console.log(`Real OpenCode e2e completed in ${outputRoot}`);

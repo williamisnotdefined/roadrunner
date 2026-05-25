@@ -88,7 +88,6 @@ describe("queue", () => {
     const queueFile = sampleQueue();
     queueFile.queue[0] = {
       acceptance: [],
-      commitMessage: "",
       id: "Bad ID",
       phase: "",
       prompt: "",
@@ -102,7 +101,6 @@ describe("queue", () => {
       "queue[0].phase must be a non-empty string.",
       "queue[0].title must be a non-empty string.",
       "queue[0].prompt must be a non-empty string.",
-      "queue[0].commitMessage must be a non-empty string.",
       "queue[0].scope must be a non-empty array.",
       "queue[0].acceptance must be a non-empty array.",
       "queue[0].verification must be a non-empty array.",
@@ -145,7 +143,6 @@ describe("queue", () => {
 function sampleQueue(): QueueFile {
   return {
     version: 2,
-    source: "roadmap.md",
     model: defaultModel,
     variant: defaultVariant,
     queue: [
@@ -157,7 +154,6 @@ function sampleQueue(): QueueFile {
         prompt: "Do the thing.",
         acceptance: ["it works"],
         verification: ["npm test"],
-        commitMessage: "Do first step",
       },
     ],
     history: [],

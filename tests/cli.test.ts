@@ -246,7 +246,7 @@ describe("cli", () => {
     try {
       await writeFile(path.join(directory, "CUSTOM.md"), sampleRoadmap());
       expect(await main(["init", "--roadmap", "CUSTOM.md"], { cwd: directory })).toBe(0);
-      expect(await readFile(path.join(directory, ".roadrunner/queue.json"), "utf8")).toMatch(/CUSTOM.md/);
+      expect(await readFile(path.join(directory, ".roadrunner/queue.json"), "utf8")).toMatch(/first-step/);
     } finally {
       await removeDir(directory);
     }

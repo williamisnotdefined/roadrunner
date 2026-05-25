@@ -9,20 +9,17 @@ import type { QueueFile } from "../src/queue.js";
 
 describe("roadmap", () => {
   test("parses roadmap markdown into queue file", () => {
-    const queueFile = queueFileFromRoadmap(sampleRoadmap(), { goalsPath: "GOALS.md", sourcePath: "ROADMAP.md" });
+    const queueFile = queueFileFromRoadmap(sampleRoadmap(), {});
 
-    expect(queueFile.source).toBe("ROADMAP.md");
-    expect(queueFile.goals).toBe("GOALS.md");
     expect(queueFile.queue.length).toBe(1);
     expect(queueFile.queue[0]?.id).toBe("first-step");
     expect(queueFile.queue[0]?.title).toBe("Build first step");
     expect(queueFile.queue[0]?.scope).toEqual(["README.md", "src/feature.ts"]);
     expect(queueFile.queue[0]?.verification).toEqual(["npm run check"]);
-    expect(queueFile.queue[0]?.commitMessage).toBeUndefined();
   });
 
   test("parses roadmap with configured model and variant", () => {
-    const queueFile = queueFileFromRoadmap(sampleRoadmap(), { goalsPath: "GOALS.md", model: "custom-model", sourcePath: "ROADMAP.md", variant: "low" });
+    const queueFile = queueFileFromRoadmap(sampleRoadmap(), { model: "custom-model", variant: "low" });
 
     expect(queueFile.model).toBe("custom-model");
     expect(queueFile.variant).toBe("low");
@@ -49,7 +46,7 @@ Acceptance:
 2. still works
 Verification:
 1) npm test
-Commit Message: Build second step
+Unknown After Verification: ignored without extending verification
 
 ### [third-step] Build third step
 
@@ -61,9 +58,8 @@ Acceptance:
 * works too
 Verification:
 * npm run check
-Commit: Build third step
 `,
-      { goalsPath: "/tmp/GOALS.md", sourcePath: "/tmp/ROADMAP.md" },
+      {},
     );
 
     expect(queueFile.queue.map((step) => step.id)).toEqual(["second-step", "third-step"]);
@@ -73,12 +69,12 @@ Commit: Build third step
   });
 
   test("rejects roadmap steps with missing required fields", () => {
-    expect(() => queueFileFromRoadmap("## first-step: Build first step\n\nPhase: Bootstrap\n", { goalsPath: "GOALS.md", sourcePath: "ROADMAP.md" })).toThrow(/missing scope field/);
+    expect(() => queueFileFromRoadmap("## first-step: Build first step\n\nPhase: Bootstrap\n", {})).toThrow(/missing scope field/);
   });
 
   test("rejects roadmaps without steps and duplicate IDs", () => {
-    expect(() => queueFileFromRoadmap("# Empty\n", { goalsPath: "GOALS.md", sourcePath: "ROADMAP.md" })).toThrow(/at least one step/);
-    expect(() => queueFileFromRoadmap(`${sampleRoadmap()}\n${sampleRoadmap()}`, { goalsPath: "GOALS.md", sourcePath: "ROADMAP.md" })).toThrow(/duplicate roadmap step id/);
+    expect(() => queueFileFromRoadmap("# Empty\n", {})).toThrow(/at least one step/);
+    expect(() => queueFileFromRoadmap(`${sampleRoadmap()}\n${sampleRoadmap()}`, {})).toThrow(/duplicate roadmap step id/);
   });
 
   test("importRoadmap preserves closed queue records", async () => {
@@ -86,16 +82,13 @@ Commit: Build third step
     try {
       await writeFile(
         path.join(tempDir, "ROADMAP.md"),
-        `${sampleRoadmap()}\n\n## completed-step: Completed\n\nPhase: Done\nScope: README.md\nPrompt: Already done.\nAcceptance:\n- done\nVerification:\n- npm test\nCommit: Completed step\n`,
+        `${sampleRoadmap()}\n\n## completed-step: Completed\n\nPhase: Done\nScope: README.md\nPrompt: Already done.\nAcceptance:\n- done\nVerification:\n- npm test\n`,
       );
       const context = await loadContext(tempDir, { _: [] });
       const existing: QueueFile = {
         version: 2,
-        source: "old.md",
-        goals: "GOALS.md",
         model: defaultModel,
         variant: defaultVariant,
-        updatedAt: null,
         queue: [],
         history: [
           {
@@ -106,7 +99,6 @@ Commit: Build third step
             prompt: "Already done.",
             acceptance: ["done"],
             verification: ["npm test"],
-            commitMessage: "Completed step",
           },
         ],
         blocked: [],
@@ -131,11 +123,8 @@ Commit: Build third step
       const context = await loadContext(tempDir, { _: [] });
       const existing: QueueFile = {
         version: 2,
-        source: "old.md",
-        goals: "GOALS.md",
         model: defaultModel,
         variant: defaultVariant,
-        updatedAt: null,
         queue: [
           {
             id: "manual-step",
@@ -145,7 +134,6 @@ Commit: Build third step
             prompt: "Keep this manually queued step.",
             acceptance: ["still queued"],
             verification: ["npm test"],
-            commitMessage: "Keep manual step",
           },
         ],
         history: [],
@@ -205,7 +193,7 @@ Commit: Build third step
     }
   });
 
-  test("queueFileFromRoadmapFile keeps absolute paths outside the root", async () => {
+  test("queueFileFromRoadmapFile accepts roadmap paths outside the root", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "roadrunner-roadmap-root-"));
     const outside = await mkdtemp(path.join(os.tmpdir(), "roadrunner-roadmap-outside-"));
     try {
@@ -217,7 +205,7 @@ Commit: Build third step
         root,
       });
 
-      expect(queueFile.source).toBe(roadmapPath);
+      expect(queueFile.queue.map((step) => step.id)).toEqual(["first-step"]);
     } finally {
       await rm(root, { force: true, recursive: true });
       await rm(outside, { force: true, recursive: true });
@@ -243,7 +231,5 @@ Acceptance:
 
 Verification:
 - npm run check
-
-Commit: Build first step
 `;
 }

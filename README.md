@@ -177,7 +177,7 @@ Verification:
 - npm run check
 ```
 
-Supported heading forms are `## step-id: Title`, `## step-id - Title`, and `## [step-id] Title`; heading levels `##` through `######` are accepted. Required fields are `Phase`, `Scope`, `Prompt`, `Acceptance`, and `Verification`. Legacy `Commit` and `Commit Message` fields are accepted but ignored.
+Supported heading forms are `## step-id: Title`, `## step-id - Title`, and `## [step-id] Title`; heading levels `##` through `######` are accepted. Required fields are `Phase`, `Scope`, `Prompt`, `Acceptance`, and `Verification`. Unknown fields are ignored.
 
 During development in this repo:
 

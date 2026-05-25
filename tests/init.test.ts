@@ -74,7 +74,6 @@ Acceptance:
 - docs explain the behavior
 Verification:
 - npm run check
-Commit: Build first step
 `,
       );
       const context = await loadContext(tempDir, { _: [] });

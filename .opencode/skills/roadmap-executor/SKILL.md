@@ -72,7 +72,7 @@ Roadrunner executes a queue of small tasks. Each task follows:
 Plan -> Execute -> Verify -> Reconcile
 ```
 
-The queue lives in the configured queue file, defaulting to `.roadrunner/queue.json` in the target project. The first queued item is the only current task.
+The queue lives in the configured queue file, defaulting to `.roadrunner/queue.json` in the target project. It contains `version`, `model`, `variant`, `queue`, `history`, and `blocked`. The first queued item is the only current task.
 
 `GOALS.md` is loaded once at the start of a run and used as an immutable in-memory goal snapshot for all prompts in that run. `ROADMAP.md` is read only by `init` and `import-roadmap`; after import, the queue file is the live task state.
 

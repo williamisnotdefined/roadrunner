@@ -9,6 +9,7 @@ import {
   markBlocked,
   markDone,
   nextStep,
+  normalizeQueueFile,
   readQueue,
   validateGoalsContent,
   validateQueueFile,
@@ -229,7 +230,7 @@ async function readValidatedQueue(context: ProjectContext): Promise<QueueFile> {
   const queueFile = await readQueue(context);
   const errors = validateQueueFile(queueFile, queueValidationOptions(context));
   if (errors.length > 0) throw new Error(errors.join("\n"));
-  return queueFile;
+  return normalizeQueueFile(queueFile);
 }
 
 export async function verify(
@@ -304,10 +305,14 @@ async function reconcileQueue(context: ProjectContext, step: QueueStep, snapshot
   if (result.code !== 0) throw new Error(`Reconciliation failed for ${step.id}.`);
 
   const queueFile = await readQueue(context);
-  const errors = [...validateQueueFile(queueFile, queueValidationOptions(context)), ...validateClosedRecordsPreserved(queueBeforeReconcile, queueFile)];
+  const errors = validateQueueFile(queueFile, queueValidationOptions(context));
   if (errors.length > 0) throw new Error(errors.join("\n"));
 
-  return queueFile;
+  const normalizedQueueFile = normalizeQueueFile(queueFile);
+  const preserveErrors = validateClosedRecordsPreserved(queueBeforeReconcile, normalizedQueueFile);
+  if (preserveErrors.length > 0) throw new Error(preserveErrors.join("\n"));
+
+  return normalizedQueueFile;
 }
 
 function providerFor(context: ProjectContext): OpenCodeProvider {

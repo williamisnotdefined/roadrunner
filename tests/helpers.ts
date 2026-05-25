@@ -67,7 +67,6 @@ Acceptance:
 - marker exists
 Verification:
 - ${verification}
-Commit: Build first step
 `;
 }
 
@@ -189,7 +188,7 @@ test("supports todo CRUD", () => {
     fs.writeFileSync("marker.txt", "ok\\n");
     const queuePath = path.join(".roadrunner", "queue.json");
     const queue = JSON.parse(fs.readFileSync(queuePath, "utf8"));
-    queue.source = "implementation-touched-queue.json";
+    queue.queue[0].title = "Implementation touched queue";
     fs.writeFileSync(queuePath, JSON.stringify(queue, null, 2) + "\\n");
   } else if (mode === "git-commit") {
     fs.writeFileSync("marker.txt", "ok\\n");
@@ -258,7 +257,7 @@ if (prompt.includes("Roadrunner Reconcile Queue")) {
   if (mode === "reconcile-queue") {
     const queuePath = path.join(".roadrunner", "queue.json");
     const queue = JSON.parse(fs.readFileSync(queuePath, "utf8"));
-    queue.source = "reconciled-roadmap.md";
+    queue.queue[0].title = "Reconciled first step";
     fs.writeFileSync(queuePath, JSON.stringify(queue, null, 2) + "\\n");
   }
   console.log("reconciled");
