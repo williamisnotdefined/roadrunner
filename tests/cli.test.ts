@@ -55,6 +55,7 @@ describe("cli", () => {
       formatRunEvent({ attempt: "fixed", step, type: "verify" }),
       formatRunEvent({ step, type: "reconcile" }),
       formatRunEvent({ step, type: "step-complete" }),
+      formatRunEvent({ type: "run-stop-requested" }),
       formatRunEvent({ type: "cleanup" }),
     ].join("\n");
 
@@ -70,6 +71,7 @@ describe("cli", () => {
     expect(output).toMatch(/Reconciling and optimizing queue after sample-step/);
     expect(output).toMatch(/Re-running verification for sample-step/);
     expect(output).toMatch(/Completed sample-step/);
+    expect(output).toMatch(/Stop requested; cleaning Roadrunner-owned processes/);
     expect(output).toMatch(/Cleaning Roadrunner-owned processes/);
   });
 

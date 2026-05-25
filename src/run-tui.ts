@@ -33,6 +33,7 @@ export async function runWithTui(context: ProjectContext, options: RunTuiOptions
   /* v8 ignore next -- the default app factory starts blessed and is exercised manually in a real TTY. */
   const appFactory = options.appFactory ?? createTuiApp;
   let app: Awaited<ReturnType<RunTuiAppFactory>> | null = null;
+  let stopRequested = false;
 
   try {
     app = await appFactory(context, session, { input, now: options.now ?? (() => Date.now()), output });
@@ -42,11 +43,15 @@ export async function runWithTui(context: ProjectContext, options: RunTuiOptions
       maxSteps: options.maxSteps,
       onActivity: app.onActivity,
       onControl: app.onControl,
-      onEvent: app.onEvent,
+      onEvent: (event) => {
+        if (event.type === "run-stop-requested") stopRequested = true;
+        app?.onEvent(event);
+      },
       streamProviderOutput: false,
     });
-    app.setStatus(`Completed ${completed} step(s). Session log: ${session.sessionLogPath}`);
-    session.event("run-end", `run ended completed=${completed}`, { completed });
+    const finalStatus = stopRequested ? `Stopped after ${completed} completed step(s). Session log: ${session.sessionLogPath}` : `Completed ${completed} step(s). Session log: ${session.sessionLogPath}`;
+    app.setStatus(finalStatus);
+    session.event("run-end", stopRequested ? `run stopped completed=${completed}` : `run ended completed=${completed}`, { completed, stopped: stopRequested });
     await sleep(options.settleMs ?? 500);
     return completed;
   } catch (error) {

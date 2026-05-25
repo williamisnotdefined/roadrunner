@@ -126,6 +126,8 @@ export function formatRunEvent(event: RoadrunnerRunEvent): string {
       return formatProviderStartEvent(event);
     case "reconcile":
       return formatCliStep(`Reconciling and optimizing queue after ${event.step.id}`);
+    case "run-stop-requested":
+      return formatCliInfo("Stop requested; cleaning Roadrunner-owned processes");
     case "step":
       return formatCliStep(`Selected step ${event.step.id}: ${event.step.title}`);
     case "step-complete":
@@ -192,6 +194,7 @@ Run UI controls:
   Tab                Switch between task, logs, and log viewer panels
   Enter              Open the selected task log
   r                  Restart the current task attempt from planning
+  q, Ctrl+C, Ctrl+Q  Stop the run and clean Roadrunner-owned subprocesses
 
 Path overrides:
   --goals path        Path to GOALS.md

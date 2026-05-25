@@ -1,16 +1,16 @@
+import { createRequire } from "node:module";
 import type { Readable, Writable } from "node:stream";
 
-import * as blessed from "blessed";
 import type { Widgets } from "blessed";
 
 import type { ProjectContext } from "./config.js";
-import { formatDuration } from "./duration.js";
 import type { QueueFile } from "./queue.js";
 import { readValidatedQueue } from "./queue-service.js";
 import { selectedTaskIndex, taskRowsFromQueue, taskStats, taskTableData, type TaskRow, type TaskStats } from "./run-dashboard-model.js";
 import { discoverTaskLogs, readLogTail, type TaskLogFile } from "./run-log-discovery.js";
-import { formatRunProgress, updateProgressForActivity, updateProgressForEvent, type RunProgressState } from "./run-progress.js";
+import { updateProgressForActivity, updateProgressForEvent, type RunProgressState } from "./run-progress.js";
 import type { RunSessionLogger } from "./run-session-log.js";
+import { actionText, detailsText, headerText, type CurrentTaskObservation } from "./run-tui-view.js";
 import type { RoadrunnerRunActivityEvent, RoadrunnerRunControl, RoadrunnerRunEvent } from "./runner.js";
 
 export interface RunTuiApp {
@@ -25,9 +25,13 @@ export type RunTuiAppFactory = (context: ProjectContext, session: RunSessionLogg
 
 type FocusPanel = "log" | "logs" | "tasks";
 
+const require = createRequire(import.meta.url);
+const blessed = require("blessed") as typeof import("blessed");
+
 /* v8 ignore start -- blessed full-screen rendering requires an interactive TTY; pure state, log, and session helpers are covered separately. */
 export async function createTuiApp(context: ProjectContext, session: RunSessionLogger, options: { input: Readable; now: () => number; output: Writable }): Promise<RunTuiApp> {
   let control: RoadrunnerRunControl | null = null;
+  let currentTaskObservation: CurrentTaskObservation | null = null;
   let focus: FocusPanel = "tasks";
   let logFiles: TaskLogFile[] = [];
   let logText = "Select a task log and press Enter.";
@@ -39,6 +43,7 @@ export async function createTuiApp(context: ProjectContext, session: RunSessionL
   let selectedTaskId: string | null = null;
   let stats: TaskStats = { blocked: 0, current: 0, done: 0, next: 0 };
   let status = `Session log: ${session.sessionLogPath}`;
+  let stopping = false;
 
   const screen = blessed.screen({ fullUnicode: true, input: options.input as never, output: options.output as never, smartCSR: true, title: "Roadrunner" });
   const header = blessed.box({ height: 3, left: 0, tags: true, top: 0, width: "100%" });
@@ -58,6 +63,7 @@ export async function createTuiApp(context: ProjectContext, session: RunSessionL
   screen.key(["pagedown"], () => scrollLog(10));
   screen.key(["enter"], () => openSelectedLog());
   screen.key(["r"], () => requestRestart());
+  screen.key(["q", "C-c", "C-q"], () => requestStop());
   screen.key(["y", "Y"], () => confirmRestart(true));
   screen.key(["n", "N", "escape"], () => confirmRestart(false));
   actions.on("click", () => requestRestart());
@@ -83,6 +89,7 @@ export async function createTuiApp(context: ProjectContext, session: RunSessionL
       progress = updateProgressForEvent(progress, event, options.now());
       if (event.type === "step") selectedTaskId = event.step.id;
       if (event.type === "provider-start") selectedLogPath = event.logPath;
+      if (event.type === "run-stop-requested") status = "Stopping run and cleaning Roadrunner-owned processes.";
       if (event.type === "task-restart-requested") status = `Restart requested for ${event.step.id}.`;
       if (event.type === "task-auto-restart-requested") status = `Auto restart ${event.restart}/${event.maxRestarts} for ${event.step.id}.`;
       if (event.type === "task-auto-restart-limit-exceeded") status = `Auto restart limit exceeded for ${event.step.id}.`;
@@ -105,6 +112,7 @@ export async function createTuiApp(context: ProjectContext, session: RunSessionL
       const queueFile: QueueFile = await readValidatedQueue(context);
       rows = taskRowsFromQueue(queueFile);
       stats = taskStats(queueFile);
+      updateCurrentTaskObservation();
       const index = selectedTaskIndex(rows, selectedTaskId);
       selectedTaskId = index >= 0 ? rows[index]!.id : null;
       await refreshLogs();
@@ -139,15 +147,15 @@ export async function createTuiApp(context: ProjectContext, session: RunSessionL
   }
 
   function render(): void {
-    header.setContent(headerText(stats, progress, options.now()));
+    header.setContent(headerText(stats, progress, currentTaskObservation, options.now()));
     table.setData(taskTableData(rows, selectedTaskId));
     const taskIndex = selectedTaskIndex(rows, selectedTaskId);
     if (taskIndex >= 0) table.select(taskIndex + 1);
-    details.setContent(detailsText(selectedRow(), progress, options.now(), session));
+    details.setContent(detailsText(selectedRow(), progress, currentTaskObservation, options.now(), session));
     logs.setItems(logFiles.map((file, index) => `${index === selectedLogIndex ? "›" : " "} ${file.label}`));
     if (logFiles.length > 0) logs.select(selectedLogIndex);
     log.setContent(logText || "Log is empty.");
-    actions.setContent(actionText(progress, pendingRestart));
+    actions.setContent(actionText(progress, pendingRestart, stopping));
     footer.setContent(` ${status}`);
     setBorders();
     screen.render();
@@ -203,6 +211,16 @@ export async function createTuiApp(context: ProjectContext, session: RunSessionL
     render();
   }
 
+  function requestStop(): void {
+    if (stopping) return;
+    stopping = true;
+    pendingRestart = false;
+    const ok = control?.stopRun() ?? false;
+    status = ok ? "Stopping run and cleaning Roadrunner-owned processes." : "Stop requested before runner control was ready.";
+    session.event("stop-requested", status, { source: "tui" });
+    render();
+  }
+
   function setFocus(nextFocus: FocusPanel): void {
     focus = nextFocus;
     render();
@@ -218,34 +236,20 @@ export async function createTuiApp(context: ProjectContext, session: RunSessionL
     return index >= 0 ? rows[index]! : null;
   }
 
+  function updateCurrentTaskObservation(): void {
+    const currentRow = rows.find((row) => row.status === "current");
+    if (!currentRow) {
+      currentTaskObservation = null;
+      return;
+    }
+    if (currentTaskObservation?.stepId !== currentRow.id) currentTaskObservation = { observedAt: options.now(), stepId: currentRow.id };
+  }
+
   function setBorders(): void {
     table.style.border = { fg: focus === "tasks" ? "cyan" : "gray" };
     logs.style.border = { fg: focus === "logs" ? "cyan" : "gray" };
     log.style.border = { fg: focus === "log" ? "cyan" : "gray" };
   }
-}
-
-function headerText(stats: TaskStats, progress: RunProgressState | null, now: number): string {
-  const heartbeat = progress ? `  ${formatRunProgress(progress, now)}` : "";
-  return `{bold}Roadrunner{/bold}  RUNNING  done ${stats.done}  current ${stats.current}  next ${stats.next}  blocked ${stats.blocked}${heartbeat}\n`;
-}
-
-function detailsText(row: TaskRow | null, progress: RunProgressState | null, now: number, session: RunSessionLogger): string {
-  if (!row) return "No tasks.";
-  const lines = [`{bold}${row.icon} ${row.id}{/bold}`, `status: ${row.statusLabel}`, `phase: ${row.phase}`, `title: ${row.title}`];
-  if (row.id === progress?.stepId) {
-    lines.push(`attempt: ${progress.attempt}`, `elapsed: ${formatDuration(now - progress.taskStartedAt)}`, `idle: ${formatDuration(now - progress.lastActivityAt)}`);
-    if (now - progress.lastActivityAt > 60_000) lines.push("{yellow-fg}status: possibly stalled, press r to restart{/yellow-fg}");
-  }
-  if (row.step.blockedReason) lines.push(`blocked: ${row.step.blockedReason}`);
-  lines.push("", `session: ${session.sessionLogPath}`);
-  return lines.join("\n");
-}
-
-function actionText(progress: RunProgressState | null, pendingRestart: boolean): string {
-  if (pendingRestart) return " {yellow-fg}Restart current task? y/N{/yellow-fg}";
-  const restart = progress ? "{cyan-fg}[r] ↻ Restart Task{/cyan-fg}" : "{gray-fg}[r] Restart unavailable{/gray-fg}";
-  return ` ${restart}   [Tab] switch panel   [Enter] open log   [PgUp/PgDn] scroll`;
 }
 
 function eventMessage(event: RoadrunnerRunEvent): string {

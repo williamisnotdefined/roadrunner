@@ -15,6 +15,7 @@ export interface StartupRefreshOptions {
   deadline: number | null;
   onOutput?: () => void;
   onProviderStart?: (event: ProviderStartEvent) => void;
+  signal?: AbortSignal;
   streamProviderOutput?: boolean;
 }
 
@@ -48,6 +49,7 @@ export async function refreshQueueAtRunStart(context: ProjectContext, snapshot: 
     onStart: options.onProviderStart,
     prompt,
     role: "startup-refresh",
+    signal: options.signal,
     skipPermissions: context.config.dangerouslySkipPermissions,
     streamOutput: options.streamProviderOutput,
   });

@@ -1,6 +1,6 @@
 import path from "node:path";
 
-import { recordAttemptActivity, startAutoRestartWatchdog, type RestartableAttemptState } from "./auto-restart-watchdog.js";
+import { recordAttemptActivity, startAutoRestartWatchdog } from "./auto-restart-watchdog.js";
 import type { ProjectContext } from "./config.js";
 import { cleanupProcesses } from "./process-registry.js";
 import { assertQueueUnchanged, readUnchangedCurrentQueue } from "./queue-guard.js";
@@ -10,16 +10,11 @@ import { providerFor } from "./providers/index.js";
 import { automaticRestartBlockedReason, resolveAutoRestartPolicy } from "./restart-policy.js";
 import type { RunSnapshot } from "./run-snapshot.js";
 import { createLogDir, renderPrompt, writePrivateFile } from "./run-artifacts.js";
+import type { CurrentAttemptState, RunControlState } from "./runner-control.js";
 import { planStep } from "./runner-planning.js";
 import { fixFailure, verify as verifyStep } from "./runner-verification.js";
 import { providerEnvForDeadline } from "./timeouts.js";
-import type { RoadrunnerRunActivityEvent, RoadrunnerRunControl, RoadrunnerRunEvent, RoadrunnerRunPhase } from "./runner.js";
-
-export interface CurrentAttemptState extends RestartableAttemptState {}
-
-export interface RunControlState {
-  current: CurrentAttemptState | null;
-}
+import type { RoadrunnerRunActivityEvent, RoadrunnerRunEvent, RoadrunnerRunPhase } from "./runner.js";
 
 interface RunStepInput {
   context: ProjectContext;
@@ -36,22 +31,6 @@ interface RunStepInput {
 export interface RunStepResult {
   logDir: string;
   step: QueueStep;
-}
-
-export function createRunControl(state: RunControlState, emitEvent: (event: RoadrunnerRunEvent) => void): RoadrunnerRunControl {
-  return {
-    restartCurrentTask() {
-      const current = state.current;
-      if (!current) return false;
-      if (current.restartRequested) return true;
-
-      current.restartReason = { type: "manual" };
-      current.restartRequested = true;
-      emitEvent({ elapsedMs: Date.now() - current.startedAt, phase: current.phase, step: current.step, type: "task-restart-requested" });
-      current.abortController.abort();
-      return true;
-    },
-  };
 }
 
 export async function runStepWithRestarts({ context, controlState, deadline, emitActivity, emitEvent, queueFile, snapshot, step, streamProviderOutput }: RunStepInput): Promise<RunStepResult> {
@@ -85,7 +64,7 @@ export async function runStepWithRestarts({ context, controlState, deadline, emi
     try {
       setAttemptPhase(attemptState, "plan");
       emitEvent({ step: attemptStep, type: "plan" });
-      const planResult = await withRestartCheck(
+      const planResult = await withControlCheck(
         () =>
           planStep(context, attemptStep, snapshot, {
             deadline,
@@ -97,6 +76,7 @@ export async function runStepWithRestarts({ context, controlState, deadline, emi
             signal: attemptState.abortController.signal,
             streamProviderOutput,
           }),
+        controlState,
         attemptState,
       );
       if (planResult.result.code !== 0) {
@@ -115,7 +95,7 @@ export async function runStepWithRestarts({ context, controlState, deadline, emi
 
       setAttemptPhase(attemptState, "implement");
       emitEvent({ step: attemptStep, type: "implement" });
-      const result = await withRestartCheck(
+      const result = await withControlCheck(
         () =>
           providerFor(context).run({
             agent: "build",
@@ -133,6 +113,7 @@ export async function runStepWithRestarts({ context, controlState, deadline, emi
             skipPermissions: context.config.dangerouslySkipPermissions,
             streamOutput: streamProviderOutput,
           }),
+        controlState,
         attemptState,
       );
       await assertQueueUnchangedOrBlock(context, queueFile, step, "Implementation may not update the Roadrunner queue file.");
@@ -143,20 +124,21 @@ export async function runStepWithRestarts({ context, controlState, deadline, emi
 
       setAttemptPhase(attemptState, "verify");
       emitEvent({ attempt: "initial", step: attemptStep, type: "verify" });
-      let verification = await withRestartCheck(
+      let verification = await withControlCheck(
         () =>
           verifyStep(context, attemptStep, logDir, {
             deadline,
             onOutput: activityEmitter(attemptState, emitActivity, attemptStep, "verify"),
             signal: attemptState.abortController.signal,
           }),
+        controlState,
         attemptState,
       );
       await assertQueueUnchangedOrBlock(context, queueFile, step, "Verification may not update the Roadrunner queue file.");
       if (!verification.ok) {
         setAttemptPhase(attemptState, "fix");
         emitEvent({ step: attemptStep, type: "fix" });
-        const fix = await withRestartCheck(
+        const fix = await withControlCheck(
           () =>
             fixFailure(context, attemptStep, snapshot, planResult.result.output, verification.output, logDir, {
               deadline,
@@ -168,13 +150,14 @@ export async function runStepWithRestarts({ context, controlState, deadline, emi
               signal: attemptState.abortController.signal,
               streamProviderOutput,
             }),
+          controlState,
           attemptState,
         );
         await assertQueueUnchangedOrBlock(context, queueFile, step, "Fix attempts may not update the Roadrunner queue file.");
         if (fix.code === 0) {
           setAttemptPhase(attemptState, "verify-fixed");
           emitEvent({ attempt: "fixed", step: attemptStep, type: "verify" });
-          verification = await withRestartCheck(
+          verification = await withControlCheck(
             () =>
               verifyStep(context, attemptStep, logDir, {
                 deadline,
@@ -182,6 +165,7 @@ export async function runStepWithRestarts({ context, controlState, deadline, emi
                 prefix: "verify-fixed",
                 signal: attemptState.abortController.signal,
               }),
+            controlState,
             attemptState,
           );
           await assertQueueUnchangedOrBlock(context, queueFile, step, "Verification may not update the Roadrunner queue file.");
@@ -207,6 +191,10 @@ export async function runStepWithRestarts({ context, controlState, deadline, emi
       emitEvent({ step: attemptStep, type: "step-complete" });
       return { logDir, step: attemptStep };
     } catch (error) {
+      if (isRunStopRequested(error) || controlState.stopRequested) {
+        controlState.current = null;
+        throw new RunStopRequested();
+      }
       if (isTaskRestartRequest(error) || attemptState.restartRequested) {
         if (attemptState.restartReason?.type === "auto-limit") {
           await blockStep(context, queueFile, step, automaticRestartBlockedReason(autoRestartPolicy), { useLatest: false });
@@ -254,12 +242,19 @@ function setAttemptPhase(current: CurrentAttemptState, phase: RoadrunnerRunPhase
   recordAttemptActivity(current);
 }
 
+export class RunStopRequested extends Error {}
+
 class TaskRestartRequest extends Error {}
 
-async function withRestartCheck<T>(operation: () => Promise<T>, current: CurrentAttemptState): Promise<T> {
+async function withControlCheck<T>(operation: () => Promise<T>, state: RunControlState, current: CurrentAttemptState): Promise<T> {
   const result = await operation();
+  if (state.stopRequested) throw new RunStopRequested();
   if (current.restartRequested) throw new TaskRestartRequest();
   return result;
+}
+
+export function isRunStopRequested(error: unknown): boolean {
+  return error instanceof RunStopRequested;
 }
 
 function isTaskRestartRequest(error: unknown): boolean {

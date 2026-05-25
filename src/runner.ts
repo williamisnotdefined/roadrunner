@@ -6,7 +6,8 @@ import { cleanupProcesses } from "./process-registry.js";
 import { validateConfiguredProvider, type ProviderStartEvent } from "./providers/index.js";
 import { readRunSnapshot } from "./run-snapshot.js";
 import { planStep, type PlanOptions } from "./runner-planning.js";
-import { createRunControl, runStepWithRestarts, type RunControlState } from "./runner-execution.js";
+import { createRunControl, type RunControlState } from "./runner-control.js";
+import { isRunStopRequested, RunStopRequested, runStepWithRestarts } from "./runner-execution.js";
 import { reconcileQueue } from "./runner-reconciliation.js";
 import { refreshQueueAtRunStart } from "./runner-startup.js";
 
@@ -38,6 +39,7 @@ export interface RoadrunnerRunActivityEvent {
 
 export interface RoadrunnerRunControl {
   restartCurrentTask(): boolean;
+  stopRun(): boolean;
 }
 
 export type RoadrunnerRunEvent =
@@ -49,6 +51,7 @@ export type RoadrunnerRunEvent =
   | { step: QueueStep; type: "reconcile" }
   | { step: QueueStep; type: "step" }
   | { step: QueueStep; type: "step-complete" }
+  | { type: "run-stop-requested" }
   | { type: "startup-refresh" }
   | { idleMs: number; maxRestarts: number; phase: RoadrunnerRunPhase | null; restart: number; step: QueueStep; type: "task-auto-restart-requested" }
   | { idleMs: number; maxRestarts: number; phase: RoadrunnerRunPhase | null; step: QueueStep; type: "task-auto-restart-limit-exceeded" }
@@ -89,7 +92,7 @@ export async function plan(
 export async function run(context: ProjectContext, options: RunOptions = {}): Promise<number> {
   const { maxHours, maxSteps = 1, streamProviderOutput = false } = options;
   const releaseLock = await acquireProjectLock(context);
-  const controlState: RunControlState = { current: null };
+  const controlState: RunControlState = { activeAbortController: null, current: null, stopRequested: false };
   options.onControl?.(createRunControl(controlState, (event) => emitRunEvent(options, event)));
 
   try {
@@ -107,11 +110,11 @@ export async function run(context: ProjectContext, options: RunOptions = {}): Pr
       } else {
         await cleanupProcesses(context, { force: true });
         await ensureProviderAvailable(context);
-        await refreshQueueAtRunStart(context, snapshot, { deadline, streamProviderOutput });
+        await runAbortableOperation(controlState, (signal) => refreshQueueAtRunStart(context, snapshot, { deadline, signal, streamProviderOutput }));
         emitRunEvent(options, { type: "startup-refresh" });
       }
 
-      while (completed < maxSteps) {
+      while (completed < maxSteps && !controlState.stopRequested) {
         if (deadline !== null && Date.now() >= deadline) {
           completedResult = completed;
           break;
@@ -126,31 +129,56 @@ export async function run(context: ProjectContext, options: RunOptions = {}): Pr
         await ensureProviderAvailable(context);
 
         emitRunEvent(options, { step, type: "step" });
-        const stepResult = await runStepWithRestarts({
-          context,
-          controlState,
-          deadline,
-          emitActivity: (event) => emitRunActivity(options, event),
-          emitEvent: (event) => emitRunEvent(options, event),
-          queueFile,
-          snapshot,
-          step,
-          streamProviderOutput,
-        });
+        let stepResult: Awaited<ReturnType<typeof runStepWithRestarts>>;
+        try {
+          stepResult = await runStepWithRestarts({
+            context,
+            controlState,
+            deadline,
+            emitActivity: (event) => emitRunActivity(options, event),
+            emitEvent: (event) => emitRunEvent(options, event),
+            queueFile,
+            snapshot,
+            step,
+            streamProviderOutput,
+          });
+        } catch (error) {
+          if (isRunStopRequested(error) || controlState.stopRequested) {
+            completedResult = completed;
+            break;
+          }
+          throw error;
+        }
         completed += 1;
+        if (controlState.stopRequested) break;
         emitRunEvent(options, { step: stepResult.step, type: "reconcile" });
-        await reconcileQueue(context, stepResult.step, snapshot, stepResult.logDir, {
-          deadline,
-          onOutput: () => emitRunActivity(options, { phase: "reconcile", step: stepResult.step }),
-          onProviderStart: (event) => emitRunEvent(options, { ...event, step: stepResult.step, type: "provider-start" }),
-          streamProviderOutput,
-        });
+        try {
+          await runAbortableOperation(controlState, (signal) =>
+            reconcileQueue(context, stepResult.step, snapshot, stepResult.logDir, {
+              deadline,
+              onOutput: () => emitRunActivity(options, { phase: "reconcile", step: stepResult.step }),
+              onProviderStart: (event) => emitRunEvent(options, { ...event, step: stepResult.step, type: "provider-start" }),
+              signal,
+              streamProviderOutput,
+            }),
+          );
+        } catch (error) {
+          if (isRunStopRequested(error) || controlState.stopRequested) {
+            completedResult = completed;
+            break;
+          }
+          throw error;
+        }
       }
 
       completedResult ??= completed;
     } catch (error) {
-      primaryError = error;
-      throw error;
+      if (isRunStopRequested(error) || controlState.stopRequested) {
+        completedResult ??= completed;
+      } else {
+        primaryError = error;
+        throw error;
+      }
     } finally {
       emitRunEvent(options, { type: "cleanup" });
       try {
@@ -164,6 +192,20 @@ export async function run(context: ProjectContext, options: RunOptions = {}): Pr
     return completedResult;
   } finally {
     await releaseLock();
+  }
+}
+
+async function runAbortableOperation<T>(state: RunControlState, operation: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const abortController = new AbortController();
+  state.activeAbortController = abortController;
+  if (state.stopRequested) abortController.abort();
+
+  try {
+    const result = await operation(abortController.signal);
+    if (state.stopRequested) throw new RunStopRequested();
+    return result;
+  } finally {
+    if (state.activeAbortController === abortController) state.activeAbortController = null;
   }
 }
 

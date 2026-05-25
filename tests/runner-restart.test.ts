@@ -2,8 +2,8 @@ import { afterEach, describe, expect, test } from "vitest";
 
 import { readJson } from "../src/config.js";
 import type { QueueFile, QueueStep } from "../src/queue.js";
+import { createRunControl, type CurrentAttemptState, type RunControlState } from "../src/runner-control.js";
 import { run as runRoadrunner, type RoadrunnerRunControl, type RoadrunnerRunEvent } from "../src/runner.js";
-import { createRunControl, type CurrentAttemptState, type RunControlState } from "../src/runner-execution.js";
 import { removeDir } from "./helpers.js";
 import { setupRunnerProject } from "./runner-helpers.js";
 
@@ -26,7 +26,7 @@ afterEach(() => {
 describe("runner restart control", () => {
   test("reports unavailable and duplicate restart requests", () => {
     const events: RoadrunnerRunEvent[] = [];
-    const state: RunControlState = { current: null };
+    const state: RunControlState = { activeAbortController: null, current: null, stopRequested: false };
     const control = createRunControl(state, (event) => events.push(event));
 
     expect(control.restartCurrentTask()).toBe(false);
@@ -48,6 +48,113 @@ describe("runner restart control", () => {
     expect(abortController.signal.aborted).toBe(true);
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({ phase: "implement", step: sampleStep, type: "task-restart-requested" });
+  });
+
+  test("stop control aborts active work and prevents restarts", () => {
+    const events: RoadrunnerRunEvent[] = [];
+    const state: RunControlState = { activeAbortController: new AbortController(), current: null, stopRequested: false };
+    const control = createRunControl(state, (event) => events.push(event));
+    const abortController = new AbortController();
+    state.current = {
+      abortController,
+      lastActivityAt: Date.now() - 1000,
+      phase: "implement",
+      restartReason: null,
+      restartRequested: false,
+      startedAt: Date.now() - 1000,
+      step: sampleStep,
+    };
+
+    expect(control.stopRun()).toBe(true);
+    expect(control.stopRun()).toBe(true);
+    expect(control.restartCurrentTask()).toBe(false);
+    expect(state.stopRequested).toBe(true);
+    expect(abortController.signal.aborted).toBe(true);
+    expect(state.activeAbortController?.signal.aborted).toBe(true);
+    expect(events).toEqual([{ type: "run-stop-requested" }]);
+  });
+
+  test("stops the current task without blocking it", async () => {
+    const project = await setupRunnerProject("hang-once-plan");
+    const events: string[] = [];
+    let control: RoadrunnerRunControl | null = null;
+    process.env.ROADRUNNER_PROVIDER_TIMEOUT_MS = "0";
+
+    try {
+      const completed = await runRoadrunner(project.context, {
+        maxSteps: 1,
+        onControl: (nextControl) => {
+          control = nextControl;
+        },
+        onEvent: (event) => {
+          events.push(event.type);
+          if (event.type === "provider-start" && event.role === "plan") control?.stopRun();
+        },
+      });
+      const queue = await readJson<QueueFile>(project.context.paths.queue);
+
+      expect(completed).toBe(0);
+      expect(events).toContain("run-stop-requested");
+      expect(events).toContain("cleanup");
+      expect(queue.history).toEqual([]);
+      expect(queue.blocked).toEqual([]);
+      expect(queue.queue[0]?.id).toBe("first-step");
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
+  test("stops startup refresh through run control", async () => {
+    const project = await setupRunnerProject("success");
+    const events: string[] = [];
+
+    try {
+      const completed = await runRoadrunner(project.context, {
+        maxSteps: 1,
+        onControl: (nextControl) => {
+          nextControl.stopRun();
+        },
+        onEvent: (event) => {
+          events.push(event.type);
+        },
+      });
+      const queue = await readJson<QueueFile>(project.context.paths.queue);
+
+      expect(completed).toBe(0);
+      expect(events).toContain("run-stop-requested");
+      expect(events).toContain("cleanup");
+      expect(queue.blocked).toEqual([]);
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
+  test("stops post-step reconciliation without blocking the completed step", async () => {
+    const project = await setupRunnerProject("success");
+    const events: string[] = [];
+    let control: RoadrunnerRunControl | null = null;
+
+    try {
+      const completed = await runRoadrunner(project.context, {
+        maxSteps: 1,
+        onControl: (nextControl) => {
+          control = nextControl;
+        },
+        onEvent: (event) => {
+          events.push(event.type);
+          if (event.type === "provider-start" && event.role === "reconcile") control?.stopRun();
+        },
+      });
+      const queue = await readJson<QueueFile>(project.context.paths.queue);
+
+      expect(completed).toBe(1);
+      expect(events).toContain("run-stop-requested");
+      expect(events).toContain("cleanup");
+      expect(queue.history.map((step) => step.id)).toEqual(["first-step"]);
+      expect(queue.blocked).toEqual([]);
+    } finally {
+      await removeDir(project.directory);
+    }
   });
 
   test("does not restart a completed task during post-step reconciliation", async () => {
