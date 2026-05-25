@@ -87,10 +87,7 @@ Commit: Build first step
   test("loadContext reads root Roadrunner config by default", async () => {
     const tempDir = await mkdtemp(path.join(os.tmpdir(), "roadrunner-config-"));
     try {
-      await writeFile(
-        path.join(tempDir, "roadrunner.config.json"),
-        `${JSON.stringify({ paths: { queue: "ai/roadmap/queue.json" } }, null, 2)}\n`,
-      );
+      await writeFile(path.join(tempDir, "roadrunner.config.json"), `${JSON.stringify({ paths: { queue: "ai/roadmap/queue.json" } }, null, 2)}\n`);
 
       const context = await loadContext(tempDir, { _: [] });
 

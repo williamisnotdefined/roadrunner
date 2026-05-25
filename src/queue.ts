@@ -92,7 +92,13 @@ export function nextStep(queueFile: QueueFile): QueueStep | null {
 
 export function formatStep(step: QueueStep | null): string {
   if (!step) return "No queued step.";
-  return [`${step.id} - ${step.title}`, `Phase: ${step.phase}`, `Scope: ${step.scope.join(", ")}`, `Acceptance: ${step.acceptance.join("; ")}`, `Commit: ${step.commitMessage}`].join("\n");
+  return [
+    `${step.id} - ${step.title}`,
+    `Phase: ${step.phase}`,
+    `Scope: ${step.scope.join(", ")}`,
+    `Acceptance: ${step.acceptance.join("; ")}`,
+    `Commit: ${step.commitMessage}`,
+  ].join("\n");
 }
 
 export function markDone(queueFile: QueueFile, stepId: string): void {

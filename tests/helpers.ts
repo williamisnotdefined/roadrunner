@@ -72,7 +72,8 @@ Commit: Build first step
 }
 
 function fakeOpenCodeScript(): string {
-  return `#!/usr/bin/env node
+  return (
+    `#!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
 
@@ -97,6 +98,11 @@ if (mode === "fix-fail" && prompt.includes("Roadrunner Fix Failure")) {
   process.exit(8);
 }
 
+if (mode === "hang") {
+  console.log("hanging");
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0);
+}
+
 if (prompt.includes("Roadrunner Plan Step")) {
   if (mode === "plan-dirty") fs.writeFileSync("plan-dirty.txt", "nope\\n");
   console.log("Plan: implement the requested step.");
@@ -111,7 +117,8 @@ if (prompt.includes("Roadrunner Implement Step")) {
     fs.mkdirSync("src", { recursive: true });
     fs.mkdirSync("test", { recursive: true });
     fs.writeFileSync("package.json", JSON.stringify({ type: "module", scripts: { test: "node --test" } }, null, 2) + "\\n");
-    fs.writeFileSync("src/todos.js", ` + JSON.stringify(`export function createTodoStore() {
+    fs.writeFileSync("src/todos.js", ` +
+    JSON.stringify(`export function createTodoStore() {
   const todos = new Map();
   let nextId = 1;
   return {
@@ -135,8 +142,10 @@ if (prompt.includes("Roadrunner Implement Step")) {
     },
   };
 }
-`) + `);
-    fs.writeFileSync("test/todos.test.js", ` + JSON.stringify(`import test from "node:test";
+`) +
+    `);
+    fs.writeFileSync("test/todos.test.js", ` +
+    JSON.stringify(`import test from "node:test";
 import assert from "node:assert/strict";
 import { createTodoStore } from "../src/todos.js";
 
@@ -148,7 +157,8 @@ test("supports todo CRUD", () => {
   assert.equal(store.remove(todo.id), true);
   assert.deepEqual(store.list(), []);
 });
-`) + `);
+`) +
+    `);
   } else if (mode === "noop") {
     // no changes
   } else if (mode === "verify-fail" || mode === "fix-success" || mode === "fix-fail") {
@@ -194,5 +204,6 @@ if (prompt.includes("Roadrunner Reconcile Queue")) {
 }
 
 console.log("ok");
-`;
+`
+  );
 }

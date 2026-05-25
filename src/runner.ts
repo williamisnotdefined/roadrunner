@@ -17,7 +17,7 @@ import {
   type QueueValidationOptions,
 } from "./queue.js";
 import { cleanupProcesses } from "./process-registry.js";
-import { OpenCodeProvider, type ProviderRunResult } from "./providers/opencode.js";
+import { OpenCodeProvider, type ProviderRunResult, type ProviderStartEvent } from "./providers/opencode.js";
 
 export interface RoadrunnerStatus {
   blocked: number;
@@ -29,7 +29,26 @@ export interface RoadrunnerStatus {
 export interface RunOptions {
   maxHours?: number;
   maxSteps?: number;
+  onEvent?: (event: RoadrunnerRunEvent) => void;
 }
+
+export interface PlanOptions {
+  onProviderStart?: (event: ProviderStartEvent) => void;
+}
+
+export type RoadrunnerRunEvent =
+  | { type: "clean-worktree" }
+  | { type: "cleanup" }
+  | { step: QueueStep; type: "commit" }
+  | { step: QueueStep; type: "fix" }
+  | { step: QueueStep; type: "implement" }
+  | { step: QueueStep; type: "plan" }
+  | ({ step: QueueStep; type: "provider-start" } & ProviderStartEvent)
+  | { step: QueueStep; type: "reconcile" }
+  | { step: QueueStep; type: "step" }
+  | { step: QueueStep; type: "step-complete" }
+  | { attempt: "fixed" | "initial"; step: QueueStep; type: "verify" }
+  | { type: "validate" };
 
 interface GitStatusEntry {
   index: string;
@@ -49,7 +68,7 @@ export async function status(context: ProjectContext): Promise<RoadrunnerStatus>
   };
 }
 
-export async function plan(context: ProjectContext): Promise<{ logDir: string; result: { code: number | null; output: string }; step: QueueStep } | null> {
+export async function plan(context: ProjectContext, options: PlanOptions = {}): Promise<{ logDir: string; result: { code: number | null; output: string }; step: QueueStep } | null> {
   const queueFile = await readQueue(context);
   const step = nextStep(queueFile);
   if (!step) return null;
@@ -62,22 +81,26 @@ export async function plan(context: ProjectContext): Promise<{ logDir: string; r
   });
 
   const provider = providerFor(context);
+  await writeFile(path.join(logDir, "plan.prompt.md"), prompt);
   const result = await provider.run({
     agent: "plan",
     context,
     logPath: path.join(logDir, "plan.opencode.log"),
+    onStart: options.onProviderStart,
     prompt,
     role: "plan",
     skipPermissions: false,
   });
-  await writeFile(path.join(logDir, "plan.prompt.md"), prompt);
   await writeFile(path.join(logDir, "plan.md"), result.output);
 
   return { logDir, result, step };
 }
 
-export async function run(context: ProjectContext, { maxHours, maxSteps = 1 }: RunOptions = {}): Promise<number> {
+export async function run(context: ProjectContext, options: RunOptions = {}): Promise<number> {
+  const { maxHours, maxSteps = 1 } = options;
+  emitRunEvent(options, { type: "validate" });
   await validateProject(context);
+  emitRunEvent(options, { type: "clean-worktree" });
   await ensureCleanWorktree(context);
   let completed = 0;
   const deadline = maxHours === undefined ? null : Date.now() + maxHours * 60 * 60 * 1000;
@@ -90,10 +113,12 @@ export async function run(context: ProjectContext, { maxHours, maxSteps = 1 }: R
       const step = nextStep(queueFile);
       if (!step) return completed;
 
-      const planResult = await plan(context);
+      emitRunEvent(options, { step, type: "step" });
+      emitRunEvent(options, { step, type: "plan" });
+      const planResult = await plan(context, { onProviderStart: (event) => emitRunEvent(options, { ...event, step, type: "provider-start" }) });
       /* v8 ignore next -- plan can only return null here if the queue changes between validated reads. */
       if (!planResult) throw new Error(`Planning failed for ${step.id}.`);
-      if (planResult.result.code !== 0) throw new Error(`Planning failed for ${step.id}.`);
+      if (planResult.result.code !== 0) throw new Error(`Planning failed for ${step.id} (exit ${String(planResult.result.code)}). See ${path.join(planResult.logDir, "plan.opencode.log")}.`);
       /* v8 ignore next -- step mismatch requires an external queue race between validated reads. */
       if (planResult.step.id !== step.id) throw new Error(`Planning selected ${planResult.step.id}, expected ${step.id}.`);
 
@@ -109,11 +134,13 @@ export async function run(context: ProjectContext, { maxHours, maxSteps = 1 }: R
       });
       await writeFile(path.join(logDir, "implement.prompt.md"), prompt);
 
+      emitRunEvent(options, { step, type: "implement" });
       const provider = providerFor(context);
       const result = await provider.run({
         agent: "build",
         context,
         logPath: path.join(logDir, "implement.opencode.log"),
+        onStart: (event) => emitRunEvent(options, { ...event, step, type: "provider-start" }),
         prompt,
         role: "implement",
       });
@@ -126,12 +153,15 @@ export async function run(context: ProjectContext, { maxHours, maxSteps = 1 }: R
       }
       await ensureGoalsUnchanged(context, path.join(logDir, "implement-goals-status.log"));
 
+      emitRunEvent(options, { attempt: "initial", step, type: "verify" });
       let verification = await verify(context, step, logDir);
       await ensureGoalsUnchanged(context, path.join(logDir, "verify-goals-status.log"));
       if (!verification.ok) {
-        const fix = await fixFailure(context, step, planResult.result.output, verification.output, logDir);
+        emitRunEvent(options, { step, type: "fix" });
+        const fix = await fixFailure(context, step, planResult.result.output, verification.output, logDir, options);
         await ensureGoalsUnchanged(context, path.join(logDir, "fix-failure-goals-status.log"));
         if (fix.code === 0) {
+          emitRunEvent(options, { attempt: "fixed", step, type: "verify" });
           verification = await verify(context, step, logDir, { prefix: "verify-fixed" });
           await ensureGoalsUnchanged(context, path.join(logDir, "verify-fixed-goals-status.log"));
         }
@@ -143,15 +173,23 @@ export async function run(context: ProjectContext, { maxHours, maxSteps = 1 }: R
         throw new Error(`Verification failed for ${step.id}.`);
       }
 
+      emitRunEvent(options, { step, type: "commit" });
       await completeStepAndCommit(context, queueFile, step, logDir);
-      await reconcileQueue(context, step, logDir);
+      emitRunEvent(options, { step, type: "reconcile" });
+      await reconcileQueue(context, step, logDir, options);
+      emitRunEvent(options, { step, type: "step-complete" });
       completed += 1;
     }
 
     return completed;
   } finally {
+    emitRunEvent(options, { type: "cleanup" });
     await cleanupProcesses(context);
   }
+}
+
+function emitRunEvent(options: RunOptions, event: RoadrunnerRunEvent): void {
+  if (options.onEvent) options.onEvent(event);
 }
 
 async function validateProject(context: ProjectContext): Promise<void> {
@@ -177,7 +215,7 @@ export async function verify(context: ProjectContext, step: QueueStep, logDir: s
   return { ok: true, output };
 }
 
-async function fixFailure(context: ProjectContext, step: QueueStep, planMarkdown: string, failureOutput: string, logDir: string): Promise<ProviderRunResult> {
+async function fixFailure(context: ProjectContext, step: QueueStep, planMarkdown: string, failureOutput: string, logDir: string, options: RunOptions): Promise<ProviderRunResult> {
   const prompt = await renderPrompt(context, "fix-failure.md", {
     GOALS_MD: await readFile(context.paths.goals, "utf8"),
     LAST_FAILURE: failureOutput,
@@ -190,6 +228,7 @@ async function fixFailure(context: ProjectContext, step: QueueStep, planMarkdown
     agent: "build",
     context,
     logPath: path.join(logDir, "fix-failure.opencode.log"),
+    onStart: (event) => emitRunEvent(options, { ...event, step, type: "provider-start" }),
     prompt,
     role: "fix-failure",
   });
@@ -197,7 +236,7 @@ async function fixFailure(context: ProjectContext, step: QueueStep, planMarkdown
   return result;
 }
 
-async function reconcileQueue(context: ProjectContext, step: QueueStep, logDir: string): Promise<void> {
+async function reconcileQueue(context: ProjectContext, step: QueueStep, logDir: string, options: RunOptions): Promise<void> {
   const preReconcileChanges = await changedStatusEntries(context, path.join(logDir, "reconcile-pre-status.log"));
   if (preReconcileChanges.length > 0) throw new Error(`Expected clean worktree before reconciliation: ${statusEntryPaths(preReconcileChanges).join(", ")}`);
 
@@ -211,6 +250,7 @@ async function reconcileQueue(context: ProjectContext, step: QueueStep, logDir: 
     agent: "build",
     context,
     logPath: path.join(logDir, "reconcile.opencode.log"),
+    onStart: (event) => emitRunEvent(options, { ...event, step, type: "provider-start" }),
     prompt,
     role: "reconcile",
   });

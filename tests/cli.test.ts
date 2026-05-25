@@ -2,13 +2,51 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
 
-import { helpText, main } from "../src/cli.js";
+import { formatRunEvent, helpText, main } from "../src/cli.js";
 import { readJson, writeJson } from "../src/config.js";
-import type { QueueFile } from "../src/queue.js";
+import type { QueueFile, QueueStep } from "../src/queue.js";
 import { createInitializedProject, removeDir, sampleRoadmap, tempDir } from "./helpers.js";
 import { createFakeOpenCodeBin, withPath } from "./helpers.js";
 
 describe("cli", () => {
+  test("formats run progress events", () => {
+    const step: QueueStep = {
+      acceptance: ["works"],
+      commitMessage: "Ship sample",
+      id: "sample-step",
+      phase: "Sample",
+      prompt: "Build it.",
+      scope: ["src/sample.ts"],
+      title: "Ship Sample",
+      verification: ["npm test"],
+    };
+
+    const output = [
+      formatRunEvent({ type: "validate" }),
+      formatRunEvent({ type: "clean-worktree" }),
+      formatRunEvent({ step, type: "step" }),
+      formatRunEvent({ step, type: "plan" }),
+      formatRunEvent({ command: ["opencode", "run", "<prompt>"], debug: true, logPath: "/tmp/plan.log", pid: 123, role: "plan", step, type: "provider-start" }),
+      formatRunEvent({ command: ["opencode", "run", "<prompt>"], debug: false, logPath: "/tmp/missing.log", pid: null, role: "plan", step, type: "provider-start" }),
+      formatRunEvent({ step, type: "implement" }),
+      formatRunEvent({ attempt: "initial", step, type: "verify" }),
+      formatRunEvent({ step, type: "fix" }),
+      formatRunEvent({ attempt: "fixed", step, type: "verify" }),
+      formatRunEvent({ step, type: "commit" }),
+      formatRunEvent({ step, type: "reconcile" }),
+      formatRunEvent({ step, type: "step-complete" }),
+      formatRunEvent({ type: "cleanup" }),
+    ].join("\n");
+
+    expect(output).toMatch(/Validating project/);
+    expect(output).toMatch(/Selected step sample-step: Ship Sample/);
+    expect(output).toMatch(/OpenCode plan started pid=123 log=\/tmp\/plan\.log debug=on/);
+    expect(output).toMatch(/OpenCode plan started pid=n\/a log=\/tmp\/missing\.log/);
+    expect(output).toMatch(/Re-running verification for sample-step/);
+    expect(output).toMatch(/Completed sample-step/);
+    expect(output).toMatch(/Cleaning Roadrunner-owned processes/);
+  });
+
   test("prints help for default and unknown commands", async () => {
     const directory = await tempDir("roadrunner-cli-help-");
     const output: string[] = [];
@@ -84,7 +122,7 @@ describe("cli", () => {
       await writeJson(context.paths.queue, queue);
 
       expect(await main(["plan"], { cwd: directory, io: { stdout: (message) => output.push(message) } })).toBe(0);
-      expect(output).toContain("No queued step.");
+      expect(output.join("\n")).toMatch(/No queued step/);
     } finally {
       await removeDir(directory);
     }
@@ -132,7 +170,8 @@ describe("cli", () => {
       await writeFile(context.paths.queue, `${JSON.stringify(queue, null, 2)}\n`);
 
       expect(await main(["run", "--max-steps", "1"], { cwd: directory, io: { stdout: (message) => output.push(message) } })).toBe(1);
-      expect(output).toEqual([]);
+      expect(output.join("\n")).toMatch(/Running Roadrunner/);
+      expect(output.join("\n")).toMatch(/Checking clean git worktree/);
     } finally {
       await removeDir(directory);
     }

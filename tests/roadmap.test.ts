@@ -72,16 +72,12 @@ Commit: Build third step
   });
 
   test("rejects roadmap steps with missing required fields", () => {
-    expect(() => queueFileFromRoadmap("## first-step: Build first step\n\nPhase: Bootstrap\n", { goalsPath: "GOALS.md", sourcePath: "ROADMAP.md" })).toThrow(
-      /missing scope field/,
-    );
+    expect(() => queueFileFromRoadmap("## first-step: Build first step\n\nPhase: Bootstrap\n", { goalsPath: "GOALS.md", sourcePath: "ROADMAP.md" })).toThrow(/missing scope field/);
   });
 
   test("rejects roadmaps without steps and duplicate IDs", () => {
     expect(() => queueFileFromRoadmap("# Empty\n", { goalsPath: "GOALS.md", sourcePath: "ROADMAP.md" })).toThrow(/at least one step/);
-    expect(() =>
-      queueFileFromRoadmap(`${sampleRoadmap()}\n${sampleRoadmap()}`, { goalsPath: "GOALS.md", sourcePath: "ROADMAP.md" }),
-    ).toThrow(/duplicate roadmap step id/);
+    expect(() => queueFileFromRoadmap(`${sampleRoadmap()}\n${sampleRoadmap()}`, { goalsPath: "GOALS.md", sourcePath: "ROADMAP.md" })).toThrow(/duplicate roadmap step id/);
   });
 
   test("importRoadmap preserves closed queue records", async () => {
@@ -93,27 +89,27 @@ Commit: Build third step
       );
       const context = await loadContext(tempDir, { _: [] });
       const existing: QueueFile = {
-      version: 2,
-      source: "old.md",
-      goals: "GOALS.md",
-      model: defaultModel,
-      variant: defaultVariant,
-      updatedAt: null,
-      queue: [],
-      history: [
-        {
-          id: "completed-step",
-          phase: "Done",
-          title: "Completed",
-          scope: ["README.md"],
-          prompt: "Already done.",
-          acceptance: ["done"],
-          verification: ["npm test"],
-          commitMessage: "Completed step",
-        },
-      ],
-      blocked: [],
-    };
+        version: 2,
+        source: "old.md",
+        goals: "GOALS.md",
+        model: defaultModel,
+        variant: defaultVariant,
+        updatedAt: null,
+        queue: [],
+        history: [
+          {
+            id: "completed-step",
+            phase: "Done",
+            title: "Completed",
+            scope: ["README.md"],
+            prompt: "Already done.",
+            acceptance: ["done"],
+            verification: ["npm test"],
+            commitMessage: "Completed step",
+          },
+        ],
+        blocked: [],
+      };
       await writeJson(context.paths.queue, existing);
 
       const imported = await importRoadmap(context);

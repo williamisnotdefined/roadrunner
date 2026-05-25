@@ -4,7 +4,7 @@ import { afterEach, describe, expect, test } from "vitest";
 
 import { loadContext, pathExists, readJson, type ProjectContext } from "../src/config.js";
 import { parseStatusPaths, plan, run as runRoadrunner, status, verify } from "../src/runner.js";
-import type { QueueFile, QueueStep } from "../src/queue.js";
+import type { QueueFile } from "../src/queue.js";
 import { commitAll, createFakeOpenCodeBin, createInitializedProject, initGit, removeDir, run, sampleRoadmap, tempDir, withPath } from "./helpers.js";
 
 const originalEnv = { ...process.env };
@@ -65,7 +65,7 @@ describe("runner", () => {
       await writeFile(path.join(project.directory, "marker.txt"), "ok\n");
 
       const ok = await verify(project.context, step, project.context.paths.logs);
-      const failed = await verify(project.context, { ...step, verification: ["node -e \"process.exit(3)\""] }, project.context.paths.logs);
+      const failed = await verify(project.context, { ...step, verification: ['node -e "process.exit(3)"'] }, project.context.paths.logs);
 
       expect(ok.ok).toBe(true);
       expect(ok.output).toMatch(/marker.txt/);
@@ -89,6 +89,32 @@ describe("runner", () => {
       expect(queue.blocked).toEqual([]);
       expect(await readFile(path.join(project.directory, "marker.txt"), "utf8")).toBe("ok\n");
       expect(log.stdout.split("\n").filter(Boolean).length).toBeGreaterThanOrEqual(2);
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
+  test("reports run progress events", async () => {
+    const project = await setupRunnerProject("success");
+    const events: string[] = [];
+    try {
+      await runRoadrunner(project.context, { maxSteps: 1, onEvent: (event) => events.push(event.type) });
+
+      expect(events).toEqual([
+        "validate",
+        "clean-worktree",
+        "step",
+        "plan",
+        "provider-start",
+        "implement",
+        "provider-start",
+        "verify",
+        "commit",
+        "reconcile",
+        "provider-start",
+        "step-complete",
+        "cleanup",
+      ]);
     } finally {
       await removeDir(project.directory);
     }

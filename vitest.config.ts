@@ -4,16 +4,7 @@ export default defineConfig({
   test: {
     coverage: {
       all: true,
-      exclude: [
-        ".cursor/**",
-        ".github/instructions/**",
-        ".opencode/**",
-        "dist/**",
-        "node_modules/**",
-        "test-output/**",
-        "tests/**",
-        "vitest.config.ts",
-      ],
+      exclude: [".cursor/**", ".github/instructions/**", ".opencode/**", "dist/**", "node_modules/**", "test-output/**", "tests/**", "vitest.config.ts"],
       include: ["src/**/*.ts"],
       provider: "v8",
       thresholds: {

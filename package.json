@@ -10,11 +10,11 @@
     "ai:check": "tsx scripts/ai/sync-routes.ts --check",
     "ai:sync": "tsx scripts/ai/sync-routes.ts",
     "build": "tsc -p tsconfig.json",
-    "check": "npm run typecheck && npm run coverage && npm run ai:check && npm run build",
+    "check": "npm run lint && npm run typecheck && npm run coverage && npm run build",
     "coverage": "vitest run --coverage",
-    "e2e:real": "ROADRUNNER_E2E_REAL_OPENCODE=1 tsx tests/e2e-real/todo-crud.real-e2e.ts",
-    "format": "npm run ai:sync",
-    "lint": "npm run ai:check",
+    "e2e:real": "tsx scripts/e2e-real.ts",
+    "format": "npm run ai:sync && biome format --write .",
+    "lint": "biome lint . && npm run ai:check",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
@@ -22,10 +22,14 @@
     "node": ">=22"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.4.15",
     "@types/node": "^25.9.1",
     "@vitest/coverage-v8": "^4.1.7",
     "tsx": "^4.22.3",
     "typescript": "^6.0.3",
     "vitest": "^4.1.7"
+  },
+  "dependencies": {
+    "chalk": "^5.6.2"
   }
 }

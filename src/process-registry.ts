@@ -36,7 +36,10 @@ export async function registerProcess(record: ProcessRecord, context: ProjectCon
 }
 
 export async function unregisterProcess(pid: number, context: ProjectContext): Promise<void> {
-  await writeProcesses((await readProcesses(context)).filter((processRecord) => processRecord.pid !== pid), context);
+  await writeProcesses(
+    (await readProcesses(context)).filter((processRecord) => processRecord.pid !== pid),
+    context,
+  );
 }
 
 export async function cleanupProcesses(context: ProjectContext, { force = false } = {}): Promise<Array<{ pid: number; role: string; signal?: string; status: string }>> {
@@ -87,7 +90,10 @@ async function isSameProcess(record: ProcessRecord): Promise<boolean> {
 async function readProcessInfo(pid: number): Promise<{ startTimeTicks: string } | null> {
   try {
     const stat = await readFile(`/proc/${pid}/stat`, "utf8");
-    const fields = stat.slice(stat.lastIndexOf(")") + 2).trim().split(/\s+/);
+    const fields = stat
+      .slice(stat.lastIndexOf(")") + 2)
+      .trim()
+      .split(/\s+/);
     return { startTimeTicks: fields[19]! };
   } catch {
     return null;

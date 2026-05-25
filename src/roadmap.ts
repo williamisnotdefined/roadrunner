@@ -171,18 +171,15 @@ function parseFields(lines: string[]): Map<string, string[]> {
 }
 
 function textField(fields: Map<string, string[]>, name: string, section: RoadmapSection, errors: string[], { multiline = false } = {}): string {
-  const value = (fields.get(name) ?? []).map((line) => line.trimEnd()).join("\n").trim();
+  const value = (fields.get(name) ?? [])
+    .map((line) => line.trimEnd())
+    .join("\n")
+    .trim();
   if (value.length === 0) errors.push(`${section.id}: missing ${name} field near line ${section.line}.`);
   return multiline ? value : value.replace(/\s+/g, " ");
 }
 
-function listField(
-  fields: Map<string, string[]>,
-  name: string,
-  section: RoadmapSection,
-  errors: string[],
-  { commaSeparated = false } = {},
-): string[] {
+function listField(fields: Map<string, string[]>, name: string, section: RoadmapSection, errors: string[], { commaSeparated = false } = {}): string[] {
   const raw = fields.get(name) ?? [];
   const items: string[] = [];
   const meaningful = raw.map((line) => line.trim()).filter((line) => line.length > 0);
@@ -192,7 +189,12 @@ function listField(
     const value = (bullet?.[1] ?? line).trim();
 
     if (commaSeparated && !bullet && meaningful.length === 1) {
-      items.push(...value.split(",").map((item) => item.trim()).filter((item) => item.length > 0));
+      items.push(
+        ...value
+          .split(",")
+          .map((item) => item.trim())
+          .filter((item) => item.length > 0),
+      );
     } else {
       items.push(value);
     }

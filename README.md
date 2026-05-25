@@ -24,6 +24,86 @@ tsx src/cli.ts run --max-steps 999 --max-hours 72
 tsx src/cli.ts cleanup
 ```
 
+## Running Roadrunner On Another Project
+
+Roadrunner always treats the current working directory as the target project. Run the CLI from the project you want it to modify, not from the Roadrunner repository.
+
+If you run it from `~/git/rubiks-cube-solver`, Roadrunner reads and writes files in `~/git/rubiks-cube-solver`, uses that repo's `.git`, and creates commits there.
+
+Example: work on `~/git/rubiks-cube-solver` using this local Roadrunner checkout.
+
+First, build the Roadrunner CLI once:
+
+```bash
+cd /home/wozzp/git/roadrunner
+npm run build
+```
+
+Then move into the target project:
+
+```bash
+cd ~/git/rubiks-cube-solver
+git status --short
+```
+
+`git status --short` should print nothing before `run`; Roadrunner refuses to start autonomous work on a dirty worktree.
+
+Initialize Roadrunner state in the target project:
+
+```bash
+cd ~/git/rubiks-cube-solver
+node /home/wozzp/git/roadrunner/dist/src/cli.js init --goals GOALS.md --roadmap ROADMAP.md
+```
+
+`init` creates `.roadrunner/config.json`, `.roadrunner/queue.json`, `.roadrunner/prompts/`, and `.roadrunner/logs/`. If `ROADMAP.md` exists, it imports roadmap steps into `.roadrunner/queue.json`.
+
+Validate and inspect the target project before running:
+
+```bash
+node /home/wozzp/git/roadrunner/dist/src/cli.js check
+node /home/wozzp/git/roadrunner/dist/src/cli.js status
+```
+
+`check` validates `GOALS.md` and `.roadrunner/queue.json`. `status` shows how many steps are queued, done, blocked, and which step is currently `queue[0]`.
+
+Run one step first if you want a safe smoke test:
+
+```bash
+node /home/wozzp/git/roadrunner/dist/src/cli.js run --max-steps 1
+```
+
+Run the autonomous loop until the queue finishes or a limit/blocker is reached:
+
+```bash
+cd ~/git/rubiks-cube-solver
+node /home/wozzp/git/roadrunner/dist/src/cli.js run --max-steps 999 --max-hours 72
+```
+
+For each queued step, `run` performs:
+
+```txt
+Plan -> Execute -> Verify -> Commit -> Reconcile
+```
+
+With `--max-steps 999 --max-hours 72`, Roadrunner will keep working until one of these happens:
+
+- The queue is empty.
+- 999 steps have completed.
+- 72 hours have elapsed.
+- A provider, verification, commit, or reconciliation failure blocks the run.
+
+Each successful step is committed in the target repository. `--goals` and `--roadmap` are resolved relative to the target project directory.
+
+Run commands as separate shell commands, or join them with `&&`. Do not paste multiple `node ...` commands on one line without a separator.
+
+If launching Roadrunner from inside an existing OpenCode session, enable nested OpenCode in the target project's `.roadrunner/config.json`:
+
+```json
+{
+  "allowNestedOpenCode": true
+}
+```
+
 ### `init`
 
 Creates Roadrunner state for the current project.
@@ -105,13 +185,17 @@ During development in this repo:
 ```bash
 npm run ai:sync
 npm run ai:check
+npm run lint
+npm run format
 npm run typecheck
 npm test
 npm run coverage
 npm run check
 ```
 
-`npm test` runs the Vitest unit/integration suite plus the deterministic fake-provider e2e. `npm run coverage` enforces 100% coverage for authored `src/**/*.ts`. `npm run e2e:real` is opt-in and runs OpenCode for real with `ROADRUNNER_E2E_REAL_OPENCODE=1`; it is intentionally excluded from `test`, `coverage`, and `check`.
+`npm test` runs the Vitest unit/integration suite plus the deterministic fake-provider e2e. `npm run lint` runs Biome linting plus the AI route check. `npm run format` syncs AI routes and formats supported files with Biome. `npm run coverage` enforces 100% coverage for authored `src/**/*.ts`. `npm run e2e:real` is opt-in through `scripts/e2e-real.ts` and runs OpenCode for real with `ROADRUNNER_E2E_REAL_OPENCODE=1`; it is intentionally excluded from `test`, `coverage`, and `check`.
+
+For real-provider debugging, run `ROADRUNNER_OPENCODE_DEBUG=1 npm run e2e:real`. Roadrunner streams provider output to each `*.opencode.log` while the process is running and prints the provider PID plus log path when each OpenCode subprocess starts. `npm run e2e:real` defaults `ROADRUNNER_PROVIDER_TIMEOUT_MS` to `300000`; override it to fail faster or allow longer provider runs.
 
 E2E outputs are written under `test-output/`:
 

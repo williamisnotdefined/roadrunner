@@ -31,7 +31,7 @@ describe("process registry", () => {
     const child = spawn(process.execPath, ["-e", "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);"], { detached: true, stdio: "ignore" });
     const context = await loadContext(tempDir, { _: [] });
     const signals: unknown[] = [];
-    const kill = vi.spyOn(process, "kill").mockImplementation((pid, signal) => {
+    const kill = vi.spyOn(process, "kill").mockImplementation((_pid, signal) => {
       signals.push(signal);
       return true;
     });

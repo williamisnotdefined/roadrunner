@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import type { Dirent } from "node:fs";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -143,7 +144,7 @@ async function generatedRouteFiles(): Promise<string[]> {
 }
 
 async function listFiles(relativeDirectory: string): Promise<string[]> {
-  let entries;
+  let entries: Dirent[];
   try {
     entries = await readdir(path.join(rootDir, relativeDirectory), { withFileTypes: true });
   } catch {
