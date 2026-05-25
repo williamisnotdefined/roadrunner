@@ -10,19 +10,25 @@ import { providerEnvForDeadline, verificationTimeoutMs } from "./timeouts.js";
 
 interface FixFailureOptions {
   deadline: number | null;
+  onOutput?: () => void;
   onProviderStart?: (event: ProviderStartEvent) => void;
+  signal?: AbortSignal;
 }
 
 export async function verify(
   context: ProjectContext,
   step: QueueStep,
   logDir: string,
-  { deadline = null, prefix = "verify" }: { deadline?: number | null; prefix?: string } = {},
+  { deadline = null, onOutput, prefix = "verify", signal }: { deadline?: number | null; onOutput?: () => void; prefix?: string; signal?: AbortSignal } = {},
 ): Promise<{ ok: boolean; output: string }> {
   let output = "";
 
   for (const [index, command] of step.verification.entries()) {
-    const result = await runShell(context, command, path.join(logDir, `${prefix}-${index + 1}.log`), `${prefix}-${index + 1}`, verificationTimeoutMs(deadline));
+    const result = await runShell(context, command, path.join(logDir, `${prefix}-${index + 1}.log`), `${prefix}-${index + 1}`, {
+      onOutput,
+      signal,
+      timeoutMs: verificationTimeoutMs(deadline),
+    });
     output += `$ ${command}\n${result.output}\n`;
     if (result.code !== 0) return { ok: false, output };
   }
@@ -52,9 +58,11 @@ export async function fixFailure(
     context,
     env: providerEnvForDeadline(options.deadline),
     logPath: path.join(logDir, "fix-failure.opencode.log"),
+    onOutput: options.onOutput,
     onStart: options.onProviderStart,
     prompt,
     role: "fix-failure",
+    signal: options.signal,
     skipPermissions: context.config.dangerouslySkipPermissions,
   });
   await writePrivateFile(path.join(logDir, "fix-failure.md"), result.output);

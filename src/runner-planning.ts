@@ -10,7 +10,9 @@ import { providerEnvForDeadline } from "./timeouts.js";
 
 export interface PlanOptions {
   deadline?: number | null;
+  onOutput?: () => void;
   onProviderStart?: (event: ProviderStartEvent) => void;
+  signal?: AbortSignal;
 }
 
 export interface PlanStepResult {
@@ -34,9 +36,11 @@ export async function planStep(context: ProjectContext, step: QueueStep, snapsho
     context,
     env: providerEnvForDeadline(options.deadline),
     logPath: path.join(logDir, "plan.opencode.log"),
+    onOutput: options.onOutput,
     onStart: options.onProviderStart,
     prompt,
     role: "plan",
+    signal: options.signal,
     skipPermissions: false,
   });
 

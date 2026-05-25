@@ -25,7 +25,7 @@ export class OpenCodeProvider implements Provider {
     this.variant = variant;
   }
 
-  async run({ agent, context, env = {}, logPath, onStart, prompt, role, skipPermissions = false }: ProviderRunInput): Promise<ProviderRunResult> {
+  async run({ agent, context, env = {}, logPath, onOutput, onStart, prompt, role, signal, skipPermissions = false }: ProviderRunInput): Promise<ProviderRunResult> {
     const childEnv: NodeJS.ProcessEnv = { ...process.env, ...env, OPENCODE_MODEL: this.model, OPENCODE_VARIANT: this.variant };
     const nestedIndicator = nestedOpenCodeIndicator(childEnv);
     if (nestedIndicator && !context.config.allowNestedOpenCode) {
@@ -55,6 +55,7 @@ export class OpenCodeProvider implements Provider {
 
     let output = "";
     let registeredPid: number | null = child.pid ?? null;
+    let aborted = false;
     let registrationFailed = false;
     let timedOut = false;
     let timeout: NodeJS.Timeout | undefined;
@@ -67,6 +68,20 @@ export class OpenCodeProvider implements Provider {
       writeProviderOutput(logStream, text, (value) => {
         output += value;
       });
+    };
+
+    const terminateChild = (message: string) => {
+      if (forceKillDone) return;
+      appendOutput(message);
+      process.stderr.write(message);
+      signalChildProcessGroup(child.pid, "SIGTERM");
+      ({ done: forceKillDone, timeout: killTimeout } = scheduleChildProcessGroupKill(child.pid));
+    };
+
+    const abortRun = () => {
+      if (settled) return;
+      aborted = true;
+      terminateChild("Provider aborted by Roadrunner control. Sending SIGTERM.\n");
     };
 
     const registrationDone = child.pid
@@ -83,32 +98,31 @@ export class OpenCodeProvider implements Provider {
           /* v8 ignore next -- registration settling after close is a nondeterministic process race. */
           if (settled) return;
           registrationFailed = true;
-          appendOutput(`Failed to register provider process: ${error.message}\n`);
-          signalChildProcessGroup(child.pid, "SIGTERM");
-          ({ done: forceKillDone, timeout: killTimeout } = scheduleChildProcessGroupKill(child.pid));
+          terminateChild(`Failed to register provider process: ${error.message}\n`);
         })
       : Promise.resolve();
+
+    if (signal?.aborted) abortRun();
+    else signal?.addEventListener("abort", abortRun, { once: true });
 
     onStart?.({ command, debug, logPath, pid: child.pid ?? null, role });
 
     if (timeoutMs > 0) {
       timeout = setTimeout(() => {
         timedOut = true;
-        const message = `Provider timed out after ${timeoutMs} ms. Sending SIGTERM.\n`;
-        appendOutput(message);
-        process.stderr.write(message);
-        signalChildProcessGroup(child.pid, "SIGTERM");
-        ({ done: forceKillDone, timeout: killTimeout } = scheduleChildProcessGroupKill(child.pid));
+        terminateChild(`Provider timed out after ${timeoutMs} ms. Sending SIGTERM.\n`);
       }, timeoutMs);
     }
 
     child.stdout.on("data", (chunk: Buffer) => {
       const text = chunk.toString();
+      onOutput?.();
       appendOutput(text);
       process.stdout.write(text);
     });
     child.stderr.on("data", (chunk: Buffer) => {
       const text = chunk.toString();
+      onOutput?.();
       appendOutput(text);
       process.stderr.write(text);
     });
@@ -118,16 +132,18 @@ export class OpenCodeProvider implements Provider {
         /* v8 ignore next -- close after error is a nondeterministic child-process race. */
         if (settled) return;
         settled = true;
+        signal?.removeEventListener("abort", abortRun);
         clearTimeout(timeout);
         await finishScheduledChildProcessGroupKill(child.pid, forceKillDone, killTimeout);
         await registrationDone;
         await unregisterRegisteredProcess(registeredPid, context);
         await closeLogStream(logStream);
-        resolve({ code: registrationFailed ? 1 : timedOut ? 124 : code, output });
+        resolve({ code: registrationFailed ? 1 : timedOut ? 124 : aborted ? 130 : code, output });
       };
 
       child.on("error", async (error: Error) => {
         child.off("close", onClose);
+        signal?.removeEventListener("abort", abortRun);
         clearTimeout(timeout);
         await finishScheduledChildProcessGroupKill(child.pid, forceKillDone, killTimeout);
         appendOutput(`${error.message}\n`);

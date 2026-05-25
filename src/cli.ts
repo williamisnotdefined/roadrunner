@@ -13,6 +13,7 @@ import { loadContext } from "./config.js";
 import { integerOption, optionalNumberOption, parseArgs } from "./args.js";
 import { plan, run, status, validateProvider, type RoadrunnerRunEvent } from "./runner.js";
 import { importRoadmap } from "./roadmap.js";
+import { createRunFeedback, formatDuration } from "./run-cli-feedback.js";
 
 export interface CliIo {
   stderr?: (message: string) => void;
@@ -80,11 +81,23 @@ export async function main(argv = process.argv.slice(2), { cwd = process.cwd(), 
       else out(formatCliSuccess(`Plan written to ${result.logDir}`));
     } else if (command === "run") {
       out(formatCliStep("Running Roadrunner"));
-      const completed = await run(context, {
-        maxHours: optionalNumberOption(args["max-hours"]),
-        maxSteps: integerOption(args["max-steps"], 1),
-        onEvent: (event) => out(formatRunEvent(event)),
-      });
+      const feedback = createRunFeedback({ stdout: out });
+      let completed = 0;
+      try {
+        completed = await run(context, {
+          maxHours: optionalNumberOption(args["max-hours"]),
+          maxSteps: integerOption(args["max-steps"], 1),
+          onActivity: feedback.onActivity,
+          onControl: feedback.onControl,
+          onEvent: (event) => {
+            feedback.beforeEvent();
+            out(formatRunEvent(event));
+            feedback.onEvent(event);
+          },
+        });
+      } finally {
+        feedback.stop();
+      }
       out(formatCliSuccess(`Completed ${completed} step(s).`));
     } else {
       out(formatCliStep("Cleaning Roadrunner-owned processes"));
@@ -118,6 +131,12 @@ export function formatRunEvent(event: RoadrunnerRunEvent): string {
       return formatCliStep(`Selected step ${event.step.id}: ${event.step.title}`);
     case "step-complete":
       return formatCliSuccess(`Completed ${event.step.id}`);
+    case "task-restart":
+      return formatCliStep(`Restarting ${event.step.id} attempt=${event.attempt}`);
+    case "task-restart-requested": {
+      const phase = event.phase ? ` during ${event.phase}` : "";
+      return formatCliInfo(`Restart requested for ${event.step.id}${phase} after ${formatDuration(event.elapsedMs)}`);
+    }
     case "validate":
       return formatCliStep("Validating project");
     case "verify":
@@ -158,6 +177,9 @@ Commands:
   roadrunner plan [--config path]
   roadrunner run [--config path] [--max-steps 1] [--max-hours n]
   roadrunner cleanup [--config path] [--force]
+
+Interactive run controls:
+  rstask             Restart the current task attempt from planning
 
 Path overrides:
   --goals path        Path to GOALS.md

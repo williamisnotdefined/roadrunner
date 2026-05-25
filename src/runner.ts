@@ -1,17 +1,12 @@
-import path from "node:path";
-
 import type { ProjectContext } from "./config.js";
 import { acquireProjectLock } from "./lock.js";
-import { formatStep, markDone, nextStep, writeQueue, type QueueStep } from "./queue.js";
-import { blockStep, readValidatedQueue } from "./queue-service.js";
+import { nextStep, type QueueStep } from "./queue.js";
+import { readValidatedQueue } from "./queue-service.js";
 import { cleanupProcesses } from "./process-registry.js";
-import { providerFor, validateConfiguredProvider, type ProviderStartEvent } from "./providers/index.js";
+import { validateConfiguredProvider, type ProviderStartEvent } from "./providers/index.js";
 import { readRunSnapshot } from "./run-snapshot.js";
-import { createLogDir, renderPrompt, writePrivateFile } from "./run-artifacts.js";
 import { planStep, type PlanOptions } from "./runner-planning.js";
-import { reconcileQueue } from "./runner-reconciliation.js";
-import { fixFailure, verify as verifyStep } from "./runner-verification.js";
-import { providerEnvForDeadline } from "./timeouts.js";
+import { createRunControl, runStepWithRestarts, type RunControlState } from "./runner-execution.js";
 
 export type { PlanOptions } from "./runner-planning.js";
 export { verify } from "./runner-verification.js";
@@ -26,7 +21,20 @@ export interface RoadrunnerStatus {
 export interface RunOptions {
   maxHours?: number;
   maxSteps?: number;
+  onActivity?: (event: RoadrunnerRunActivityEvent) => void;
+  onControl?: (control: RoadrunnerRunControl) => void;
   onEvent?: (event: RoadrunnerRunEvent) => void;
+}
+
+export type RoadrunnerRunPhase = "plan" | "implement" | "verify" | "fix" | "verify-fixed" | "reconcile";
+
+export interface RoadrunnerRunActivityEvent {
+  phase: RoadrunnerRunPhase;
+  step: QueueStep;
+}
+
+export interface RoadrunnerRunControl {
+  restartCurrentTask(): boolean;
 }
 
 export type RoadrunnerRunEvent =
@@ -38,6 +46,8 @@ export type RoadrunnerRunEvent =
   | { step: QueueStep; type: "reconcile" }
   | { step: QueueStep; type: "step" }
   | { step: QueueStep; type: "step-complete" }
+  | { attempt: number; step: QueueStep; type: "task-restart" }
+  | { elapsedMs: number; phase: RoadrunnerRunPhase | null; step: QueueStep; type: "task-restart-requested" }
   | { attempt: "fixed" | "initial"; step: QueueStep; type: "verify" }
   | { type: "validate" };
 
@@ -68,6 +78,8 @@ export async function plan(
 export async function run(context: ProjectContext, options: RunOptions = {}): Promise<number> {
   const { maxHours, maxSteps = 1 } = options;
   const releaseLock = await acquireProjectLock(context);
+  const controlState: RunControlState = { current: null };
+  options.onControl?.(createRunControl(controlState, (event) => emitRunEvent(options, event)));
 
   try {
     emitRunEvent(options, { type: "validate" });
@@ -95,74 +107,16 @@ export async function run(context: ProjectContext, options: RunOptions = {}): Pr
         await ensureProviderAvailable(context);
 
         emitRunEvent(options, { step, type: "step" });
-        emitRunEvent(options, { step, type: "plan" });
-        const planResult = await planStep(context, step, snapshot, {
-          deadline,
-          onProviderStart: (event) => emitRunEvent(options, { ...event, step, type: "provider-start" }),
-        });
-        if (planResult.result.code !== 0) {
-          await blockStep(context, queueFile, step, `Planning exited ${String(planResult.result.code)}`);
-          throw new Error(`Planning failed for ${step.id} (exit ${String(planResult.result.code)}). See ${path.join(planResult.logDir, "plan.opencode.log")}.`);
-        }
-
-        const logDir = await createLogDir(context, step.id);
-        const prompt = await renderPrompt(context, "implement-step.md", {
-          GOALS_MD: snapshot.goalsMarkdown,
-          PLAN_MD: planResult.result.output,
-          ROADMAP_STATUS: formatStep(step),
-          STEP_JSON: JSON.stringify(step, null, 2),
-        });
-        await writePrivateFile(path.join(logDir, "implement.prompt.md"), prompt);
-
-        emitRunEvent(options, { step, type: "implement" });
-        const result = await providerFor(context).run({
-          agent: "build",
+        await runStepWithRestarts({
           context,
-          env: providerEnvForDeadline(deadline),
-          logPath: path.join(logDir, "implement.opencode.log"),
-          onStart: (event) => emitRunEvent(options, { ...event, step, type: "provider-start" }),
-          prompt,
-          role: "implement",
-          skipPermissions: context.config.dangerouslySkipPermissions,
+          controlState,
+          deadline,
+          emitActivity: (event) => emitRunActivity(options, event),
+          emitEvent: (event) => emitRunEvent(options, event),
+          queueFile,
+          snapshot,
+          step,
         });
-
-        if (result.code !== 0) {
-          await blockStep(context, queueFile, step, `Provider exited ${String(result.code)}`);
-          throw new Error(`Implementation failed for ${step.id}.`);
-        }
-
-        emitRunEvent(options, { attempt: "initial", step, type: "verify" });
-        let verification = await verifyStep(context, step, logDir, { deadline });
-        if (!verification.ok) {
-          emitRunEvent(options, { step, type: "fix" });
-          const fix = await fixFailure(context, step, snapshot, planResult.result.output, verification.output, logDir, {
-            deadline,
-            onProviderStart: (event) => emitRunEvent(options, { ...event, step, type: "provider-start" }),
-          });
-          if (fix.code === 0) {
-            emitRunEvent(options, { attempt: "fixed", step, type: "verify" });
-            verification = await verifyStep(context, step, logDir, { deadline, prefix: "verify-fixed" });
-          }
-        }
-
-        if (!verification.ok) {
-          await blockStep(context, queueFile, step, "Verification failed after fix attempt.");
-          throw new Error(`Verification failed for ${step.id}.`);
-        }
-
-        emitRunEvent(options, { step, type: "reconcile" });
-        try {
-          const reconciledQueue = await reconcileQueue(context, step, snapshot, logDir, {
-            deadline,
-            onProviderStart: (event) => emitRunEvent(options, { ...event, step, type: "provider-start" }),
-          });
-          markDone(reconciledQueue, step.id);
-          await writeQueue(reconciledQueue, context);
-        } catch (error) {
-          await blockStep(context, queueFile, step, `Reconciliation failed: ${(error as Error).message}`, { useLatest: false });
-          throw error;
-        }
-        emitRunEvent(options, { step, type: "step-complete" });
         completed += 1;
       }
 
@@ -184,6 +138,10 @@ export async function run(context: ProjectContext, options: RunOptions = {}): Pr
   } finally {
     await releaseLock();
   }
+}
+
+function emitRunActivity(options: RunOptions, event: RoadrunnerRunActivityEvent): void {
+  if (options.onActivity) options.onActivity(event);
 }
 
 function emitRunEvent(options: RunOptions, event: RoadrunnerRunEvent): void {

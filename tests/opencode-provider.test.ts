@@ -195,7 +195,7 @@ describe("OpenCodeProvider", () => {
       const result = await new OpenCodeProvider().run({
         agent: "plan",
         context,
-        env: { ROADRUNNER_PROVIDER_TIMEOUT_MS: "50" },
+        env: { ROADRUNNER_PROVIDER_TIMEOUT_MS: "200" },
         logPath: path.join(directory, "timeout-child.log"),
         prompt: "Roadrunner Plan Step",
         role: "plan",

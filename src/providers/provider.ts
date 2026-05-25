@@ -5,9 +5,11 @@ export interface ProviderRunInput {
   context: ProjectContext;
   env?: Record<string, string>;
   logPath: string;
+  onOutput?: () => void;
   onStart?: (event: ProviderStartEvent) => void;
   prompt: string;
   role: string;
+  signal?: AbortSignal;
   skipPermissions?: boolean;
 }
 

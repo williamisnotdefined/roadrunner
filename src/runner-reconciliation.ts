@@ -10,7 +10,9 @@ import { providerEnvForDeadline } from "./timeouts.js";
 
 interface ReconcileOptions {
   deadline: number | null;
+  onOutput?: () => void;
   onProviderStart?: (event: ProviderStartEvent) => void;
+  signal?: AbortSignal;
 }
 
 export async function reconcileQueue(context: ProjectContext, step: QueueStep, snapshot: RunSnapshot, logDir: string, options: ReconcileOptions): Promise<QueueFile> {
@@ -28,9 +30,11 @@ export async function reconcileQueue(context: ProjectContext, step: QueueStep, s
     context,
     env: providerEnvForDeadline(options.deadline),
     logPath: path.join(logDir, "reconcile.opencode.log"),
+    onOutput: options.onOutput,
     onStart: options.onProviderStart,
     prompt,
     role: "reconcile",
+    signal: options.signal,
     skipPermissions: context.config.dangerouslySkipPermissions,
   });
   await writePrivateFile(path.join(logDir, "reconcile.md"), result.output);

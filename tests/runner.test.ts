@@ -3,7 +3,7 @@ import path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
 import { readJson, writeJson } from "../src/config.js";
-import { plan, run as runRoadrunner, status, verify } from "../src/runner.js";
+import { plan, run as runRoadrunner, status, verify, type RoadrunnerRunControl } from "../src/runner.js";
 import type { QueueFile } from "../src/queue.js";
 import { removeDir, run, sampleRoadmap } from "./helpers.js";
 import { fileMode, logDirFor, setupRunnerProject } from "./runner-helpers.js";
@@ -177,6 +177,40 @@ describe("runner", () => {
         "step-complete",
         "cleanup",
       ]);
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
+  test("restarts the current task when requested through run control", async () => {
+    const project = await setupRunnerProject("success");
+    const events: string[] = [];
+    let control: RoadrunnerRunControl | null = null;
+    let restartRequested = false;
+
+    try {
+      const completed = await runRoadrunner(project.context, {
+        maxHours: 1,
+        maxSteps: 1,
+        onControl: (nextControl) => {
+          control = nextControl;
+        },
+        onEvent: (event) => {
+          events.push(event.type);
+          if (event.type === "provider-start" && event.role === "implement" && !restartRequested) {
+            restartRequested = true;
+            if (!control?.restartCurrentTask()) throw new Error("Expected active task restart control.");
+          }
+        },
+      });
+      const queue = await readJson<QueueFile>(project.context.paths.queue);
+
+      expect(completed).toBe(1);
+      expect(restartRequested).toBe(true);
+      expect(events).toContain("task-restart-requested");
+      expect(events).toContain("task-restart");
+      expect(queue.history.map((step) => step.id)).toEqual(["first-step"]);
+      expect(queue.blocked).toEqual([]);
     } finally {
       await removeDir(project.directory);
     }

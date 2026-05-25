@@ -161,6 +161,8 @@ At run start, Roadrunner reads `GOALS.md` once and uses that immutable in-memory
 
 Provider runs default to `ROADRUNNER_PROVIDER_TIMEOUT_MS=1800000`, verification commands default to `ROADRUNNER_VERIFY_TIMEOUT_MS=600000`, and OpenCode CLI validation defaults to `ROADRUNNER_OPENCODE_CHECK_TIMEOUT_MS=10000`. Set provider or verification timeout variables to `0` to disable that timeout. `--max-hours` caps provider and verification timeouts for the current step.
 
+In an interactive terminal, `run` prints a live heartbeat for the active task, including phase, attempt, elapsed task time, elapsed phase time, idle time since the last provider/command output, PID, and log path when available. Type `rstask` and press Enter to abort the current Roadrunner-owned subprocess and restart the current `queue[0]` task from planning. Restarting does not reset or revert project files; it only stops registered Roadrunner subprocesses and repeats the task attempt.
+
 Prompt files, provider logs, verification logs, and runner-generated markdown outputs under `.roadrunner/logs/` are written with restrictive filesystem permissions.
 
 Implementation, fix, and reconciliation provider runs use normal OpenCode permissions by default. Set `dangerouslySkipPermissions: true` in `.roadrunner/config.json` only when you intentionally want Roadrunner to pass OpenCode's `--dangerously-skip-permissions` flag.

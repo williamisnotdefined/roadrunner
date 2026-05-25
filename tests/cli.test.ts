@@ -1,11 +1,13 @@
 import { readFile, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { PassThrough } from "node:stream";
 import { pathToFileURL } from "node:url";
 import { describe, expect, test } from "vitest";
 
 import { formatRunEvent, helpText, isCliEntrypoint, main } from "../src/cli.js";
 import { readJson, writeJson } from "../src/config.js";
 import type { QueueFile, QueueStep } from "../src/queue.js";
+import { createRunFeedback, formatDuration, formatRunProgress } from "../src/run-cli-feedback.js";
 import { createInitializedProject, removeDir, sampleRoadmap, tempDir } from "./helpers.js";
 import { createFakeOpenCodeBin, withPath } from "./helpers.js";
 
@@ -43,6 +45,8 @@ describe("cli", () => {
       formatRunEvent({ command: ["opencode", "run", "<prompt>"], debug: true, logPath: "/tmp/plan.log", pid: 123, role: "plan", step, type: "provider-start" }),
       formatRunEvent({ command: ["opencode", "run", "<prompt>"], debug: false, logPath: "/tmp/missing.log", pid: null, role: "plan", step, type: "provider-start" }),
       formatRunEvent({ step, type: "implement" }),
+      formatRunEvent({ elapsedMs: 123_000, phase: "implement", step, type: "task-restart-requested" }),
+      formatRunEvent({ attempt: 2, step, type: "task-restart" }),
       formatRunEvent({ attempt: "initial", step, type: "verify" }),
       formatRunEvent({ step, type: "fix" }),
       formatRunEvent({ attempt: "fixed", step, type: "verify" }),
@@ -55,9 +59,84 @@ describe("cli", () => {
     expect(output).toMatch(/Selected step sample-step: Ship Sample/);
     expect(output).toMatch(/OpenCode plan started pid=123 log=\/tmp\/plan\.log debug=on/);
     expect(output).toMatch(/OpenCode plan started pid=n\/a log=\/tmp\/missing\.log/);
+    expect(output).toMatch(/Restart requested for sample-step during implement after 2m03s/);
+    expect(output).toMatch(/Restarting sample-step attempt=2/);
     expect(output).toMatch(/Re-running verification for sample-step/);
     expect(output).toMatch(/Completed sample-step/);
     expect(output).toMatch(/Cleaning Roadrunner-owned processes/);
+  });
+
+  test("formats run heartbeat durations", () => {
+    expect(formatDuration(999)).toBe("0s");
+    expect(formatDuration(65_000)).toBe("1m05s");
+    expect(formatDuration(3_661_000)).toBe("1h01m01s");
+
+    expect(
+      formatRunProgress(
+        {
+          attempt: 2,
+          lastActivityAt: 60_000,
+          logPath: "/tmp/implement.log",
+          phase: "implement",
+          phaseStartedAt: 10_000,
+          pid: 123,
+          stepId: "sample-step",
+          taskStartedAt: 0,
+        },
+        70_000,
+      ),
+    ).toContain("implement sample-step attempt=2 elapsed=1m10s phase=1m00s idle=10s pid=123 log=/tmp/implement.log");
+  });
+
+  test("run feedback renders progress and accepts rstask", async () => {
+    const input = new PassThrough();
+    const output: string[] = [];
+    const terminalOutput: string[] = [];
+    const step: QueueStep = {
+      acceptance: ["works"],
+      id: "sample-step",
+      phase: "Sample",
+      prompt: "Build it.",
+      scope: ["src/sample.ts"],
+      title: "Ship Sample",
+      verification: ["npm test"],
+    };
+    let now = 0;
+    let restartCount = 0;
+    const feedback = createRunFeedback({
+      input,
+      interactive: true,
+      intervalMs: 60_000,
+      now: () => now,
+      stdout: (message) => output.push(message),
+      terminal: {
+        clearLine: () => terminalOutput.push("<clear>"),
+        cursorTo: () => terminalOutput.push("<cursor>"),
+        write: (message) => terminalOutput.push(message),
+      },
+    });
+
+    feedback.onControl({
+      restartCurrentTask() {
+        restartCount += 1;
+        return true;
+      },
+    });
+    feedback.onEvent({ step, type: "step" });
+    now = 1_000;
+    feedback.onEvent({ step, type: "implement" });
+    now = 2_000;
+    feedback.onEvent({ command: ["opencode"], debug: false, logPath: "/tmp/implement.log", pid: 123, role: "implement", step, type: "provider-start" });
+    now = 3_000;
+    feedback.onActivity({ phase: "implement", step });
+    input.write("rstask\n");
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    feedback.stop();
+
+    expect(output.join("\n")).toMatch(/type rstask/);
+    expect(restartCount).toBe(1);
+    expect(terminalOutput.join("\n")).toMatch(/implement sample-step/);
+    expect(terminalOutput.join("\n")).toMatch(/pid=123 log=\/tmp\/implement\.log/);
   });
 
   test("prints help for default and unknown commands", async () => {
