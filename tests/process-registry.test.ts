@@ -1,7 +1,8 @@
 import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import { describe, expect, test, vi } from "vitest";
 
 import { cleanupProcesses, readProcesses, registerProcess, unregisterProcess } from "../src/process-registry.js";
@@ -56,6 +57,42 @@ describe("process registry", () => {
           // already gone
         }
       }
+      await rm(tempDir, { force: true, recursive: true });
+    }
+  });
+
+  test("force cleanup kills remaining process group descendants after leader exits", async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "roadrunner-process-descendant-"));
+    const childPidFile = path.join(tempDir, "child.pid");
+    const leader = spawn(
+      process.execPath,
+      [
+        "-e",
+        `const { spawn } = require("node:child_process");
+const child = spawn(process.execPath, ["-e", ${JSON.stringify(`process.on("SIGTERM", () => {}); require("node:fs").writeFileSync(${JSON.stringify(childPidFile)}, String(process.pid)); setInterval(() => {}, 1000);`)}], { stdio: "ignore" });
+process.on("SIGTERM", () => process.exit(0));
+setInterval(() => {}, 1000);`,
+      ],
+      { detached: true, stdio: "ignore" },
+    );
+    const context = await loadContext(tempDir, { _: [] });
+    let childPid: number | null = null;
+
+    try {
+      expect(leader.pid).toBeTruthy();
+      await waitForFile(childPidFile);
+      childPid = Number(await readFile(childPidFile, "utf8"));
+      await registerProcess({ command: [process.execPath], cwd: tempDir, pid: leader.pid!, role: "leader" }, context);
+
+      const results = await cleanupProcesses(context, { force: true });
+      await sleep(50);
+
+      expect(results).toContainEqual({ pid: leader.pid, role: "leader", signal: "SIGKILL", status: "signaled" });
+      expect(processIsRunning(childPid)).toBe(false);
+      expect(await readProcesses(context)).toEqual([]);
+    } finally {
+      if (leader.pid) killGroupIfRunning(leader.pid);
+      if (childPid !== null) killIfRunning(childPid);
       await rm(tempDir, { force: true, recursive: true });
     }
   });
@@ -288,3 +325,40 @@ describe("process registry", () => {
     }
   });
 });
+
+async function waitForFile(filePath: string): Promise<void> {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    try {
+      await readFile(filePath, "utf8");
+      return;
+    } catch {
+      await sleep(20);
+    }
+  }
+  throw new Error(`Timed out waiting for ${filePath}.`);
+}
+
+function processIsRunning(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+function killIfRunning(pid: number): void {
+  try {
+    process.kill(pid, "SIGKILL");
+  } catch {
+    // Best-effort cleanup for failed assertions.
+  }
+}
+
+function killGroupIfRunning(pid: number): void {
+  try {
+    process.kill(-pid, "SIGKILL");
+  } catch {
+    // Best-effort cleanup for failed assertions.
+  }
+}

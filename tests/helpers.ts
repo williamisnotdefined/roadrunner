@@ -88,6 +88,9 @@ if (process.env.ROADRUNNER_FAKE_OPENCODE_ARGS_FILE) {
 if (process.env.ROADRUNNER_FAKE_OPENCODE_ENV_FILE) {
   fs.writeFileSync(process.env.ROADRUNNER_FAKE_OPENCODE_ENV_FILE, JSON.stringify({ ROADRUNNER_PROVIDER_TIMEOUT_MS: process.env.ROADRUNNER_PROVIDER_TIMEOUT_MS ?? null }) + "\\n");
 }
+if (process.env.ROADRUNNER_FAKE_OPENCODE_NESTED_ENV_FILE) {
+  fs.writeFileSync(process.env.ROADRUNNER_FAKE_OPENCODE_NESTED_ENV_FILE, JSON.stringify({ OPENCODE_SESSION: process.env.OPENCODE_SESSION ?? null, OPENCODE_SERVER: process.env.OPENCODE_SERVER ?? null }) + "\\n");
+}
 
 if (process.argv.includes("--help")) {
   console.log("--model --variant --agent --file --dangerously-skip-permissions");
@@ -150,8 +153,8 @@ if (mode === "hang") {
 }
 
 if (mode === "spawn-child-on-term") {
-  const child = spawn(process.execPath, ["-e", "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);"], { stdio: "ignore" });
-  if (process.env.ROADRUNNER_FAKE_OPENCODE_CHILD_PID_FILE && child.pid) fs.writeFileSync(process.env.ROADRUNNER_FAKE_OPENCODE_CHILD_PID_FILE, String(child.pid));
+  const childPidFile = process.env.ROADRUNNER_FAKE_OPENCODE_CHILD_PID_FILE || "";
+  const child = spawn(process.execPath, ["-e", "process.on('SIGTERM', () => {}); if (process.argv[1]) require('node:fs').writeFileSync(process.argv[1], String(process.pid)); setInterval(() => {}, 1000);", childPidFile], { stdio: "ignore" });
   process.on("SIGTERM", () => process.exit(0));
   console.log("spawned child");
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0);
@@ -159,7 +162,7 @@ if (mode === "spawn-child-on-term") {
 
 if (prompt.includes("Roadrunner Plan Step")) {
   if (mode === "plan-dirty") fs.writeFileSync("plan-dirty.txt", "nope\\n");
-  if (mode === "goals-snapshot") fs.writeFileSync("GOALS.md", "# Goals\\n\\nChanged during run.\\n");
+  if (mode === "plan-delete") fs.rmSync("delete-me.txt", { force: true });
   console.log("Plan: implement the requested step.");
   process.exit(0);
 }
@@ -169,6 +172,7 @@ if (prompt.includes("Roadrunner Implement Step")) {
     fs.writeFileSync("GOALS.md", "changed\\n");
     fs.writeFileSync("marker.txt", "ok\\n");
   } else if (mode === "goals-snapshot") {
+    fs.writeFileSync("GOALS.md", "# Goals\\n\\nChanged during run.\\n");
     fs.writeFileSync("marker.txt", "ok\\n");
     fs.writeFileSync("goal-snapshot.txt", prompt.includes("Build the requested project.") ? "original\\n" : "changed\\n");
   } else if (mode === "todo-e2e") {
@@ -293,6 +297,18 @@ if (prompt.includes("Roadrunner Reconcile Queue")) {
     const queuePath = path.join(".roadrunner", "queue.json");
     const queue = JSON.parse(fs.readFileSync(queuePath, "utf8"));
     queue.queue[0].title = "Reconciled first step";
+    fs.writeFileSync(queuePath, JSON.stringify(queue, null, 2) + "\\n");
+  }
+  if (mode === "reconcile-removes-current") {
+    const queuePath = path.join(".roadrunner", "queue.json");
+    const queue = JSON.parse(fs.readFileSync(queuePath, "utf8"));
+    queue.queue.shift();
+    fs.writeFileSync(queuePath, JSON.stringify(queue, null, 2) + "\\n");
+  }
+  if (mode === "reconcile-future-queue") {
+    const queuePath = path.join(".roadrunner", "queue.json");
+    const queue = JSON.parse(fs.readFileSync(queuePath, "utf8"));
+    if (queue.queue[1]) queue.queue[1].title = "Reconciled future step";
     fs.writeFileSync(queuePath, JSON.stringify(queue, null, 2) + "\\n");
   }
   console.log("reconciled");

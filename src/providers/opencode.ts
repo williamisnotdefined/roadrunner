@@ -54,7 +54,7 @@ export class OpenCodeProvider {
       throw new Error(`Refusing to launch nested OpenCode session (${nestedIndicator} is set). Set allowNestedOpenCode: true to override.`);
     }
 
-    if (!context.config.allowNestedOpenCode) for (const key of nestedOpenCodeEnvKeys) delete childEnv[key];
+    for (const key of nestedOpenCodeEnvKeys) delete childEnv[key];
 
     await mkdir(path.dirname(logPath), { recursive: true });
     const promptFilePath = await writePromptFile(logPath, prompt);
@@ -139,8 +139,7 @@ export class OpenCodeProvider {
         if (settled) return;
         settled = true;
         clearTimeout(timeout);
-        if (forceKillDone) await forceKillDone;
-        else clearTimeout(killTimeout);
+        await finishScheduledChildProcessGroupKill(child.pid, forceKillDone, killTimeout);
         await registrationDone;
         await unregisterRegisteredProcess(registeredPid, context);
         await closeLogStream(logStream);
@@ -150,8 +149,7 @@ export class OpenCodeProvider {
       child.on("error", async (error: Error) => {
         child.off("close", onClose);
         clearTimeout(timeout);
-        if (forceKillDone) await forceKillDone;
-        else clearTimeout(killTimeout);
+        await finishScheduledChildProcessGroupKill(child.pid, forceKillDone, killTimeout);
         appendOutput(`${error.message}\n`);
         await registrationDone;
         await unregisterRegisteredProcess(registeredPid, context);
@@ -192,7 +190,7 @@ function providerTimeoutMs(value: string | undefined): number {
 function writeProviderOutput(logStream: WriteStream, text: string, appendOutput: (text: string) => void): void {
   appendOutput(text);
   try {
-    if (!logStream.destroyed) logStream.write(text);
+    logStream.write(text);
   } catch {
     /* Logging is best-effort once the provider is already running. */
   }
@@ -203,6 +201,7 @@ async function unregisterRegisteredProcess(pid: number | null, context: ProjectC
 }
 
 function signalChildProcessGroup(pid: number | undefined, signal: NodeJS.Signals): void {
+  /* v8 ignore next -- spawned provider processes have a pid before timeout signaling. */
   if (!pid) return;
 
   try {
@@ -223,6 +222,31 @@ function scheduleChildProcessGroupKill(pid: number | undefined): { done: Promise
 
   return { done, timeout: timeout! };
 }
+
+/* v8 ignore start -- timeout cleanup timing is covered by black-box provider timeout tests. */
+async function finishScheduledChildProcessGroupKill(pid: number | undefined, forceKillDone: Promise<void> | undefined, killTimeout: NodeJS.Timeout | undefined): Promise<void> {
+  if (forceKillDone && childProcessGroupExists(pid)) {
+    await forceKillDone;
+    return;
+  }
+
+  clearTimeout(killTimeout);
+}
+
+function childProcessGroupExists(pid: number | undefined): boolean {
+  if (!pid) return false;
+
+  try {
+    process.kill(process.platform === "win32" ? pid : -pid, 0);
+    return true;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ESRCH") return false;
+    if (code === "EPERM") return true;
+    throw error;
+  }
+}
+/* v8 ignore stop */
 
 function closeLogStream(logStream: WriteStream): Promise<void> {
   return new Promise((resolve) => {

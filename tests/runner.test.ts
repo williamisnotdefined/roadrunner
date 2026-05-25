@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
 import { loadContext, pathExists, readJson, type ProjectContext, writeJson } from "../src/config.js";
-import { parseStatusPaths, plan, run as runRoadrunner, status, verify } from "../src/runner.js";
+import { parseStatusEntries, parseStatusPaths, plan, run as runRoadrunner, status, verify } from "../src/runner.js";
 import type { QueueFile } from "../src/queue.js";
 import { commitAll, createFakeOpenCodeBin, createInitializedProject, initGit, removeDir, run, sampleRoadmap, tempDir, withPath } from "./helpers.js";
 
@@ -22,6 +22,10 @@ describe("runner", () => {
       "new name.txt",
       "copy.txt",
       "weird -> name.txt",
+    ]);
+    expect(parseStatusEntries(" M file.txt\nR  old.txt -> new.txt\n")).toEqual([
+      { path: "file.txt", status: " M" },
+      { path: "new.txt", status: "R " },
     ]);
   });
 
@@ -304,13 +308,60 @@ describe("runner", () => {
     }
   });
 
-  test("allows planning agents that change files", async () => {
+  test("blocks planning agents that change files", async () => {
     const project = await setupRunnerProject("plan-dirty");
     try {
-      expect(await runRoadrunner(project.context)).toBe(1);
+      await expect(runRoadrunner(project.context)).rejects.toThrow(/Planning failed/);
       expect(await readFile(path.join(project.directory, "plan-dirty.txt"), "utf8")).toBe("nope\n");
+      const queue = await readJson<QueueFile>(project.context.paths.queue);
+      expect(queue.blocked[0]).toMatchObject({ blockedReason: "Planning exited 1", id: "first-step" });
     } finally {
       await removeDir(project.directory);
+    }
+  });
+
+  test("blocks planning agents that delete tracked files", async () => {
+    const project = await setupRunnerProject("plan-delete");
+    try {
+      await writeFile(path.join(project.directory, "delete-me.txt"), "remove me\n");
+      await commitAll(project.directory, "Add file deleted by planning");
+
+      await expect(runRoadrunner(project.context)).rejects.toThrow(/Planning failed/);
+      const queue = await readJson<QueueFile>(project.context.paths.queue);
+      expect(queue.blocked[0]).toMatchObject({ blockedReason: "Planning exited 1", id: "first-step" });
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
+  test("plans in git repositories without commits", async () => {
+    const directory = await tempDir("roadrunner-runner-unborn-git-");
+    try {
+      const binDir = await createFakeOpenCodeBin(directory);
+      process.env.PATH = withPath(binDir);
+      process.env.ROADRUNNER_FAKE_OPENCODE_MODE = "success";
+      await createInitializedProject(directory);
+      await initGit(directory);
+      const context = await loadContext(directory, { _: [] });
+      context.config.allowNestedOpenCode = true;
+
+      expect((await plan(context))?.result.code).toBe(0);
+    } finally {
+      await removeDir(directory);
+    }
+  });
+
+  test("plans outside git repositories", async () => {
+    const directory = await tempDir("roadrunner-runner-no-git-");
+    try {
+      const binDir = await createFakeOpenCodeBin(directory);
+      process.env.PATH = withPath(binDir);
+      process.env.ROADRUNNER_FAKE_OPENCODE_MODE = "success";
+      const context = await createInitializedProject(directory);
+
+      expect((await plan(context))?.result.code).toBe(0);
+    } finally {
+      await removeDir(directory);
     }
   });
 
@@ -571,13 +622,39 @@ describe("runner", () => {
     }
   });
 
-  test("accepts valid queue-only reconciliation changes", async () => {
+  test("preserves verified current step when reconciliation edits it", async () => {
     const project = await setupRunnerProject("reconcile-queue");
     try {
       expect(await runRoadrunner(project.context)).toBe(1);
       const queue = await readJson<QueueFile>(project.context.paths.queue);
 
-      expect(queue.history[0]).toMatchObject({ id: "first-step", title: "Reconciled first step" });
+      expect(queue.history[0]).toMatchObject({ id: "first-step", title: "Build first step" });
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
+  test("preserves verified current step when reconciliation removes it", async () => {
+    const project = await setupRunnerProject("reconcile-removes-current");
+    try {
+      expect(await runRoadrunner(project.context)).toBe(1);
+      const queue = await readJson<QueueFile>(project.context.paths.queue);
+
+      expect(queue.queue).toEqual([]);
+      expect(queue.history[0]).toMatchObject({ id: "first-step", title: "Build first step" });
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
+  test("accepts reconciliation changes to future queue items", async () => {
+    const project = await setupRunnerProject("reconcile-future-queue", twoStepRoadmap());
+    try {
+      expect(await runRoadrunner(project.context)).toBe(1);
+      const queue = await readJson<QueueFile>(project.context.paths.queue);
+
+      expect(queue.history[0]).toMatchObject({ id: "first-step", title: "Build first step" });
+      expect(queue.queue[0]).toMatchObject({ id: "second-step", title: "Reconciled future step" });
     } finally {
       await removeDir(project.directory);
     }
@@ -653,6 +730,21 @@ async function setupRunnerProject(mode: string, roadmap = sampleRoadmap()): Prom
   const context = await loadContext(directory, { _: [] });
   context.config.allowNestedOpenCode = true;
   return { context, directory };
+}
+
+function twoStepRoadmap(): string {
+  return `${sampleRoadmap()}
+
+## second-step: Build second step
+
+Phase: Bootstrap
+Scope: second.txt
+Prompt: Keep this future step queued.
+Acceptance:
+- second step remains queued
+Verification:
+- node -e "process.exit(0)"
+`;
 }
 
 async function fileMode(filePath: string): Promise<number> {

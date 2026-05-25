@@ -148,7 +148,8 @@ function parseFields(lines: string[]): Map<string, string[]> {
     const alias = match ? fieldAliases.get(match[1]!.trim().toLowerCase()) : undefined;
 
     if (match && !alias) {
-      current = null;
+      if (current === "prompt") fields.get(current)?.push(line);
+      else current = null;
       continue;
     }
 

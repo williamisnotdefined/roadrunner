@@ -52,14 +52,15 @@ export async function cleanupProcesses(context: ProjectContext, { force = false 
       continue;
     }
 
-    if (!(await isSameProcess(record))) {
-      results.push({ pid: record.pid, role: record.role, status: "stale" });
-      continue;
-    }
-
     const processGroupId = safeProcessGroupId(record);
     if (processGroupId === null) {
       results.push({ pid: record.pid, role: record.role, status: "invalid-process-group" });
+      continue;
+    }
+
+    const sameProcess = await isSameProcess(record);
+    if (!sameProcess && !processGroupExists(processGroupId)) {
+      results.push({ pid: record.pid, role: record.role, status: "stale" });
       continue;
     }
 
@@ -67,12 +68,13 @@ export async function cleanupProcesses(context: ProjectContext, { force = false 
     results.push({ pid: record.pid, role: record.role, signal: "SIGTERM", status: signaled ? "signaled" : "missing" });
     await sleep(1000);
 
-    if (force && (await isSameProcess(record))) {
+    if (force && ((await isSameProcess(record)) || processGroupExists(processGroupId))) {
       signalProcessGroup(processGroupId, "SIGKILL");
       results.push({ pid: record.pid, role: record.role, signal: "SIGKILL", status: "signaled" });
+      await sleep(100);
     }
 
-    if (await isSameProcess(record)) survivors.push(record);
+    if ((await isSameProcess(record)) || processGroupExists(processGroupId)) survivors.push(record);
   }
 
   await writeProcesses(survivors, context);
@@ -136,5 +138,20 @@ function signalProcessGroup(pid: number, signal: NodeJS.Signals): boolean {
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
     return false;
+  }
+}
+
+function processGroupExists(pid: number): boolean {
+  try {
+    /* v8 ignore next -- Windows process signaling is covered by platform branching at runtime. */
+    process.kill(process.platform === "win32" ? pid : -pid, 0);
+    return true;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ESRCH") return false;
+    /* v8 ignore start -- EPERM and unexpected group-probe failures depend on OS permissions. */
+    if (code === "EPERM") return true;
+    throw error;
+    /* v8 ignore stop */
   }
 }

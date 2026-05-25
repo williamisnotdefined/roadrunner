@@ -254,6 +254,7 @@ npm run ai:check
 - `ROADMAP.md` is only an import source; `.roadrunner/queue.json` is the mutable live queue.
 - `queue[0]` is always the current task.
 - Planning is mandatory before execution.
+- In git repositories, planning fails if the planning agent mutates project files.
 - The reconciler updates the configured queue file, defaulting to `.roadrunner/queue.json`; other file changes are not treated as Roadrunner safety violations.
 - Cleanup only targets subprocesses registered by Roadrunner itself.
 - Cleanup fails closed when a registered process identity cannot be verified.

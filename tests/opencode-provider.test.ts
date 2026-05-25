@@ -304,6 +304,27 @@ describe("OpenCodeProvider", () => {
       await rm(directory, { force: true, recursive: true });
     }
   });
+
+  test("strips parent OpenCode session environment from allowed nested runs", async () => {
+    const directory = await tempDir("roadrunner-provider-nested-env-");
+    try {
+      const binDir = await createFakeOpenCodeBin(directory);
+      const envFile = path.join(directory, "nested-env.json");
+      process.env.PATH = withPath(binDir);
+      process.env.OPENCODE_SESSION = "parent-session";
+      process.env.OPENCODE_SERVER = "http://127.0.0.1:4096";
+      process.env.ROADRUNNER_FAKE_OPENCODE_NESTED_ENV_FILE = envFile;
+      const context = await loadContext(directory, { _: [] });
+      context.config.allowNestedOpenCode = true;
+
+      const result = await new OpenCodeProvider().run({ agent: "plan", context, logPath: path.join(directory, "nested-env.log"), prompt: "Roadrunner Plan Step", role: "plan" });
+
+      expect(result.code).toBe(0);
+      expect(JSON.parse(await readFile(envFile, "utf8"))).toEqual({ OPENCODE_SESSION: null, OPENCODE_SERVER: null });
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
 });
 
 function processIsRunning(pid: number): boolean {

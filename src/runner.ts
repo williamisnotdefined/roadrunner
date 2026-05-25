@@ -1,6 +1,8 @@
+import { execFile, spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { chmod, mkdir, open, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { promisify } from "node:util";
 
 import { defaultModel, defaultVariant, type ProjectContext } from "./config.js";
 import {
@@ -58,6 +60,7 @@ interface RunSnapshot {
 const defaultVerificationTimeoutMs = 10 * 60 * 1000;
 const defaultProviderTimeoutMs = 30 * 60 * 1000;
 const forceKillDelayMs = 1_000;
+const execFileAsync = promisify(execFile);
 
 export async function status(context: ProjectContext): Promise<RoadrunnerStatus> {
   const queueFile = await readValidatedQueue(context);
@@ -197,7 +200,8 @@ async function planStep(
   });
 
   await writePrivateFile(path.join(logDir, "plan.prompt.md"), prompt);
-  const result = await providerFor(context).run({
+  const beforePlanFingerprint = await projectMutationFingerprint(context);
+  let result = await providerFor(context).run({
     agent: "plan",
     context,
     env: providerEnvForDeadline(options.deadline),
@@ -207,6 +211,13 @@ async function planStep(
     role: "plan",
     skipPermissions: false,
   });
+
+  const afterPlanFingerprint = await projectMutationFingerprint(context);
+  if (beforePlanFingerprint !== null && afterPlanFingerprint !== null && beforePlanFingerprint !== afterPlanFingerprint) {
+    const message = "Planning modified project files. Planning agents must be read-only.";
+    result = { code: result.code === 0 ? 1 : result.code, output: `${result.output}${result.output.endsWith("\n") ? "" : "\n"}${message}\n` };
+  }
+
   await writePrivateFile(path.join(logDir, "plan.md"), result.output);
 
   return { logDir, result, step };
@@ -314,10 +325,26 @@ async function reconcileQueue(context: ProjectContext, step: QueueStep, snapshot
   if (errors.length > 0) throw new Error(errors.join("\n"));
 
   const normalizedQueueFile = normalizeQueueFile(queueFile);
-  const preserveErrors = validateClosedRecordsPreserved(queueBeforeReconcile, normalizedQueueFile);
+  const preserveErrors = validateClosedRecordsPreserved(queueBeforeReconcile, normalizedQueueFile, step.id);
   if (preserveErrors.length > 0) throw new Error(preserveErrors.join("\n"));
 
-  return normalizedQueueFile;
+  const reconciledQueueFile = restoreVerifiedCurrentStep(queueBeforeReconcile, normalizedQueueFile, step.id);
+  const reconciledErrors = validateQueueFile(reconciledQueueFile, queueValidationOptions(context));
+  if (reconciledErrors.length > 0) throw new Error(reconciledErrors.join("\n"));
+
+  return reconciledQueueFile;
+}
+
+function restoreVerifiedCurrentStep(before: QueueFile, after: QueueFile, stepId: string): QueueFile {
+  const verifiedStep = before.queue[0];
+  if (!verifiedStep || verifiedStep.id !== stepId) throw new Error(`Reconciliation expected ${stepId} at queue[0].`);
+
+  return {
+    ...after,
+    queue: [verifiedStep, ...after.queue.filter((step) => step.id !== stepId)],
+    history: before.history,
+    blocked: before.blocked,
+  };
 }
 
 function providerFor(context: ProjectContext): OpenCodeProvider {
@@ -570,9 +597,94 @@ export function parseStatusPaths(output: string): string[] {
     });
 }
 
-function validateClosedRecordsPreserved(before: QueueFile, after: QueueFile): string[] {
+function validateClosedRecordsPreserved(before: QueueFile, after: QueueFile, currentStepId: string): string[] {
   const errors: string[] = [];
-  if (JSON.stringify(after.history) !== JSON.stringify(before.history)) errors.push("Reconciliation must preserve history records.");
-  if (JSON.stringify(after.blocked) !== JSON.stringify(before.blocked)) errors.push("Reconciliation must preserve blocked records.");
+  const afterHistory = after.history.filter((step) => step.id !== currentStepId);
+  const afterBlocked = after.blocked.filter((step) => step.id !== currentStepId);
+  if (JSON.stringify(afterHistory) !== JSON.stringify(before.history)) errors.push("Reconciliation must preserve history records.");
+  if (JSON.stringify(afterBlocked) !== JSON.stringify(before.blocked)) errors.push("Reconciliation must preserve blocked records.");
   return errors;
+}
+
+export interface StatusEntry {
+  path: string;
+  status: string;
+}
+
+async function projectMutationFingerprint(context: ProjectContext): Promise<string | null> {
+  const statusOutput = await gitStatusOutput(context);
+  if (statusOutput === null) return null;
+
+  const entries = parseStatusEntries(statusOutput).filter((entry) => !isRoadrunnerRuntimePath(context, entry.path));
+  const head = await gitHead(context);
+  const fingerprints = await Promise.all(
+    entries.map(async (entry) => ({
+      path: entry.path,
+      status: entry.status,
+      content: await fileFingerprint(path.resolve(context.root, entry.path)),
+    })),
+  );
+
+  return JSON.stringify({ head, fingerprints });
+}
+
+async function gitStatusOutput(context: ProjectContext): Promise<string | null> {
+  try {
+    const result = await execFileAsync("git", ["status", "--porcelain=v1", "-z", "--untracked-files=all"], { cwd: context.root, env: process.env, maxBuffer: 20 * 1024 * 1024 });
+    return result.stdout;
+  } catch {
+    return null;
+  }
+}
+
+async function gitHead(context: ProjectContext): Promise<string | null> {
+  try {
+    const result = await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: context.root, env: process.env });
+    return result.stdout.trim();
+  } catch {
+    return null;
+  }
+}
+
+export function parseStatusEntries(output: string): StatusEntry[] {
+  if (output.includes("\0")) {
+    const records = output.split("\0").filter((record) => record.length > 0);
+    const entries: StatusEntry[] = [];
+
+    for (let index = 0; index < records.length; index += 1) {
+      const record = records[index]!;
+      const status = record.slice(0, 2);
+      entries.push({ path: record.slice(3), status });
+      if (status.includes("R") || status.includes("C")) index += 1;
+    }
+
+    return entries;
+  }
+
+  return output
+    .split(/\r?\n/)
+    .map((line) => line.trimEnd())
+    .filter((line) => line.length > 0)
+    .map((line) => {
+      const value = line.slice(3);
+      return { path: value.includes(" -> ") ? value.split(" -> ").pop()! : value, status: line.slice(0, 2) };
+    });
+}
+
+async function fileFingerprint(filePath: string): Promise<string> {
+  try {
+    return createHash("sha256").update(await readFile(filePath)).digest("hex");
+  } catch (error) {
+    return `unreadable:${(error as NodeJS.ErrnoException).code ?? "unknown"}`;
+  }
+}
+
+function isRoadrunnerRuntimePath(context: ProjectContext, relativePath: string): boolean {
+  const absolutePath = path.resolve(context.root, relativePath);
+  return isSameOrInside(context.paths.logs, absolutePath) || absolutePath === context.paths.processRegistry || absolutePath === context.paths.lock;
+}
+
+function isSameOrInside(parent: string, child: string): boolean {
+  const relative = path.relative(parent, child);
+  return relative.length === 0 || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }

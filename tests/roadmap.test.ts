@@ -70,6 +70,29 @@ Verification:
     expect(queueFile.queue[0]?.verification).toEqual(["npm test"]);
   });
 
+  test("keeps unknown labels inside multiline prompt fields", () => {
+    const queueFile = queueFileFromRoadmap(
+      `# Roadmap
+
+## first-step: Build first step
+
+Phase: Bootstrap
+Scope: README.md
+Prompt: Implement the thing.
+Note: This line is part of the prompt, not a roadmap field.
+Example: Keep this too.
+Acceptance:
+- works
+Verification:
+- npm test
+`,
+      {},
+    );
+
+    expect(queueFile.queue[0]?.prompt).toContain("Note: This line is part of the prompt");
+    expect(queueFile.queue[0]?.prompt).toContain("Example: Keep this too");
+  });
+
   test("rejects roadmap steps with missing required fields", () => {
     expect(() => queueFileFromRoadmap("## first-step: Build first step\n\nPhase: Bootstrap\n", {})).toThrow(/missing scope field/);
   });
