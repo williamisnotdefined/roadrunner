@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { realpathSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -170,8 +171,25 @@ Path overrides:
 `;
 }
 
+export function isCliEntrypoint(importMetaUrl: string, argvPath = process.argv[1]): boolean {
+  if (!argvPath) return false;
+
+  const modulePath = fileURLToPath(importMetaUrl);
+  const invokedPath = path.resolve(argvPath);
+
+  return realPathOrSelf(modulePath) === realPathOrSelf(invokedPath);
+}
+
+function realPathOrSelf(filePath: string): string {
+  try {
+    return realpathSync(filePath);
+  } catch {
+    return filePath;
+  }
+}
+
 /* v8 ignore next -- the package bin entrypoint is outside in-process unit coverage. */
-const isEntrypoint = process.argv[1] ? fileURLToPath(import.meta.url) === path.resolve(process.argv[1]) : false;
+const isEntrypoint = isCliEntrypoint(import.meta.url);
 /* v8 ignore next 3 -- the package bin entrypoint is outside in-process unit coverage. */
 if (isEntrypoint) {
   process.exitCode = await main();

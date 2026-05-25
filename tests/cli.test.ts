@@ -1,14 +1,30 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { describe, expect, test } from "vitest";
 
-import { formatRunEvent, helpText, main } from "../src/cli.js";
+import { formatRunEvent, helpText, isCliEntrypoint, main } from "../src/cli.js";
 import { readJson, writeJson } from "../src/config.js";
 import type { QueueFile, QueueStep } from "../src/queue.js";
 import { createInitializedProject, removeDir, sampleRoadmap, tempDir } from "./helpers.js";
 import { createFakeOpenCodeBin, withPath } from "./helpers.js";
 
 describe("cli", () => {
+  test("recognizes symlinked package bin as entrypoint", async () => {
+    const directory = await tempDir("roadrunner-cli-entrypoint-");
+    try {
+      const target = path.join(directory, "cli.js");
+      const linkedBin = path.join(directory, "roadrunner");
+      await writeFile(target, "#!/usr/bin/env node\n");
+      await symlink(target, linkedBin);
+
+      expect(isCliEntrypoint(pathToFileURL(target).href, linkedBin)).toBe(true);
+      expect(isCliEntrypoint(pathToFileURL(target).href, path.join(directory, "other"))).toBe(false);
+    } finally {
+      await removeDir(directory);
+    }
+  });
+
   test("formats run progress events", () => {
     const step: QueueStep = {
       acceptance: ["works"],
