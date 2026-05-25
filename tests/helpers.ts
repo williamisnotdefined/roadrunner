@@ -201,6 +201,13 @@ if (prompt.includes("Roadrunner Reconcile Queue")) {
     queue.version = 99;
     fs.writeFileSync(queuePath, JSON.stringify(queue, null, 2) + "\\n");
   }
+  if (mode === "reconcile-closed") {
+    const queuePath = path.join(".roadrunner", "queue.json");
+    const queue = JSON.parse(fs.readFileSync(queuePath, "utf8"));
+    queue.history = [];
+    queue.blocked = [];
+    fs.writeFileSync(queuePath, JSON.stringify(queue, null, 2) + "\\n");
+  }
   if (mode === "reconcile-queue") {
     const queuePath = path.join(".roadrunner", "queue.json");
     const queue = JSON.parse(fs.readFileSync(queuePath, "utf8"));

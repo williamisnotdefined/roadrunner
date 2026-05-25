@@ -9,7 +9,7 @@ import { cleanupProcesses } from "./process-registry.js";
 import { formatStep, nextStep, readQueue, validateGoals, validateQueueFile } from "./queue.js";
 import { initProject } from "./init.js";
 import { loadContext } from "./config.js";
-import { numberOption, optionalNumberOption, parseArgs } from "./args.js";
+import { integerOption, optionalNumberOption, parseArgs } from "./args.js";
 import { plan, run, status, type RoadrunnerRunEvent } from "./runner.js";
 import { importRoadmap } from "./roadmap.js";
 
@@ -65,13 +65,14 @@ export async function main(argv = process.argv.slice(2), { cwd = process.cwd(), 
       out(formatCliStep("Planning next queued step"));
       const result = await plan(context, { onProviderStart: (event) => out(formatProviderStartEvent(event)) });
       if (!result) out(formatCliInfo("No queued step."));
-      else if (result.result.code !== 0) throw new Error(`Planning failed for ${result.step.id} (exit ${String(result.result.code)}). See ${path.join(result.logDir, "plan.opencode.log")}.`);
+      else if (result.result.code !== 0)
+        throw new Error(`Planning failed for ${result.step.id} (exit ${String(result.result.code)}). See ${path.join(result.logDir, "plan.opencode.log")}.`);
       else out(formatCliSuccess(`Plan written to ${result.logDir}`));
     } else if (command === "run") {
       out(formatCliStep("Running Roadrunner"));
       const completed = await run(context, {
         maxHours: optionalNumberOption(args["max-hours"]),
-        maxSteps: numberOption(args["max-steps"], 1),
+        maxSteps: integerOption(args["max-steps"], 1),
         onEvent: (event) => out(formatRunEvent(event)),
       });
       out(formatCliSuccess(`Completed ${completed} step(s).`));

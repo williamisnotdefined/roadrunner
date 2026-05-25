@@ -1,6 +1,7 @@
 import { mkdir, open, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 
 import { defaultModel, defaultVariant, type ProjectContext } from "./config.js";
 import {
@@ -71,7 +72,10 @@ export async function status(context: ProjectContext): Promise<RoadrunnerStatus>
   };
 }
 
-export async function plan(context: ProjectContext, options: PlanOptions = {}): Promise<{ logDir: string; result: { code: number | null; output: string }; step: QueueStep } | null> {
+export async function plan(
+  context: ProjectContext,
+  options: PlanOptions = {},
+): Promise<{ logDir: string; result: { code: number | null; output: string }; step: QueueStep } | null> {
   const queueFile = await readValidatedQueue(context);
   const step = nextStep(queueFile);
   if (!step) return null;
@@ -191,9 +195,14 @@ export async function run(context: ProjectContext, options: RunOptions = {}): Pr
 
         emitRunEvent(options, { step, type: "commit" });
         try {
-          await commitStepImplementation(context, step, logDir);
+          const implementationCommitted = await commitStepImplementation(context, step, logDir);
+          if (!implementationCommitted) {
+            await blockStepCleanly(context, queueFile, step, "Implementation produced no project changes.", logDir);
+            throw new Error(`Implementation produced no project changes for ${step.id}.`);
+          }
         } catch (error) {
-          if ((error as Error).message.startsWith("Implementation changed Roadrunner queue state directly")) await blockStepCleanly(context, queueFile, step, (error as Error).message, logDir);
+          if ((error as Error).message.startsWith("Implementation changed Roadrunner queue state directly"))
+            await blockStepCleanly(context, queueFile, step, (error as Error).message, logDir);
           throw error;
         }
         emitRunEvent(options, { step, type: "reconcile" });
@@ -236,11 +245,19 @@ async function readValidatedQueue(context: ProjectContext): Promise<QueueFile> {
   return queueFile;
 }
 
-export async function verify(context: ProjectContext, step: QueueStep, logDir: string, { deadline = null, prefix = "verify" }: { deadline?: number | null; prefix?: string } = {}): Promise<{ ok: boolean; output: string }> {
+export async function verify(
+  context: ProjectContext,
+  step: QueueStep,
+  logDir: string,
+  { deadline = null, prefix = "verify" }: { deadline?: number | null; prefix?: string } = {},
+): Promise<{ ok: boolean; output: string }> {
   let output = "";
 
   for (const [index, command] of step.verification.entries()) {
-    const result = await runShell(context, command, path.join(logDir, `${prefix}-${index + 1}.log`), { role: `${prefix}-${index + 1}`, timeoutMs: verificationTimeoutMs(deadline) });
+    const result = await runShell(context, command, path.join(logDir, `${prefix}-${index + 1}.log`), {
+      role: `${prefix}-${index + 1}`,
+      timeoutMs: verificationTimeoutMs(deadline),
+    });
     output += `$ ${command}\n${result.output}\n`;
     if (result.code !== 0) return { ok: false, output };
   }
@@ -248,7 +265,15 @@ export async function verify(context: ProjectContext, step: QueueStep, logDir: s
   return { ok: true, output };
 }
 
-async function fixFailure(context: ProjectContext, step: QueueStep, planMarkdown: string, failureOutput: string, logDir: string, options: RunOptions, deadline: number | null): Promise<ProviderRunResult> {
+async function fixFailure(
+  context: ProjectContext,
+  step: QueueStep,
+  planMarkdown: string,
+  failureOutput: string,
+  logDir: string,
+  options: RunOptions,
+  deadline: number | null,
+): Promise<ProviderRunResult> {
   const prompt = await renderPrompt(context, "fix-failure.md", {
     GOALS_MD: await readFile(context.paths.goals, "utf8"),
     LAST_FAILURE: failureOutput,
@@ -273,10 +298,12 @@ async function fixFailure(context: ProjectContext, step: QueueStep, planMarkdown
 async function reconcileQueue(context: ProjectContext, step: QueueStep, logDir: string, options: RunOptions, deadline: number | null): Promise<QueueFile> {
   const preReconcileChanges = await changedStatusEntries(context, path.join(logDir, "reconcile-pre-status.log"));
   if (preReconcileChanges.length > 0) throw new Error(`Expected clean worktree before reconciliation: ${statusEntryPaths(preReconcileChanges).join(", ")}`);
+  const queueText = await readFile(context.paths.queue, "utf8");
+  const queueBeforeReconcile = JSON.parse(queueText) as QueueFile;
 
   const prompt = await renderPrompt(context, "reconcile-roadmap.md", {
     GOALS_MD: await readFile(context.paths.goals, "utf8"),
-    QUEUE_JSON: await readFile(context.paths.queue, "utf8"),
+    QUEUE_JSON: queueText,
   });
   await writeFile(path.join(logDir, "reconcile.prompt.md"), prompt);
 
@@ -307,7 +334,7 @@ async function reconcileQueue(context: ProjectContext, step: QueueStep, logDir: 
   }
 
   const queueFile = await readQueue(context);
-  const errors = validateQueueFile(queueFile, queueValidationOptions(context));
+  const errors = [...validateQueueFile(queueFile, queueValidationOptions(context)), ...validateClosedRecordsPreserved(queueBeforeReconcile, queueFile)];
   if (errors.length > 0) {
     await restoreChangedEntries(context, changed, path.join(logDir, "reconcile-invalid-restore.log"));
     throw new Error(errors.join("\n"));
@@ -414,7 +441,12 @@ function parseNonNegativeIntegerEnv(name: string, defaultValue: number): number 
   return parsed;
 }
 
-async function runShell(context: ProjectContext, command: string, logPath: string, { role, timeoutMs = 0 }: { role?: string; timeoutMs?: number } = {}): Promise<{ code: number | null; output: string }> {
+async function runShell(
+  context: ProjectContext,
+  command: string,
+  logPath: string,
+  { role, timeoutMs = 0 }: { role?: string; timeoutMs?: number } = {},
+): Promise<{ code: number | null; output: string }> {
   await mkdir(path.dirname(logPath), { recursive: true });
   const child = spawn(command, [], { cwd: context.root, detached: process.platform !== "win32", shell: true });
   let output = "";
@@ -425,19 +457,20 @@ async function runShell(context: ProjectContext, command: string, logPath: strin
   let killTimeout: NodeJS.Timeout | undefined;
   let settled = false;
   /* v8 ignore next 11 -- shell registration failures require a registry path race after provider startup. */
-  const registrationDone = role && child.pid
-    ? registerProcess({ command: [command], cwd: context.root, pid: child.pid, role }, context).catch((error: Error) => {
-        registeredPid = null;
-        if (settled) return;
-        registrationFailed = true;
-        output += `Failed to register shell process: ${error.message}\n`;
-        signalProcessTree(child.pid, "SIGTERM");
-        /* v8 ignore next 3 -- SIGKILL fallback only appends when a child ignores SIGTERM. */
-        killTimeout = scheduleProcessTreeKill(child.pid, (text) => {
-          output += text;
-        });
-      })
-    : Promise.resolve();
+  const registrationDone =
+    role && child.pid
+      ? registerProcess({ command: [command], cwd: context.root, pid: child.pid, role }, context).catch((error: Error) => {
+          registeredPid = null;
+          if (settled) return;
+          registrationFailed = true;
+          output += `Failed to register shell process: ${error.message}\n`;
+          signalProcessTree(child.pid, "SIGTERM");
+          /* v8 ignore next 3 -- SIGKILL fallback only appends when a child ignores SIGTERM. */
+          killTimeout = scheduleProcessTreeKill(child.pid, (text) => {
+            output += text;
+          });
+        })
+      : Promise.resolve();
 
   if (timeoutMs > 0) {
     timeout = setTimeout(() => {
@@ -544,7 +577,15 @@ async function ensureGoalsUnchangedOrBlock(context: ProjectContext, queueFile: Q
   }
 }
 
-async function ensureSnapshotUnchangedOrBlock(context: ProjectContext, queueFile: QueueFile, step: QueueStep, logDir: string, before: string, afterName: string, reason: string): Promise<void> {
+async function ensureSnapshotUnchangedOrBlock(
+  context: ProjectContext,
+  queueFile: QueueFile,
+  step: QueueStep,
+  logDir: string,
+  before: string,
+  afterName: string,
+  reason: string,
+): Promise<void> {
   const after = await worktreeSnapshot(context, path.join(logDir, afterName));
   if (after === before) return;
   await blockStepCleanly(context, queueFile, step, reason, logDir);
@@ -564,7 +605,31 @@ async function worktreeSnapshot(context: ProjectContext, logPrefix: string): Pro
   const stagedDiff = await runShell(context, "git diff --cached --binary", `${logPrefix}-staged-diff.log`);
   /* v8 ignore next -- git diff --cached failures are surfaced defensively. */
   if (stagedDiff.code !== 0) throw new Error(`git diff --cached failed: ${stagedDiff.output.trim()}`);
-  return JSON.stringify(status.sort((left, right) => statusEntryKey(left).localeCompare(statusEntryKey(right)))) + diff.output + stagedDiff.output;
+  const untracked = await untrackedContentSnapshot(context, `${logPrefix}-untracked.log`);
+  return JSON.stringify(status.sort((left, right) => statusEntryKey(left).localeCompare(statusEntryKey(right)))) + diff.output + stagedDiff.output + untracked;
+}
+
+async function untrackedContentSnapshot(context: ProjectContext, logPath: string): Promise<string> {
+  const result = await runShell(context, "git ls-files --others --exclude-standard -z", logPath);
+  /* v8 ignore next -- git ls-files failures are surfaced defensively. */
+  if (result.code !== 0) throw new Error(`git ls-files failed: ${result.output.trim()}`);
+  const files = result.output
+    .split("\0")
+    .filter((filePath) => filePath.length > 0 && !isRuntimePath(context, filePath))
+    .sort();
+  const hashes: Array<[string, string]> = [];
+
+  for (const filePath of files) {
+    try {
+      const content = await readFile(path.join(context.root, filePath));
+      hashes.push([filePath, createHash("sha256").update(content).digest("hex")]);
+    } catch (error) {
+      /* v8 ignore next -- untracked files can disappear between git ls-files and readFile. */
+      hashes.push([filePath, `missing:${(error as NodeJS.ErrnoException).code ?? "unknown"}`]);
+    }
+  }
+
+  return JSON.stringify(hashes);
 }
 
 async function commitCurrentChanges(context: ProjectContext, message: string, logDir: string, name: string): Promise<boolean> {
@@ -663,6 +728,13 @@ function assertQueueReadOnlyForImplementation(context: ProjectContext, entries: 
   const queuePath = gitRelativePath(context, context.paths.queue);
   const changedQueue = entries.filter((entry) => entry.path === queuePath || entry.originalPath === queuePath);
   if (changedQueue.length > 0) throw new Error(`Implementation changed Roadrunner queue state directly: ${statusEntryPaths(changedQueue).join(", ")}`);
+}
+
+function validateClosedRecordsPreserved(before: QueueFile, after: QueueFile): string[] {
+  const errors: string[] = [];
+  if (JSON.stringify(after.history) !== JSON.stringify(before.history)) errors.push("Reconciliation must preserve history records.");
+  if (JSON.stringify(after.blocked) !== JSON.stringify(before.blocked)) errors.push("Reconciliation must preserve blocked records.");
+  return errors;
 }
 
 function statusEntryKey(entry: GitStatusEntry): string {

@@ -100,13 +100,13 @@ describe("runner", () => {
     }
   });
 
-  test("completes a queue-only step when implementation makes no file changes", async () => {
-    const project = await setupRunnerProject("noop", sampleRoadmap({ verification: "node -e \"process.exit(0)\"" }));
+  test("blocks a queue-only step when implementation makes no file changes", async () => {
+    const project = await setupRunnerProject("noop", sampleRoadmap({ verification: 'node -e "process.exit(0)"' }));
     try {
-      expect(await runRoadrunner(project.context, { maxSteps: 1 })).toBe(1);
+      await expect(runRoadrunner(project.context, { maxSteps: 1 })).rejects.toThrow(/no project changes/);
       const queue = await readJson<QueueFile>(project.context.paths.queue);
-      expect(queue.history.map((step) => step.id)).toEqual(["first-step"]);
-      expect(queue.blocked).toEqual([]);
+      expect(queue.history).toEqual([]);
+      expect(queue.blocked[0]).toMatchObject({ blockedReason: "Implementation produced no project changes.", id: "first-step" });
     } finally {
       await removeDir(project.directory);
     }
@@ -227,9 +227,21 @@ describe("runner", () => {
     }
   });
 
+  test("rejects verification commands that mutate untracked file content", async () => {
+    const project = await setupRunnerProject("success", sampleRoadmap({ verification: "node -e \"require('node:fs').writeFileSync('marker.txt', 'mutated\\n')\"" }));
+    try {
+      await expect(runRoadrunner(project.context)).rejects.toThrow(/Verification changed files/);
+      const queue = await readJson<QueueFile>(project.context.paths.queue);
+      expect(queue.blocked[0]).toMatchObject({ blockedReason: "Verification changed files.", id: "first-step" });
+      expect((await run("git", ["status", "--short"], project.directory)).stdout).toBe("");
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
   test("times out verification commands", async () => {
     process.env.ROADRUNNER_VERIFY_TIMEOUT_MS = "50";
-    const project = await setupRunnerProject("fix-fail", sampleRoadmap({ verification: "node -e \"Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0)\"" }));
+    const project = await setupRunnerProject("fix-fail", sampleRoadmap({ verification: 'node -e "Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0)"' }));
     try {
       await expect(runRoadrunner(project.context)).rejects.toThrow(/Verification failed/);
       const queue = await readJson<QueueFile>(project.context.paths.queue);
@@ -398,6 +410,25 @@ describe("runner", () => {
 
       expect(queue.source).toBe("reconciled-roadmap.md");
       expect(log.stdout).toMatch(/Complete Roadrunner step first-step/);
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
+  test("rejects reconciliation that rewrites closed queue records", async () => {
+    const project = await setupRunnerProject("reconcile-closed");
+    try {
+      const queue = await readJson<QueueFile>(project.context.paths.queue);
+      queue.history.push({ ...queue.queue[0]!, id: "completed-step", title: "Completed step" });
+      queue.blocked.push({ ...queue.queue[0]!, id: "blocked-step", title: "Blocked step" });
+      await writeFile(project.context.paths.queue, `${JSON.stringify(queue, null, 2)}\n`);
+      await commitAll(project.directory, "Seed closed queue records");
+
+      await expect(runRoadrunner(project.context)).rejects.toThrow(/preserve history records/);
+      const nextQueue = await readJson<QueueFile>(project.context.paths.queue);
+      expect(nextQueue.history.map((step) => step.id)).toEqual(["completed-step"]);
+      expect(nextQueue.blocked.map((step) => step.id)).toEqual(["blocked-step", "first-step"]);
+      expect((await run("git", ["status", "--short"], project.directory)).stdout).toBe("");
     } finally {
       await removeDir(project.directory);
     }

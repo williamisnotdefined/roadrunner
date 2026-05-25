@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { numberOption, optionalNumberOption, parseArgs, stringOption } from "../src/args.js";
+import { integerOption, numberOption, optionalNumberOption, parseArgs, stringOption } from "../src/args.js";
 
 describe("args", () => {
   test("parses positional args, inline values, separated values, and booleans", () => {
@@ -38,5 +38,11 @@ describe("args", () => {
     expect(optionalNumberOption(undefined)).toBeUndefined();
     expect(optionalNumberOption("1.5")).toBe(1.5);
     expect(() => optionalNumberOption(true)).toThrow(/got true/);
+  });
+
+  test("parses required positive integers", () => {
+    expect(integerOption(undefined, 4)).toBe(4);
+    expect(integerOption("2", 1)).toBe(2);
+    expect(() => integerOption("1.5", 1)).toThrow(/positive integer/);
   });
 });

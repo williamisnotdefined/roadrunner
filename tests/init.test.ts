@@ -3,8 +3,9 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
 
-import { loadContext, pathExists } from "../src/config.js";
+import { loadContext, pathExists, readJson } from "../src/config.js";
 import { initProject } from "../src/init.js";
+import type { QueueFile } from "../src/queue.js";
 
 describe("init", () => {
   test("initProject creates Roadrunner project files", async () => {
@@ -111,6 +112,24 @@ Commit: Build first step
 
       expect(context.paths.config).toBe(path.join(tempDir, "roadrunner.config.json"));
       expect(context.paths.queue).toBe(path.join(tempDir, "ai/roadmap/queue.json"));
+    } finally {
+      await rm(tempDir, { force: true, recursive: true });
+    }
+  });
+
+  test("initProject preserves root README and uses configured queue model", async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "roadrunner-init-root-readme-"));
+    try {
+      await writeFile(path.join(tempDir, "README.md"), "# Target Project\n");
+      await writeFile(path.join(tempDir, "roadrunner.config.json"), `${JSON.stringify({ model: "custom-model", variant: "low" }, null, 2)}\n`);
+      const context = await loadContext(tempDir, { _: [] });
+
+      await initProject(context);
+
+      const queue = await readJson<QueueFile>(context.paths.queue);
+      expect(await readFile(path.join(tempDir, "README.md"), "utf8")).toBe("# Target Project\n");
+      expect(queue.model).toBe("custom-model");
+      expect(queue.variant).toBe("low");
     } finally {
       await rm(tempDir, { force: true, recursive: true });
     }

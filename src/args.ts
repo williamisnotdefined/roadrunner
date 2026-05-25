@@ -47,6 +47,12 @@ export function numberOption(value: unknown, defaultValue: number): number {
   return number;
 }
 
+export function integerOption(value: unknown, defaultValue: number): number {
+  const number = numberOption(value, defaultValue);
+  if (!Number.isSafeInteger(number)) throw new Error(`Expected a positive integer, got ${String(value)}.`);
+  return number;
+}
+
 export function optionalNumberOption(value: unknown): number | undefined {
   if (value === undefined) return undefined;
   if (value === true) throw new Error("Expected a positive number, got true.");

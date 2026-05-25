@@ -2,7 +2,7 @@ import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { defaultModel, defaultVariant, packageRoot, pathExists, type ProjectContext, writeJson } from "./config.js";
-import { writeQueue } from "./queue.js";
+import { writeQueue, type QueueFile } from "./queue.js";
 import { queueFileFromRoadmapFile } from "./roadmap.js";
 
 export async function initProject(context: ProjectContext): Promise<void> {
@@ -17,7 +17,7 @@ export async function initProject(context: ProjectContext): Promise<void> {
   if (!(await pathExists(context.paths.goals))) await cp(path.join(templateRoot, "GOALS.md"), context.paths.goals);
   if (!(await pathExists(context.paths.queue))) {
     if (await pathExists(context.paths.roadmap)) await writeQueue(await queueFileFromRoadmapFile(context), context);
-    else await cp(path.join(templateRoot, "queue.json"), context.paths.queue);
+    else await writeQueue(await defaultQueueFile(context, templateRoot), context);
   }
   if (!(await pathExists(context.paths.config))) {
     await writeJson(context.paths.config, {
@@ -39,7 +39,26 @@ export async function initProject(context: ProjectContext): Promise<void> {
 
   await cp(path.join(templateRoot, "prompts"), context.paths.prompts, { force: false, recursive: true });
   await ensureRuntimeGitignore(context);
-  await writeFile(path.join(path.dirname(context.paths.config), "README.md"), "Roadrunner runtime state. Logs, locks, and process registries are local artifacts.\n");
+  await writeRuntimeReadme(context);
+}
+
+async function defaultQueueFile(context: ProjectContext, templateRoot: string): Promise<QueueFile> {
+  const queueFile = JSON.parse(await readFile(path.join(templateRoot, "queue.json"), "utf8")) as QueueFile;
+  return {
+    ...queueFile,
+    goals: relativeToRoot(context, context.paths.goals),
+    model: context.config.model,
+    source: relativeToRoot(context, context.paths.roadmap),
+    variant: context.config.variant,
+  };
+}
+
+async function writeRuntimeReadme(context: ProjectContext): Promise<void> {
+  const configDir = path.dirname(context.paths.config);
+  if (path.resolve(configDir) === path.resolve(context.root)) return;
+
+  const readmePath = path.join(configDir, "README.md");
+  if (!(await pathExists(readmePath))) await writeFile(readmePath, "Roadrunner runtime state. Logs, locks, and process registries are local artifacts.\n");
 }
 
 async function ensureRuntimeGitignore(context: ProjectContext): Promise<void> {
@@ -67,7 +86,9 @@ async function upsertGitignoreBlock(filePath: string, entries: string[]): Promis
   const block = `${blockStart}\n${[...new Set(entries)].join("\n")}\n${blockEnd}\n`;
   const current = (await pathExists(filePath)) ? await readFile(filePath, "utf8") : "";
   const pattern = new RegExp(`${escapeRegExp(blockStart)}\\n[\\s\\S]*?${escapeRegExp(blockEnd)}\\n?`);
-  const next = pattern.test(current) ? current.replace(pattern, block) : `${current}${current.length > 0 && !current.endsWith("\n") ? "\n" : ""}${current.length > 0 ? "\n" : ""}${block}`;
+  const next = pattern.test(current)
+    ? current.replace(pattern, block)
+    : `${current}${current.length > 0 && !current.endsWith("\n") ? "\n" : ""}${current.length > 0 ? "\n" : ""}${block}`;
   await writeFile(filePath, next);
 }
 
