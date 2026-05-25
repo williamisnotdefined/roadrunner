@@ -14,14 +14,17 @@ Use this skill for all Roadrunner repository work.
 ## Read First
 
 - `ai/rules/repository-rules.md`
+- `ai/rules/source-architecture-rules.md`
 - `ai/rules/testing-rules.md`
 - `ai/rules/ai-rules.md`
 - `ai/architecture/project-architecture.md`
+- `ai/architecture/source-architecture.md`
 - `ai/architecture/ai-knowledge-system.md`
 
 ## Workflow
 
 - Preserve plan-first autonomous execution.
+- Keep source modules cohesive and below the architecture size guardrails when practical.
 - Keep process cleanup limited to Roadrunner-owned subprocesses.
 - Run relevant Node and AI checks before finishing.
 
@@ -44,6 +47,29 @@ Use this skill for all Roadrunner repository work.
 - Do not kill arbitrary editor or agent processes.
 - Do not skip failing verification.
 - Do not create automatic Roadrunner commits.
+
+## ai/rules/source-architecture-rules.md
+
+# Source Architecture Rules
+
+## Always
+
+- Keep modules cohesive around one reason to change.
+- Prefer extracting pure parsing, validation, formatting, and calculation before extracting side-effectful orchestration.
+- Keep provider-specific behavior under `src/providers`.
+- Keep queue state transitions and validation centralized in queue-focused modules.
+- Keep process spawning, timeout handling, process-group signaling, and process registry writes behind infrastructure helpers.
+- Use explicit ports or interfaces only when they protect a real boundary, such as providers or process execution.
+- Treat 250 lines as the target production module size and 300 lines as the review threshold.
+- Update or split tests along the same behavioral boundaries as source refactors.
+
+## Never
+
+- Do not let application orchestration modules accumulate provider, shell, git, filesystem traversal, prompt rendering, and queue mutation details together.
+- Do not import provider adapters from domain modules.
+- Do not let provider adapters mutate queue state or own Roadrunner workflow decisions.
+- Do not create abstractions solely to satisfy a pattern name such as DRY, SOLID, or DDD.
+- Do not split code into tiny modules when the resulting boundary has no stable responsibility.
 
 ## ai/rules/testing-rules.md
 
@@ -106,6 +132,28 @@ Core modules:
 - `src/runner.ts`: plan/execute/verify/reconcile flow with an in-memory goals snapshot.
 - `src/process-registry.ts`: safe child-process tracking.
 - `src/providers/opencode.ts`: OpenCode provider adapter.
+
+## ai/architecture/source-architecture.md
+
+# Source Architecture
+
+Roadrunner source code should stay organized around clear responsibility boundaries.
+
+## Layers
+
+- Domain modules define queue data, validation, parsing, and state transitions without process, provider, or filesystem orchestration concerns.
+- Application modules coordinate use cases such as planning, running, verification, reconciliation, imports, and CLI command handling.
+- Infrastructure modules own side effects such as providers, shell processes, locks, process registries, prompt/log artifacts, file permissions, and git/filesystem inspection.
+
+## Size Guardrails
+
+- Production modules should target 250 lines or fewer.
+- Files above 300 lines need a clear cohesion reason or a planned extraction.
+- Files above 400 lines should not grow without first splitting responsibilities.
+- Functions should target 60 lines or fewer; functions above 80 lines should be reviewed for extraction.
+- Test files may be larger, but should target 350 lines or fewer before splitting by behavior.
+
+These are review guardrails, not mechanical goals. Prefer small cohesive modules over arbitrary splitting.
 
 ## ai/architecture/ai-knowledge-system.md
 

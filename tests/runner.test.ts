@@ -4,7 +4,8 @@ import path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
 import { loadContext, pathExists, readJson, type ProjectContext, writeJson } from "../src/config.js";
-import { parseStatusEntries, parseStatusPaths, plan, run as runRoadrunner, status, verify } from "../src/runner.js";
+import { parseStatusEntries, parseStatusPaths } from "../src/mutation-fingerprint.js";
+import { plan, run as runRoadrunner, status, verify } from "../src/runner.js";
 import type { QueueFile } from "../src/queue.js";
 import { commitAll, createFakeOpenCodeBin, createInitializedProject, initGit, removeDir, run, sampleRoadmap, tempDir, withPath } from "./helpers.js";
 

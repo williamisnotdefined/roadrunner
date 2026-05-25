@@ -15,9 +15,11 @@
       "canonicalPath": "ai/skills/project-core.md",
       "references": [
         "ai/rules/repository-rules.md",
+        "ai/rules/source-architecture-rules.md",
         "ai/rules/testing-rules.md",
         "ai/rules/ai-rules.md",
         "ai/architecture/project-architecture.md",
+        "ai/architecture/source-architecture.md",
         "ai/architecture/ai-knowledge-system.md"
       ],
       "routes": {
@@ -28,6 +30,21 @@
       "toolConfig": {
         "cursor": { "globs": "**/*", "alwaysApply": true },
         "github": { "applyTo": "**/*" }
+      }
+    },
+    {
+      "name": "source-architecture",
+      "description": "Use when changing Roadrunner source architecture, module boundaries, refactors, DRY/SOLID/DDD structure, or large src/**/*.ts files.",
+      "canonicalPath": "ai/skills/source-architecture.md",
+      "references": ["ai/rules/source-architecture-rules.md", "ai/rules/testing-rules.md", "ai/architecture/source-architecture.md", "ai/architecture/project-architecture.md"],
+      "routes": {
+        "opencode": ".opencode/skills/source-architecture/SKILL.md",
+        "cursor": ".cursor/rules/source-architecture.mdc",
+        "github": ".github/instructions/source-architecture.instructions.md"
+      },
+      "toolConfig": {
+        "cursor": { "globs": "src/**/*.ts,tests/**/*.ts,ai/**/*.md", "alwaysApply": false },
+        "github": { "applyTo": "src/**/*.ts,tests/**/*.ts,ai/**/*.md" }
       }
     },
     {

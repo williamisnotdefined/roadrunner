@@ -1,11 +1,13 @@
 import { execFile, spawn } from "node:child_process";
 import { createWriteStream, type WriteStream } from "node:fs";
-import { chmod, mkdir, writeFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 
 import { defaultModel, defaultVariant, type ProjectContext } from "../config.js";
 import { registerProcess, unregisterProcess } from "../process-registry.js";
+import { writePrivateFile } from "../run-artifacts.js";
+import { openCodeCheckTimeoutMs, providerTimeoutMs } from "../timeouts.js";
 
 export interface ProviderRunInput {
   agent: string;
@@ -32,8 +34,6 @@ export interface ProviderRunResult {
 }
 
 const nestedOpenCodeEnvKeys = ["OPENCODE_SESSION", "OPENCODE_SESSION_ID", "OPENCODE_SERVER", "OPENCODE_WORKSPACE", "OPENCODE_APP_INFO"];
-const defaultProviderTimeoutMs = 30 * 60 * 1000;
-const defaultOpenCodeCheckTimeoutMs = 10_000;
 const forceKillDelayMs = 1_000;
 const promptMessage = "Follow the attached Roadrunner prompt file exactly.";
 const execFileAsync = promisify(execFile);
@@ -183,23 +183,8 @@ export async function validateOpenCodeCli(): Promise<string[]> {
 
 async function writePromptFile(logPath: string, prompt: string): Promise<string> {
   const promptFilePath = path.join(path.dirname(logPath), `${path.basename(logPath, path.extname(logPath))}.prompt-input.md`);
-  await writeFile(promptFilePath, prompt, { mode: 0o600 });
-  await chmod(promptFilePath, 0o600);
+  await writePrivateFile(promptFilePath, prompt);
   return promptFilePath;
-}
-
-function providerTimeoutMs(value: string | undefined): number {
-  if (value === undefined) return defaultProviderTimeoutMs;
-  const timeoutMs = Number(value);
-  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 0) throw new Error(`ROADRUNNER_PROVIDER_TIMEOUT_MS must be a non-negative integer, got ${value}.`);
-  return timeoutMs;
-}
-
-function openCodeCheckTimeoutMs(value: string | undefined): number {
-  if (value === undefined) return defaultOpenCodeCheckTimeoutMs;
-  const timeoutMs = Number(value);
-  if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) throw new Error(`ROADRUNNER_OPENCODE_CHECK_TIMEOUT_MS must be a positive integer, got ${value}.`);
-  return timeoutMs;
 }
 
 function writeProviderOutput(logStream: WriteStream, text: string, appendOutput: (text: string) => void): void {

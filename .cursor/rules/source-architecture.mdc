@@ -1,51 +1,33 @@
 ---
-applyTo: "**/*"
+description: "Use when changing Roadrunner source architecture, module boundaries, refactors, DRY/SOLID/DDD structure, or large src/**/*.ts files."
+globs: "src/**/*.ts,tests/**/*.ts,ai/**/*.md"
+alwaysApply: false
 ---
 
 Generated from `ai/registry.json`. Do not edit manually.
 
-# project-core
+# source-architecture
 
-# Project Core
+# Source Architecture
 
-Use this skill for all Roadrunner repository work.
+Use this skill when changing Roadrunner source architecture, module boundaries, refactors, DRY/SOLID/DDD structure, or large `src/**/*.ts` files.
 
 ## Read First
 
-- `ai/rules/repository-rules.md`
 - `ai/rules/source-architecture-rules.md`
 - `ai/rules/testing-rules.md`
-- `ai/rules/ai-rules.md`
-- `ai/architecture/project-architecture.md`
 - `ai/architecture/source-architecture.md`
-- `ai/architecture/ai-knowledge-system.md`
+- `ai/architecture/project-architecture.md`
 
 ## Workflow
 
-- Preserve plan-first autonomous execution.
-- Keep source modules cohesive and below the architecture size guardrails when practical.
-- Keep process cleanup limited to Roadrunner-owned subprocesses.
-- Run relevant Node and AI checks before finishing.
+- Identify the responsibility boundary before moving code.
+- Extract pure helpers before process, filesystem, or provider code.
+- Keep public behavior and queue semantics stable while refactoring.
+- Split tests by behavior when source modules split.
+- Run focused tests after each extraction, then the broader Node and AI checks before finishing.
 
 # Referenced Context
-
-## ai/rules/repository-rules.md
-
-# Repository Rules
-
-## Always
-
-- Keep Roadrunner provider-agnostic where possible.
-- Keep OpenCode-specific behavior inside the provider adapter.
-- Keep autonomous runs plan-first and verification-gated.
-- Keep `GOALS.md` as a run-start in-memory snapshot during autonomous runs.
-- Keep `.roadrunner/queue.json` as the live autonomous task state.
-
-## Never
-
-- Do not kill arbitrary editor or agent processes.
-- Do not skip failing verification.
-- Do not create automatic Roadrunner commits.
 
 ## ai/rules/source-architecture-rules.md
 
@@ -100,38 +82,6 @@ Use this skill for all Roadrunner repository work.
 - Use `v8 ignore` only for entrypoints, platform-specific branches, or nondeterministic defensive process paths.
 - Do not add tests solely to satisfy a coverage metric.
 
-## ai/rules/ai-rules.md
-
-# AI Rules
-
-## Always
-
-- Edit canonical files under `ai` first.
-- Register every skill in `ai/registry.json`.
-- Run `npm run ai:sync` after canonical AI changes.
-- Run `npm run ai:check` before finishing.
-
-## Never
-
-- Do not manually edit generated route files.
-- Do not put reusable architecture in skills when it belongs under `ai/architecture`.
-
-## ai/architecture/project-architecture.md
-
-# Project Architecture
-
-Roadrunner is a CLI for autonomous software engineering loops.
-
-Core modules:
-
-- `src/cli.ts`: command dispatch.
-- `src/init.ts`: target project bootstrap.
-- `src/queue.ts`: queue validation and mutation.
-- `src/roadmap.ts`: Markdown roadmap import into queue state.
-- `src/runner.ts`: plan/execute/verify/reconcile flow with an in-memory goals snapshot.
-- `src/process-registry.ts`: safe child-process tracking.
-- `src/providers/opencode.ts`: OpenCode provider adapter.
-
 ## ai/architecture/source-architecture.md
 
 # Source Architecture
@@ -154,23 +104,18 @@ Roadrunner source code should stay organized around clear responsibility boundar
 
 These are review guardrails, not mechanical goals. Prefer small cohesive modules over arbitrary splitting.
 
-## ai/architecture/ai-knowledge-system.md
+## ai/architecture/project-architecture.md
 
-# AI Knowledge System
+# Project Architecture
 
-Roadrunner AI guidance is canonical under `ai` and routed to supported tools by `scripts/ai/sync-routes.ts`.
+Roadrunner is a CLI for autonomous software engineering loops.
 
-Canonical content lives in:
+Core modules:
 
-- `ai/skills/` for skill instructions.
-- `ai/rules/` for reusable rules.
-- `ai/architecture/` for reusable architecture notes.
-- `ai/registry.json` for route declarations and tool-specific metadata.
-
-Generated route files are integration artifacts for individual tools. They intentionally duplicate the canonical content so each tool receives a self-contained instruction file. Do not edit generated route files directly; edit `ai/**`, then run `npm run ai:sync`.
-
-Generated outputs:
-
-- `.opencode/skills/<skill>/SKILL.md`
-- `.cursor/rules/<skill>.mdc`
-- `.github/instructions/<skill>.instructions.md`
+- `src/cli.ts`: command dispatch.
+- `src/init.ts`: target project bootstrap.
+- `src/queue.ts`: queue validation and mutation.
+- `src/roadmap.ts`: Markdown roadmap import into queue state.
+- `src/runner.ts`: plan/execute/verify/reconcile flow with an in-memory goals snapshot.
+- `src/process-registry.ts`: safe child-process tracking.
+- `src/providers/opencode.ts`: OpenCode provider adapter.
