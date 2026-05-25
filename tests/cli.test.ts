@@ -60,6 +60,20 @@ describe("cli", () => {
     }
   });
 
+  test("prints help without loading broken project config", async () => {
+    const directory = await tempDir("roadrunner-cli-help-broken-config-");
+    const output: string[] = [];
+    try {
+      await writeFile(path.join(directory, "roadrunner.config.json"), "not json\n");
+
+      expect(await main([], { cwd: directory, io: { stdout: (message) => output.push(message) } })).toBe(0);
+      expect(await main(["unknown"], { cwd: directory, io: { stdout: (message) => output.push(message) } })).toBe(0);
+      expect(output.join("\n")).toMatch(/Roadrunner/);
+    } finally {
+      await removeDir(directory);
+    }
+  });
+
   test("runs init, check, status, next, import-roadmap, and cleanup commands", async () => {
     const directory = await tempDir("roadrunner-cli-project-");
     const output: string[] = [];
@@ -106,6 +120,7 @@ describe("cli", () => {
       await writeJson(context.paths.processRegistry, { processes: [{ command: ["missing"], cwd: directory, pid: 99999999, role: "old", startTimeTicks: "old" }] });
 
       expect(await main(["cleanup"], { cwd: directory, io: { stdout: (message) => output.push(message) } })).toBe(0);
+      expect(await main(["cleanup", "--force"], { cwd: directory, io: { stdout: (message) => output.push(message) } })).toBe(0);
       expect(output).toContain("stale: pid=99999999 role=old");
     } finally {
       await removeDir(directory);

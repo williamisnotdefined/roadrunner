@@ -239,6 +239,21 @@ describe("runner", () => {
     }
   });
 
+  test("rejects verification commands that commit changes", async () => {
+    const verification = `node -e "const fs = require('node:fs'); const cp = require('node:child_process'); fs.writeFileSync('verify-commit.txt', 'bad\\n'); cp.execFileSync(process.env.ROADRUNNER_TEST_REAL_GIT || '/usr/bin/git', ['add', 'verify-commit.txt']); cp.execFileSync(process.env.ROADRUNNER_TEST_REAL_GIT || '/usr/bin/git', ['commit', '-m', 'Verify commit']);"`;
+    const project = await setupRunnerProject("success", sampleRoadmap({ verification }));
+    try {
+      await expect(runRoadrunner(project.context)).rejects.toThrow(/Verification changed git history/);
+      const queue = await readJson<QueueFile>(project.context.paths.queue);
+      expect(queue.blocked[0]).toMatchObject({ blockedReason: "Verification changed git history.", id: "first-step" });
+      expect(await pathExists(path.join(project.directory, "verify-commit.txt"))).toBe(false);
+      expect((await run("git", ["log", "--oneline", "--grep", "Verify commit"], project.directory)).stdout).toBe("");
+      expect((await run("git", ["status", "--short"], project.directory)).stdout).toBe("");
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
   test("times out verification commands", async () => {
     process.env.ROADRUNNER_VERIFY_TIMEOUT_MS = "50";
     const project = await setupRunnerProject("fix-fail", sampleRoadmap({ verification: 'node -e "Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0)"' }));
@@ -286,6 +301,77 @@ describe("runner", () => {
       const queue = await readJson<QueueFile>(project.context.paths.queue);
       expect(queue.queue).toEqual([]);
       expect(queue.blocked[0]).toMatchObject({ id: "first-step" });
+      expect((await run("git", ["status", "--short"], project.directory)).stdout).toBe("");
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
+  test("blocks provider commits through the git guard", async () => {
+    const project = await setupRunnerProject("git-commit");
+    try {
+      await expect(runRoadrunner(project.context)).rejects.toThrow(/Implementation failed/);
+      const queue = await readJson<QueueFile>(project.context.paths.queue);
+      expect(queue.blocked[0]).toMatchObject({ blockedReason: "Provider exited 126", id: "first-step" });
+      expect((await run("git", ["log", "--oneline", "--grep", "Agent commit"], project.directory)).stdout).toBe("");
+      expect((await run("git", ["status", "--short"], project.directory)).stdout).toBe("");
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
+  test("blocks provider pushes through the git guard", async () => {
+    const project = await setupRunnerProject("git-push");
+    try {
+      await expect(runRoadrunner(project.context)).rejects.toThrow(/Implementation failed/);
+      const queue = await readJson<QueueFile>(project.context.paths.queue);
+      expect(queue.blocked[0]).toMatchObject({ blockedReason: "Provider exited 126", id: "first-step" });
+      expect((await run("git", ["status", "--short"], project.directory)).stdout).toBe("");
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
+  test("rejects provider commits that bypass the git guard", async () => {
+    const project = await setupRunnerProject("implementation-commit-bypass");
+    try {
+      await run("git", ["tag", "baseline-tag"], project.directory);
+
+      await expect(runRoadrunner(project.context)).rejects.toThrow(/Implementation changed git history/);
+      const queue = await readJson<QueueFile>(project.context.paths.queue);
+      expect(queue.blocked[0]).toMatchObject({ blockedReason: "Implementation changed git history.", id: "first-step" });
+      expect(await pathExists(path.join(project.directory, "marker.txt"))).toBe(false);
+      expect((await run("git", ["log", "--oneline", "--grep", "Agent implementation commit"], project.directory)).stdout).toBe("");
+      expect((await run("git", ["rev-list", "-n", "1", "baseline-tag"], project.directory)).stdout).toBe((await run("git", ["rev-parse", "HEAD~1"], project.directory)).stdout);
+      expect((await run("git", ["status", "--short"], project.directory)).stdout).toBe("");
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
+  test("rejects committed provider changes to GOALS.md", async () => {
+    const project = await setupRunnerProject("goals-commit-bypass");
+    try {
+      await expect(runRoadrunner(project.context)).rejects.toThrow(/Implementation changed git history/);
+      const queue = await readJson<QueueFile>(project.context.paths.queue);
+      expect(queue.blocked[0]).toMatchObject({ blockedReason: "Implementation changed git history.", id: "first-step" });
+      expect(await readFile(path.join(project.directory, "GOALS.md"), "utf8")).toMatch(/Build the requested project/);
+      expect((await run("git", ["log", "--oneline", "--grep", "Agent changed goals"], project.directory)).stdout).toBe("");
+      expect((await run("git", ["status", "--short"], project.directory)).stdout).toBe("");
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
+  test("restores unauthorized commits when starting from detached HEAD", async () => {
+    const project = await setupRunnerProject("implementation-commit-bypass");
+    try {
+      await run("git", ["checkout", "--detach", "HEAD"], project.directory);
+
+      await expect(runRoadrunner(project.context)).rejects.toThrow(/Implementation changed git history/);
+      const queue = await readJson<QueueFile>(project.context.paths.queue);
+      expect(queue.blocked[0]).toMatchObject({ blockedReason: "Implementation changed git history.", id: "first-step" });
+      expect((await run("git", ["log", "--oneline", "--grep", "Agent implementation commit"], project.directory)).stdout).toBe("");
       expect((await run("git", ["status", "--short"], project.directory)).stdout).toBe("");
     } finally {
       await removeDir(project.directory);
@@ -378,6 +464,34 @@ describe("runner", () => {
     }
   });
 
+  test("rejects fix agents that commit changes", async () => {
+    const project = await setupRunnerProject("fix-commit-bypass");
+    try {
+      await expect(runRoadrunner(project.context)).rejects.toThrow(/Fix failure changed git history/);
+      const queue = await readJson<QueueFile>(project.context.paths.queue);
+      expect(queue.blocked[0]).toMatchObject({ blockedReason: "Fix failure changed git history.", id: "first-step" });
+      expect((await run("git", ["log", "--oneline", "--grep", "Agent fix commit"], project.directory)).stdout).toBe("");
+      expect((await run("git", ["status", "--short"], project.directory)).stdout).toBe("");
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
+  test("rejects fixed verification commands that commit changes", async () => {
+    const verification = `node -e "const fs = require('node:fs'); const cp = require('node:child_process'); if (!fs.readFileSync('marker.txt', 'utf8').includes('ok')) process.exit(1); fs.writeFileSync('verify-fixed-commit.txt', 'bad\\n'); cp.execFileSync(process.env.ROADRUNNER_TEST_REAL_GIT || '/usr/bin/git', ['add', 'verify-fixed-commit.txt']); cp.execFileSync(process.env.ROADRUNNER_TEST_REAL_GIT || '/usr/bin/git', ['commit', '-m', 'Verify fixed commit']);"`;
+    const project = await setupRunnerProject("fix-success", sampleRoadmap({ verification }));
+    try {
+      await expect(runRoadrunner(project.context)).rejects.toThrow(/Verification changed git history/);
+      const queue = await readJson<QueueFile>(project.context.paths.queue);
+      expect(queue.blocked[0]).toMatchObject({ blockedReason: "Verification changed git history.", id: "first-step" });
+      expect(await pathExists(path.join(project.directory, "verify-fixed-commit.txt"))).toBe(false);
+      expect((await run("git", ["log", "--oneline", "--grep", "Verify fixed commit"], project.directory)).stdout).toBe("");
+      expect((await run("git", ["status", "--short"], project.directory)).stdout).toBe("");
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
   test("marks verification failures as blocked when fix fails", async () => {
     const project = await setupRunnerProject("fix-fail");
     try {
@@ -395,6 +509,20 @@ describe("runner", () => {
     try {
       await expect(runRoadrunner(project.context)).rejects.toThrow(/outside .roadrunner\/queue.json/);
       expect(await pathExists(path.join(project.directory, "unexpected.txt"))).toBe(false);
+      expect((await run("git", ["status", "--short"], project.directory)).stdout).toBe("");
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
+  test("rejects reconciliation commits outside Roadrunner", async () => {
+    const project = await setupRunnerProject("reconcile-commit-bypass");
+    try {
+      await expect(runRoadrunner(project.context)).rejects.toThrow(/Reconciliation changed git history/);
+      const queue = await readJson<QueueFile>(project.context.paths.queue);
+      expect(queue.blocked[0]).toMatchObject({ blockedReason: "Reconciliation failed: Reconciliation changed git history.", id: "first-step" });
+      expect(await pathExists(path.join(project.directory, "unexpected.txt"))).toBe(false);
+      expect((await run("git", ["log", "--oneline", "--grep", "Agent reconcile commit"], project.directory)).stdout).toBe("");
       expect((await run("git", ["status", "--short"], project.directory)).stdout).toBe("");
     } finally {
       await removeDir(project.directory);
@@ -510,6 +638,7 @@ async function setupRunnerProject(mode: string, roadmap = sampleRoadmap()): Prom
   const binDir = await createFakeOpenCodeBin(directory);
   process.env.PATH = withPath(binDir);
   process.env.ROADRUNNER_FAKE_OPENCODE_MODE = mode;
+  process.env.ROADRUNNER_TEST_REAL_GIT = "/usr/bin/git";
   delete process.env.OPENCODE_SESSION;
   delete process.env.OPENCODE_SESSION_ID;
   delete process.env.OPENCODE_SERVER;

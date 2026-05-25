@@ -125,6 +125,21 @@ describe("queue", () => {
       await removeDir(directory);
     }
   });
+
+  test("validates configured goals path labels", async () => {
+    const directory = await tempDir("roadrunner-goals-custom-");
+    const outside = await tempDir("roadrunner-goals-outside-");
+    try {
+      const context = { paths: { goals: path.join(directory, "docs/GOALS.md") }, root: directory } as Parameters<typeof validateGoals>[0];
+      const outsideContext = { paths: { goals: path.join(outside, "GOALS.md") }, root: directory } as Parameters<typeof validateGoals>[0];
+
+      expect(await validateGoals(context)).toEqual(["docs/GOALS.md must exist."]);
+      expect(await validateGoals(outsideContext)).toEqual([`${path.join(outside, "GOALS.md")} must exist.`]);
+    } finally {
+      await removeDir(directory);
+      await removeDir(outside);
+    }
+  });
 });
 
 function sampleQueue(): QueueFile {

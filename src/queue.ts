@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import path from "node:path";
 
 import { defaultModel, defaultVariant, type ProjectContext, readJson, writeJson } from "./config.js";
 
@@ -68,13 +69,14 @@ export function validateQueueFile(queueFile: unknown, { model = defaultModel, va
 
 export async function validateGoals(context: ProjectContext): Promise<string[]> {
   let content = "";
+  const label = goalPathLabel(context);
   try {
     content = await readFile(context.paths.goals, "utf8");
   } catch {
-    return ["GOALS.md must exist."];
+    return [`${label} must exist.`];
   }
 
-  return content.trim().length === 0 ? ["GOALS.md must not be empty."] : [];
+  return content.trim().length === 0 ? [`${label} must not be empty.`] : [];
 }
 
 export async function readQueue(context: ProjectContext): Promise<QueueFile> {
@@ -130,4 +132,11 @@ function validateStep(step: QueueStep, field: string, errors: string[]): void {
       if (typeof item !== "string" || item.length === 0) errors.push(`${field}.${key}[${index}] must be a non-empty string.`);
     }
   }
+}
+
+function goalPathLabel(context: ProjectContext): string {
+  const root = (context as Partial<ProjectContext>).root;
+  if (!root) return path.basename(context.paths.goals);
+  const relative = path.relative(root, context.paths.goals).split(path.sep).join(path.posix.sep);
+  return relative.length > 0 && !relative.startsWith("..") && !path.isAbsolute(relative) ? relative : context.paths.goals;
 }

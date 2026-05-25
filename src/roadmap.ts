@@ -92,9 +92,12 @@ function mergeQueueState(parsed: QueueFile, existing: QueueFile | null): QueueFi
   if (!existing) return parsed;
 
   const closed = new Set([...existing.history, ...existing.blocked].map((step) => step.id));
+  const importedOpen = parsed.queue.filter((step) => !closed.has(step.id));
+  const importedOpenIds = new Set(importedOpen.map((step) => step.id));
+  const preservedOpen = existing.queue.filter((step) => !closed.has(step.id) && !importedOpenIds.has(step.id));
   return {
     ...parsed,
-    queue: parsed.queue.filter((step) => !closed.has(step.id)),
+    queue: [...importedOpen, ...preservedOpen],
     history: existing.history,
     blocked: existing.blocked,
   };

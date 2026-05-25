@@ -30,6 +30,12 @@ export async function main(argv = process.argv.slice(2), { cwd = process.cwd(), 
   const command = args._[0] ?? "help";
 
   try {
+    const projectCommands = new Set(["check", "cleanup", "import-roadmap", "init", "next", "plan", "run", "status"]);
+    if (command === "help" || !projectCommands.has(command)) {
+      out(helpText());
+      return 0;
+    }
+
     const context = await loadContext(cwd, args);
 
     if (command === "init") {
@@ -76,13 +82,11 @@ export async function main(argv = process.argv.slice(2), { cwd = process.cwd(), 
         onEvent: (event) => out(formatRunEvent(event)),
       });
       out(formatCliSuccess(`Completed ${completed} step(s).`));
-    } else if (command === "cleanup") {
+    } else {
       out(formatCliStep("Cleaning Roadrunner-owned processes"));
       const results = await cleanupProcesses(context, { force: Boolean(args.force) });
       if (results.length === 0) out(formatCliInfo("No Roadrunner-owned processes are registered."));
       for (const result of results) out(`${result.status}: pid=${result.pid} role=${result.role}`);
-    } else {
-      out(helpText());
     }
 
     return 0;

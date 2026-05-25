@@ -32,6 +32,7 @@ export interface ProviderRunResult {
 
 const nestedOpenCodeEnvKeys = ["OPENCODE_SESSION", "OPENCODE_SESSION_ID", "OPENCODE_SERVER", "OPENCODE_WORKSPACE", "OPENCODE_APP_INFO"];
 const defaultProviderTimeoutMs = 30 * 60 * 1000;
+const forceKillDelayMs = 1_000;
 const promptMessage = "Follow the attached Roadrunner prompt file exactly.";
 
 export class OpenCodeProvider {
@@ -77,6 +78,7 @@ export class OpenCodeProvider {
     let timedOut = false;
     let timeout: NodeJS.Timeout | undefined;
     let killTimeout: NodeJS.Timeout | undefined;
+    let forceKillDone: Promise<void> | undefined;
     let settled = false;
     const command = ["opencode", ...args.map((argument) => (argument === promptFilePath ? "<prompt-file>" : argument))];
 
@@ -102,7 +104,7 @@ export class OpenCodeProvider {
           registrationFailed = true;
           appendOutput(`Failed to register provider process: ${error.message}\n`);
           signalChildProcessGroup(child.pid, "SIGTERM");
-          killTimeout = setTimeout(signalChildProcessGroup, 5_000, child.pid, "SIGKILL");
+          ({ done: forceKillDone, timeout: killTimeout } = scheduleChildProcessGroupKill(child.pid));
         })
       : Promise.resolve();
 
@@ -115,7 +117,7 @@ export class OpenCodeProvider {
         appendOutput(message);
         process.stderr.write(message);
         signalChildProcessGroup(child.pid, "SIGTERM");
-        killTimeout = setTimeout(signalChildProcessGroup, 5_000, child.pid, "SIGKILL");
+        ({ done: forceKillDone, timeout: killTimeout } = scheduleChildProcessGroupKill(child.pid));
       }, timeoutMs);
     }
 
@@ -136,7 +138,8 @@ export class OpenCodeProvider {
         if (settled) return;
         settled = true;
         clearTimeout(timeout);
-        clearTimeout(killTimeout);
+        if (forceKillDone) await forceKillDone;
+        else clearTimeout(killTimeout);
         await registrationDone;
         await unregisterRegisteredProcess(registeredPid, context);
         await closeLogStream(logStream);
@@ -146,7 +149,9 @@ export class OpenCodeProvider {
       child.on("error", async (error: Error) => {
         child.off("close", onClose);
         clearTimeout(timeout);
-        clearTimeout(killTimeout);
+        /* v8 ignore next -- spawn errors only race with forced cleanup in platform-specific failure paths. */
+        if (forceKillDone) await forceKillDone;
+        else clearTimeout(killTimeout);
         appendOutput(`${error.message}\n`);
         await registrationDone;
         await unregisterRegisteredProcess(registeredPid, context);
@@ -197,6 +202,18 @@ function signalChildProcessGroup(pid: number | undefined, signal: NodeJS.Signals
   } catch {
     /* Best effort: timeout cleanup is also covered by the process registry cleanup command. */
   }
+}
+
+function scheduleChildProcessGroupKill(pid: number | undefined): { done: Promise<void>; timeout: NodeJS.Timeout } {
+  let timeout: NodeJS.Timeout;
+  const done = new Promise<void>((resolve) => {
+    timeout = setTimeout(() => {
+      signalChildProcessGroup(pid, "SIGKILL");
+      resolve();
+    }, forceKillDelayMs);
+  });
+
+  return { done, timeout: timeout! };
 }
 
 function closeLogStream(logStream: WriteStream): Promise<void> {

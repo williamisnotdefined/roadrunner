@@ -123,6 +123,43 @@ Commit: Build third step
     }
   });
 
+  test("importRoadmap preserves existing open steps absent from the roadmap", async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "roadrunner-roadmap-open-"));
+    try {
+      await writeFile(path.join(tempDir, "ROADMAP.md"), sampleRoadmap());
+      const context = await loadContext(tempDir, { _: [] });
+      const existing: QueueFile = {
+        version: 2,
+        source: "old.md",
+        goals: "GOALS.md",
+        model: defaultModel,
+        variant: defaultVariant,
+        updatedAt: null,
+        queue: [
+          {
+            id: "manual-step",
+            phase: "Manual",
+            title: "Manual step",
+            scope: ["README.md"],
+            prompt: "Keep this manually queued step.",
+            acceptance: ["still queued"],
+            verification: ["npm test"],
+            commitMessage: "Keep manual step",
+          },
+        ],
+        history: [],
+        blocked: [],
+      };
+      await writeJson(context.paths.queue, existing);
+
+      const imported = await importRoadmap(context);
+
+      expect(imported.queue.map((step) => step.id)).toEqual(["first-step", "manual-step"]);
+    } finally {
+      await rm(tempDir, { force: true, recursive: true });
+    }
+  });
+
   test("importRoadmap writes a queue when no existing queue is present", async () => {
     const tempDir = await mkdtemp(path.join(os.tmpdir(), "roadrunner-roadmap-new-"));
     try {

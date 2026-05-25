@@ -1,5 +1,6 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import { afterEach, describe, expect, test } from "vitest";
 
 import { defaultModel, defaultVariant, loadContext } from "../src/config.js";
@@ -135,6 +136,38 @@ describe("OpenCodeProvider", () => {
     }
   });
 
+  test("force kills provider descendants after timeout", async () => {
+    const directory = await tempDir("roadrunner-provider-timeout-child-");
+    let childPid: number | null = null;
+    try {
+      const binDir = await createFakeOpenCodeBin(directory);
+      const childPidFile = path.join(directory, "child.pid");
+      process.env.PATH = withPath(binDir);
+      process.env.ROADRUNNER_FAKE_OPENCODE_MODE = "spawn-child-on-term";
+      process.env.ROADRUNNER_FAKE_OPENCODE_CHILD_PID_FILE = childPidFile;
+      const context = await loadContext(directory, { _: [] });
+      context.config.allowNestedOpenCode = true;
+
+      const result = await new OpenCodeProvider().run({
+        agent: "plan",
+        context,
+        env: { ROADRUNNER_PROVIDER_TIMEOUT_MS: "50" },
+        logPath: path.join(directory, "timeout-child.log"),
+        prompt: "Roadrunner Plan Step",
+        role: "plan",
+        skipPermissions: false,
+      });
+      childPid = Number(await readFile(childPidFile, "utf8"));
+      await sleep(50);
+
+      expect(result.code).toBe(124);
+      expect(processIsRunning(childPid)).toBe(false);
+    } finally {
+      if (childPid !== null) killIfRunning(childPid);
+      await removeDir(directory);
+    }
+  });
+
   test("rejects invalid provider timeout values", async () => {
     const directory = await tempDir("roadrunner-provider-timeout-invalid-");
     try {
@@ -235,3 +268,20 @@ describe("OpenCodeProvider", () => {
     }
   });
 });
+
+function processIsRunning(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+function killIfRunning(pid: number): void {
+  try {
+    process.kill(pid, "SIGKILL");
+  } catch {
+    // Best-effort cleanup for failed timeout assertions.
+  }
+}

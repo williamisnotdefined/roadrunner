@@ -1,4 +1,4 @@
-import { mkdir, open, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, open, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -18,7 +18,7 @@ import {
   type QueueValidationOptions,
 } from "./queue.js";
 import { cleanupProcesses, registerProcess, unregisterProcess } from "./process-registry.js";
-import { OpenCodeProvider, type ProviderRunResult, type ProviderStartEvent } from "./providers/opencode.js";
+import { OpenCodeProvider, type ProviderRunInput, type ProviderRunResult, type ProviderStartEvent } from "./providers/opencode.js";
 
 export interface RoadrunnerStatus {
   blocked: number;
@@ -59,7 +59,16 @@ interface GitStatusEntry {
   workTree: string;
 }
 
+interface GitBaseline {
+  head: string;
+  ref: string;
+  refs: Record<string, string>;
+}
+
 const defaultVerificationTimeoutMs = 10 * 60 * 1000;
+const forceKillDelayMs = 1_000;
+
+class GitHistoryChangedError extends Error {}
 
 export async function status(context: ProjectContext): Promise<RoadrunnerStatus> {
   const queueFile = await readValidatedQueue(context);
@@ -90,13 +99,16 @@ export async function plan(
 
   const provider = providerFor(context);
   await writeFile(path.join(logDir, "plan.prompt.md"), prompt);
-  const result = await provider.run({
+  const result = await runProviderWithGitGuard({
     agent: "plan",
     context,
     env: providerEnvForDeadline(options.deadline),
+    historyLabel: "Planning",
     logPath: path.join(logDir, "plan.opencode.log"),
+    logDir,
     onStart: options.onProviderStart,
     prompt,
+    provider,
     role: "plan",
     skipPermissions: false,
   });
@@ -154,15 +166,25 @@ export async function run(context: ProjectContext, options: RunOptions = {}): Pr
 
         emitRunEvent(options, { step, type: "implement" });
         const provider = providerFor(context);
-        const result = await provider.run({
-          agent: "build",
-          context,
-          env: providerEnvForDeadline(deadline),
-          logPath: path.join(logDir, "implement.opencode.log"),
-          onStart: (event) => emitRunEvent(options, { ...event, step, type: "provider-start" }),
-          prompt,
-          role: "implement",
-        });
+        let result: ProviderRunResult;
+        try {
+          result = await runProviderWithGitGuard({
+            agent: "build",
+            context,
+            env: providerEnvForDeadline(deadline),
+            historyLabel: "Implementation",
+            logPath: path.join(logDir, "implement.opencode.log"),
+            logDir,
+            onStart: (event) => emitRunEvent(options, { ...event, step, type: "provider-start" }),
+            prompt,
+            provider,
+            role: "implement",
+          });
+        } catch (error) {
+          /* v8 ignore next -- non-history implementation errors are rethrown without queue mutation. */
+          if (error instanceof GitHistoryChangedError) await blockStepCleanly(context, queueFile, step, error.message, logDir);
+          throw error;
+        }
 
         if (result.code !== 0) {
           await blockStepCleanly(context, queueFile, step, `Provider exited ${String(result.code)}`, logDir);
@@ -172,17 +194,37 @@ export async function run(context: ProjectContext, options: RunOptions = {}): Pr
 
         emitRunEvent(options, { attempt: "initial", step, type: "verify" });
         let beforeVerify = await worktreeSnapshot(context, path.join(logDir, "verify-before"));
-        let verification = await verify(context, step, logDir, { deadline });
+        let verification: { ok: boolean; output: string };
+        try {
+          verification = await verify(context, step, logDir, { deadline });
+        } catch (error) {
+          /* v8 ignore next -- non-history verification errors are rethrown without queue mutation. */
+          if (error instanceof GitHistoryChangedError) await blockStepCleanly(context, queueFile, step, error.message, logDir);
+          throw error;
+        }
         await ensureGoalsUnchangedOrBlock(context, queueFile, step, logDir, "verify-goals-status.log");
         await ensureSnapshotUnchangedOrBlock(context, queueFile, step, logDir, beforeVerify, "verify-after", "Verification changed files.");
         if (!verification.ok) {
           emitRunEvent(options, { step, type: "fix" });
-          const fix = await fixFailure(context, step, planResult.result.output, verification.output, logDir, options, deadline);
+          let fix: ProviderRunResult;
+          try {
+            fix = await fixFailure(context, step, planResult.result.output, verification.output, logDir, options, deadline);
+          } catch (error) {
+            /* v8 ignore next -- non-history fix errors are rethrown without queue mutation. */
+            if (error instanceof GitHistoryChangedError) await blockStepCleanly(context, queueFile, step, error.message, logDir);
+            throw error;
+          }
           await ensureGoalsUnchangedOrBlock(context, queueFile, step, logDir, "fix-failure-goals-status.log");
           if (fix.code === 0) {
             emitRunEvent(options, { attempt: "fixed", step, type: "verify" });
             beforeVerify = await worktreeSnapshot(context, path.join(logDir, "verify-fixed-before"));
-            verification = await verify(context, step, logDir, { deadline, prefix: "verify-fixed" });
+            try {
+              verification = await verify(context, step, logDir, { deadline, prefix: "verify-fixed" });
+            } catch (error) {
+              /* v8 ignore next -- non-history verification errors are rethrown without queue mutation. */
+              if (error instanceof GitHistoryChangedError) await blockStepCleanly(context, queueFile, step, error.message, logDir);
+              throw error;
+            }
             await ensureGoalsUnchangedOrBlock(context, queueFile, step, logDir, "verify-fixed-goals-status.log");
             await ensureSnapshotUnchangedOrBlock(context, queueFile, step, logDir, beforeVerify, "verify-fixed-after", "Verification changed files.");
           }
@@ -254,10 +296,14 @@ export async function verify(
   let output = "";
 
   for (const [index, command] of step.verification.entries()) {
-    const result = await runShell(context, command, path.join(logDir, `${prefix}-${index + 1}.log`), {
-      role: `${prefix}-${index + 1}`,
+    const role = `${prefix}-${index + 1}`;
+    const baseline = await readGitBaseline(context, logDir, `${role}-history-before`);
+    const result = await runShell(context, command, path.join(logDir, `${role}.log`), {
+      env: await gitGuardEnv(context, logDir, role),
+      role,
       timeoutMs: verificationTimeoutMs(deadline),
     });
+    await ensureGitBaselineUnchangedOrRestore(context, baseline, logDir, `${role}-history`, "Verification changed git history.");
     output += `$ ${command}\n${result.output}\n`;
     if (result.code !== 0) return { ok: false, output };
   }
@@ -282,13 +328,16 @@ async function fixFailure(
   });
   await writeFile(path.join(logDir, "fix-failure.prompt.md"), prompt);
 
-  const result = await providerFor(context).run({
+  const result = await runProviderWithGitGuard({
     agent: "build",
     context,
     env: providerEnvForDeadline(deadline),
+    historyLabel: "Fix failure",
     logPath: path.join(logDir, "fix-failure.opencode.log"),
+    logDir,
     onStart: (event) => emitRunEvent(options, { ...event, step, type: "provider-start" }),
     prompt,
+    provider: providerFor(context),
     role: "fix-failure",
   });
   await writeFile(path.join(logDir, "fix-failure.md"), result.output);
@@ -307,13 +356,16 @@ async function reconcileQueue(context: ProjectContext, step: QueueStep, logDir: 
   });
   await writeFile(path.join(logDir, "reconcile.prompt.md"), prompt);
 
-  const result = await providerFor(context).run({
+  const result = await runProviderWithGitGuard({
     agent: "build",
     context,
     env: providerEnvForDeadline(deadline),
+    historyLabel: "Reconciliation",
     logPath: path.join(logDir, "reconcile.opencode.log"),
+    logDir,
     onStart: (event) => emitRunEvent(options, { ...event, step, type: "provider-start" }),
     prompt,
+    provider: providerFor(context),
     role: "reconcile",
   });
   await writeFile(path.join(logDir, "reconcile.md"), result.output);
@@ -352,6 +404,13 @@ function queueValidationOptions(context: ProjectContext): QueueValidationOptions
   return { model: context.config.model ?? defaultModel, variant: context.config.variant ?? defaultVariant };
 }
 
+async function runProviderWithGitGuard({ env = {}, historyLabel, logDir, provider, ...input }: ProviderRunInput & { historyLabel: string; logDir: string; provider: OpenCodeProvider }): Promise<ProviderRunResult> {
+  const baseline = await readGitBaseline(input.context, logDir, `${gitLogSlug(historyLabel)}-history-before`);
+  const result = await provider.run({ ...input, env: { ...env, ...(await gitGuardEnv(input.context, logDir, gitLogSlug(historyLabel))) } });
+  await ensureGitBaselineUnchangedOrRestore(input.context, baseline, logDir, `${gitLogSlug(historyLabel)}-history`, `${historyLabel} changed git history.`);
+  return result;
+}
+
 async function renderPrompt(context: ProjectContext, name: string, values: Record<string, string>): Promise<string> {
   const promptPath = path.join(context.paths.prompts, name);
   let template = await readFile(promptPath, "utf8");
@@ -364,6 +423,149 @@ async function createLogDir(context: ProjectContext, name: string): Promise<stri
   const logDir = path.join(context.paths.logs, `${timestamp}-${name}`);
   await mkdir(logDir, { recursive: true });
   return logDir;
+}
+
+async function gitGuardEnv(context: ProjectContext, logDir: string, name: string): Promise<Record<string, string>> {
+  const guardBin = await createGitGuardBin(context, logDir, name);
+  /* v8 ignore next -- Node test/runtime environments always provide PATH, but keep the fallback safe. */
+  const currentPath = process.env.PATH ?? "";
+  /* v8 ignore next -- Node test/runtime environments always provide PATH, but keep the fallback safe. */
+  return { PATH: currentPath.length > 0 ? `${guardBin}${path.delimiter}${currentPath}` : guardBin };
+}
+
+async function createGitGuardBin(context: ProjectContext, logDir: string, name: string): Promise<string> {
+  const realGit = await realGitPath(context, path.join(logDir, `${name}-real-git.log`));
+  const guardBin = path.join(logDir, `${name}-git-guard`);
+  const guardPath = path.join(guardBin, "git");
+  await mkdir(guardBin, { recursive: true });
+  await writeFile(guardPath, gitGuardScript(realGit), { mode: 0o755 });
+  await chmod(guardPath, 0o755);
+  return guardBin;
+}
+
+async function realGitPath(context: ProjectContext, logPath: string): Promise<string> {
+  const result = await runShell(context, "command -v git", logPath);
+  /* v8 ignore next -- test and runtime environments require git before Roadrunner can run. */
+  if (result.code !== 0 || result.output.trim().length === 0) throw new Error(`Cannot find git executable: ${result.output.trim()}`);
+  return result.output.trim().split(/\r?\n/)[0]!;
+}
+
+/* v8 ignore start -- generated git guard code is exercised through subprocess behavior tests. */
+function gitGuardScript(realGit: string): string {
+  return `#!/usr/bin/env node
+import { spawnSync } from "node:child_process";
+
+const realGit = ${JSON.stringify(realGit)};
+const args = process.argv.slice(2);
+const commandsWithValue = new Set(["-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path", "--super-prefix"]);
+const denied = new Set(["add", "am", "apply", "bisect", "branch", "checkout", "cherry-pick", "clean", "commit", "commit-tree", "fetch", "merge", "mv", "pull", "push", "rebase", "reset", "restore", "revert", "rm", "stash", "submodule", "switch", "tag", "update-index", "update-ref", "worktree"]);
+
+let index = 0;
+while (index < args.length) {
+  const arg = args[index];
+  if (!arg || arg === "--") {
+    index += 1;
+    break;
+  }
+  if (!arg.startsWith("-")) break;
+  if (commandsWithValue.has(arg)) index += 2;
+  else if (arg.startsWith("--git-dir=") || arg.startsWith("--work-tree=") || arg.startsWith("--namespace=") || arg.startsWith("--exec-path=")) index += 1;
+  else index += 1;
+}
+
+const command = args[index] ?? "";
+if (denied.has(command)) {
+  console.error("Roadrunner blocked git " + command + ": agents and verification commands must not mutate git state.");
+  process.exit(126);
+}
+
+const result = spawnSync(realGit, args, { stdio: "inherit" });
+if (result.error) {
+  console.error(result.error.message);
+  process.exit(1);
+}
+process.exit(result.status ?? 1);
+`;
+}
+/* v8 ignore stop */
+
+async function readGitBaseline(context: ProjectContext, logDir: string, name: string): Promise<GitBaseline> {
+  const head = await runShell(context, "git rev-parse --verify HEAD", path.join(logDir, `${name}-head.log`));
+  /* v8 ignore next -- preflight git repository validation fails before guarded phases in normal runs. */
+  if (head.code !== 0) throw new Error(`git rev-parse failed: ${head.output.trim()}`);
+
+  const ref = await runShell(context, "git symbolic-ref -q HEAD", path.join(logDir, `${name}-ref.log`));
+  const refs = await runShell(context, "git for-each-ref --format='%(refname) %(objectname)' refs/heads refs/tags", path.join(logDir, `${name}-refs.log`));
+  /* v8 ignore next -- for-each-ref failures indicate a broken git repository after preflight. */
+  if (refs.code !== 0) throw new Error(`git for-each-ref failed: ${refs.output.trim()}`);
+
+  return {
+    head: head.output.trim(),
+    ref: ref.code === 0 ? ref.output.trim() : "DETACHED",
+    refs: parseGitRefs(refs.output),
+  };
+}
+
+async function ensureGitBaselineUnchangedOrRestore(context: ProjectContext, baseline: GitBaseline, logDir: string, name: string, message: string): Promise<void> {
+  const current = await readGitBaseline(context, logDir, `${name}-after`);
+  if (gitBaselineEquals(baseline, current)) return;
+
+  await saveGitHistoryViolation(context, baseline, current, logDir, name);
+  await restoreGitBaseline(context, baseline, current, logDir, name);
+  throw new GitHistoryChangedError(message);
+}
+
+async function saveGitHistoryViolation(context: ProjectContext, baseline: GitBaseline, current: GitBaseline, logDir: string, name: string): Promise<void> {
+  await writeFile(path.join(logDir, `${name}-baseline.json`), `${JSON.stringify(baseline, null, 2)}\n`);
+  await writeFile(path.join(logDir, `${name}-current.json`), `${JSON.stringify(current, null, 2)}\n`);
+  await runShell(context, "git status --porcelain=v1 -z", path.join(logDir, `${name}-status.log`));
+  await runShell(context, `git log --oneline --decorate ${shellQuote(baseline.head)}..HEAD`, path.join(logDir, `${name}-commits.log`));
+  await runShell(context, `git diff --binary ${shellQuote(baseline.head)}..HEAD`, path.join(logDir, `${name}-diff.log`));
+  await runShell(context, "git diff --binary", path.join(logDir, `${name}-worktree.diff`));
+  await runShell(context, "git diff --cached --binary", path.join(logDir, `${name}-staged.diff`));
+}
+
+async function restoreGitBaseline(context: ProjectContext, baseline: GitBaseline, current: GitBaseline, logDir: string, name: string): Promise<void> {
+  /* v8 ignore next -- requires an agent to delete the originally checked-out branch before the guard restores it. */
+  if (current.refs[baseline.ref] === undefined && baseline.ref.startsWith("refs/heads/")) {
+    await runShell(context, `git update-ref ${shellQuote(baseline.ref)} ${shellQuote(baseline.head)}`, path.join(logDir, `${name}-restore-create-current-ref.log`));
+  }
+
+  if (baseline.ref.startsWith("refs/heads/")) {
+    await runShell(context, `git switch --force ${shellQuote(baseline.ref.slice("refs/heads/".length))}`, path.join(logDir, `${name}-restore-switch.log`));
+  } else {
+    /* v8 ignore next -- autonomous runs normally start on a branch; detached HEAD restore is defensive. */
+    await runShell(context, `git checkout --force --detach ${shellQuote(baseline.head)}`, path.join(logDir, `${name}-restore-detach.log`));
+  }
+
+  await runShell(context, `git reset --hard ${shellQuote(baseline.head)}`, path.join(logDir, `${name}-restore-reset.log`));
+
+  for (const ref of Object.keys(current.refs).sort()) {
+    if (baseline.refs[ref] === undefined) await runShell(context, `git update-ref -d ${shellQuote(ref)}`, path.join(logDir, `${name}-restore-delete-${gitLogSlug(ref)}.log`));
+  }
+
+  for (const [ref, object] of Object.entries(baseline.refs).sort(([left], [right]) => left.localeCompare(right))) {
+    if (ref !== baseline.ref && current.refs[ref] !== object) await runShell(context, `git update-ref ${shellQuote(ref)} ${shellQuote(object)}`, path.join(logDir, `${name}-restore-ref-${gitLogSlug(ref)}.log`));
+  }
+}
+
+function parseGitRefs(output: string): Record<string, string> {
+  const refs: Record<string, string> = {};
+  for (const line of output.split(/\r?\n/)) {
+    const [ref, object] = line.split(" ", 2);
+    if (ref && object) refs[ref] = object;
+  }
+  return refs;
+}
+
+function gitBaselineEquals(left: GitBaseline, right: GitBaseline): boolean {
+  return left.head === right.head && left.ref === right.ref && JSON.stringify(left.refs) === JSON.stringify(right.refs);
+}
+
+function gitLogSlug(value: string): string {
+  const slug = value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  /* v8 ignore next -- guard log labels and git refs are non-empty in normal execution. */
+  return slug || "git";
 }
 
 async function acquireRunLock(context: ProjectContext): Promise<() => Promise<void>> {
@@ -445,16 +647,17 @@ async function runShell(
   context: ProjectContext,
   command: string,
   logPath: string,
-  { role, timeoutMs = 0 }: { role?: string; timeoutMs?: number } = {},
+  { env = {}, role, timeoutMs = 0 }: { env?: Record<string, string>; role?: string; timeoutMs?: number } = {},
 ): Promise<{ code: number | null; output: string }> {
   await mkdir(path.dirname(logPath), { recursive: true });
-  const child = spawn(command, [], { cwd: context.root, detached: process.platform !== "win32", shell: true });
+  const child = spawn(command, [], { cwd: context.root, detached: process.platform !== "win32", env: { ...process.env, ...env }, shell: true });
   let output = "";
   let registeredPid: number | null = role && child.pid ? child.pid : null;
   let registrationFailed = false;
   let timedOut = false;
   let timeout: NodeJS.Timeout | undefined;
   let killTimeout: NodeJS.Timeout | undefined;
+  let forceKillDone: Promise<void> | undefined;
   let settled = false;
   /* v8 ignore next 11 -- shell registration failures require a registry path race after provider startup. */
   const registrationDone =
@@ -466,9 +669,9 @@ async function runShell(
           output += `Failed to register shell process: ${error.message}\n`;
           signalProcessTree(child.pid, "SIGTERM");
           /* v8 ignore next 3 -- SIGKILL fallback only appends when a child ignores SIGTERM. */
-          killTimeout = scheduleProcessTreeKill(child.pid, (text) => {
+          ({ done: forceKillDone, timeout: killTimeout } = scheduleProcessTreeKill(child.pid, (text) => {
             output += text;
-          });
+          }));
         })
       : Promise.resolve();
 
@@ -478,9 +681,9 @@ async function runShell(
       output += `Command timed out after ${timeoutMs} ms. Sending SIGTERM.\n`;
       signalProcessTree(child.pid, "SIGTERM");
       /* v8 ignore next 3 -- SIGKILL fallback only appends when a child ignores SIGTERM. */
-      killTimeout = scheduleProcessTreeKill(child.pid, (text) => {
+      ({ done: forceKillDone, timeout: killTimeout } = scheduleProcessTreeKill(child.pid, (text) => {
         output += text;
-      });
+      }));
     }, timeoutMs);
   }
 
@@ -496,7 +699,8 @@ async function runShell(
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
-      clearTimeout(killTimeout);
+      if (forceKillDone) await forceKillDone;
+      else clearTimeout(killTimeout);
       output += `${error.message}\n`;
       await registrationDone;
       if (registeredPid !== null) await unregisterProcess(registeredPid, context);
@@ -508,7 +712,8 @@ async function runShell(
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
-      clearTimeout(killTimeout);
+      if (forceKillDone) await forceKillDone;
+      else clearTimeout(killTimeout);
       await registrationDone;
       if (registeredPid !== null) await unregisterProcess(registeredPid, context);
       await writeFile(logPath, output);
@@ -531,12 +736,17 @@ function signalProcessTree(pid: number | undefined, signal: NodeJS.Signals): voi
   /* v8 ignore stop */
 }
 
-function scheduleProcessTreeKill(pid: number | undefined, appendOutput: (text: string) => void): NodeJS.Timeout {
-  /* v8 ignore next 4 -- SIGKILL fallback only runs when a child ignores SIGTERM. */
-  return setTimeout(() => {
-    appendOutput("Process did not exit after SIGTERM. Sending SIGKILL.\n");
-    signalProcessTree(pid, "SIGKILL");
-  }, 5_000);
+function scheduleProcessTreeKill(pid: number | undefined, appendOutput: (text: string) => void): { done: Promise<void>; timeout: NodeJS.Timeout } {
+  let timeout: NodeJS.Timeout;
+  /* v8 ignore next 8 -- SIGKILL fallback only runs when a child ignores SIGTERM. */
+  const done = new Promise<void>((resolve) => {
+    timeout = setTimeout(() => {
+      appendOutput("Process did not exit after SIGTERM. Sending SIGKILL.\n");
+      signalProcessTree(pid, "SIGKILL");
+      resolve();
+    }, forceKillDelayMs);
+  });
+  return { done, timeout: timeout! };
 }
 
 async function ensureCleanWorktree(context: ProjectContext): Promise<void> {

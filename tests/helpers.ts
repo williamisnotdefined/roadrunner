@@ -73,16 +73,26 @@ Commit: Build first step
 
 function fakeOpenCodeScript(): string {
   return (
-    `#!/usr/bin/env node
+`#!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
+import { execFileSync, spawn } from "node:child_process";
 
 const fileIndex = process.argv.indexOf("--file");
 const promptFile = fileIndex >= 0 ? process.argv[fileIndex + 1] : "";
 const prompt = promptFile ? fs.readFileSync(promptFile, "utf8") : process.argv[process.argv.length - 1] || "";
 const mode = process.env.ROADRUNNER_FAKE_OPENCODE_MODE || "success";
+const realGit = process.env.ROADRUNNER_TEST_REAL_GIT || "/usr/bin/git";
 if (process.env.ROADRUNNER_FAKE_OPENCODE_ARGS_FILE) {
   fs.writeFileSync(process.env.ROADRUNNER_FAKE_OPENCODE_ARGS_FILE, JSON.stringify(process.argv.slice(2)) + "\\n");
+}
+
+function runChecked(command, args) {
+  try {
+    execFileSync(command, args, { stdio: "inherit" });
+  } catch (error) {
+    process.exit(typeof error.status === "number" ? error.status : 1);
+  }
 }
 
 if (mode === "provider-fail" && prompt.includes("Roadrunner Implement Step")) {
@@ -102,6 +112,14 @@ if (mode === "fix-fail" && prompt.includes("Roadrunner Fix Failure")) {
 
 if (mode === "hang") {
   console.log("hanging");
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0);
+}
+
+if (mode === "spawn-child-on-term") {
+  const child = spawn(process.execPath, ["-e", "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);"], { stdio: "ignore" });
+  if (process.env.ROADRUNNER_FAKE_OPENCODE_CHILD_PID_FILE && child.pid) fs.writeFileSync(process.env.ROADRUNNER_FAKE_OPENCODE_CHILD_PID_FILE, String(child.pid));
+  process.on("SIGTERM", () => process.exit(0));
+  console.log("spawned child");
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0);
 }
 
@@ -169,7 +187,23 @@ test("supports todo CRUD", () => {
     const queue = JSON.parse(fs.readFileSync(queuePath, "utf8"));
     queue.source = "implementation-touched-queue.json";
     fs.writeFileSync(queuePath, JSON.stringify(queue, null, 2) + "\\n");
-  } else if (mode === "verify-fail" || mode === "fix-success" || mode === "fix-fail") {
+  } else if (mode === "git-commit") {
+    fs.writeFileSync("marker.txt", "ok\\n");
+    runChecked("git", ["add", "marker.txt"]);
+    runChecked("git", ["commit", "-m", "Agent commit"]);
+  } else if (mode === "git-push") {
+    runChecked("git", ["push"]);
+  } else if (mode === "goals-commit-bypass") {
+    fs.writeFileSync("GOALS.md", "changed\\n");
+    fs.writeFileSync("marker.txt", "ok\\n");
+    runChecked(realGit, ["add", "GOALS.md", "marker.txt"]);
+    runChecked(realGit, ["commit", "-m", "Agent changed goals"]);
+  } else if (mode === "implementation-commit-bypass") {
+    fs.writeFileSync("marker.txt", "ok\\n");
+    runChecked(realGit, ["add", "marker.txt"]);
+    runChecked(realGit, ["commit", "-m", "Agent implementation commit"]);
+    runChecked(realGit, ["tag", "-f", "baseline-tag"]);
+  } else if (mode === "verify-fail" || mode === "fix-success" || mode === "fix-fail" || mode === "fix-commit-bypass") {
     fs.writeFileSync("marker.txt", "bad\\n");
   } else {
     fs.writeFileSync("marker.txt", "ok\\n");
@@ -180,6 +214,10 @@ test("supports todo CRUD", () => {
 
 if (prompt.includes("Roadrunner Fix Failure")) {
   fs.writeFileSync("marker.txt", "ok\\n");
+  if (mode === "fix-commit-bypass") {
+    runChecked(realGit, ["add", "marker.txt"]);
+    runChecked(realGit, ["commit", "-m", "Agent fix commit"]);
+  }
   console.log("fixed");
   process.exit(0);
 }
@@ -195,6 +233,11 @@ if (prompt.includes("Roadrunner Reconcile Queue")) {
     process.exit(9);
   }
   if (mode === "reconcile-extra") fs.writeFileSync("unexpected.txt", "nope\\n");
+  if (mode === "reconcile-commit-bypass") {
+    fs.writeFileSync("unexpected.txt", "nope\\n");
+    runChecked(realGit, ["add", "unexpected.txt"]);
+    runChecked(realGit, ["commit", "-m", "Agent reconcile commit"]);
+  }
   if (mode === "reconcile-invalid") {
     const queuePath = path.join(".roadrunner", "queue.json");
     const queue = JSON.parse(fs.readFileSync(queuePath, "utf8"));
