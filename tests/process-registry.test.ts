@@ -181,6 +181,25 @@ setInterval(() => {}, 1000);`,
     }
   });
 
+  test("does not signal records whose pid identity differs", async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "roadrunner-process-pid-reused-"));
+    const context = await loadContext(tempDir, { _: [] });
+    const kill = vi.spyOn(process, "kill");
+
+    try {
+      await writeJson(context.paths.processRegistry, {
+        processes: [{ command: [process.execPath], cwd: tempDir, pid: process.pid, processGroupId: process.pid, role: "reused", startTimeTicks: "definitely-not-current" }],
+      });
+
+      expect(await cleanupProcesses(context)).toEqual([{ pid: process.pid, role: "reused", status: "stale" }]);
+      expect(kill.mock.calls.filter(([, signal]) => signal !== undefined && signal !== 0)).toEqual([]);
+      expect(await readProcesses(context)).toEqual([]);
+    } finally {
+      kill.mockRestore();
+      await rm(tempDir, { force: true, recursive: true });
+    }
+  });
+
   test("handles missing and corrupt registry files", async () => {
     const tempDir = await mkdtemp(path.join(os.tmpdir(), "roadrunner-process-corrupt-"));
     try {

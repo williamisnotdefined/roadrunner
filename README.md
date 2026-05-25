@@ -52,7 +52,7 @@ cd ~/git/rubiks-cube-solver
 node /home/wozzp/git/roadrunner/dist/src/cli.js init --goals GOALS.md --roadmap ROADMAP.md
 ```
 
-`init` creates `.roadrunner/config.json`, `.roadrunner/queue.json`, `.roadrunner/prompts/`, and `.roadrunner/logs/`. If `ROADMAP.md` exists, it imports roadmap steps into `.roadrunner/queue.json`.
+`init` creates `.roadrunner/config.json`, `.roadrunner/queue.json`, `.roadrunner/prompts/`, and `.roadrunner/logs/`. If `ROADMAP.md` exists, it imports roadmap steps into `.roadrunner/queue.json`; otherwise the queue starts empty.
 
 Validate and inspect the target project before running:
 
@@ -123,13 +123,13 @@ By default it creates:
 - `.roadrunner/prompts/` with default prompts, without overwriting existing prompt files.
 - `.roadrunner/logs/` for run logs.
 
-If the configured roadmap path exists, defaulting to `ROADMAP.md` or set with `--roadmap path`, `init` parses it into the initial queue instead of copying the placeholder queue template.
+If the configured roadmap path exists, defaulting to `ROADMAP.md` or set with `--roadmap path`, `init` parses it into the initial queue. Without a roadmap, the initial queue is valid but empty.
 
 ### `import-roadmap`
 
 Parses a roadmap Markdown file into the configured queue file.
 
-Existing `history` and `blocked` records are preserved. Imported steps whose IDs are already in `history` or `blocked` are not requeued.
+Existing `history` and `blocked` records are preserved. Imported steps whose IDs are already in `history` or `blocked` are not requeued. The open queue is replaced by the imported open roadmap steps, so open steps removed from `ROADMAP.md` are removed from `.roadrunner/queue.json` on import.
 
 ### `check`
 
@@ -155,11 +155,11 @@ Runs autonomous cycles up to `--max-steps` or `--max-hours`:
 Plan -> Execute -> Verify -> Reconcile
 ```
 
-The runner holds `.roadrunner/roadmap.lock` for the duration of the run to avoid concurrent Roadrunner runners mutating the same queue. It does not block because of unrelated user edits, dirty git state, provider git commands, or verification commands that mutate files.
+The runner holds `.roadrunner/roadmap.lock` for the duration of the run to avoid concurrent Roadrunner commands mutating the same queue. `import-roadmap` also takes this lock before writing `.roadrunner/queue.json`. Roadrunner does not block because of unrelated user edits, dirty git state, provider git commands, or verification commands that mutate files.
 
 At run start, Roadrunner reads `GOALS.md` once and uses that immutable in-memory snapshot for planning, implementation, fixing, and reconciliation prompts. Edits to `GOALS.md` during a run only affect future runs.
 
-Provider runs default to `ROADRUNNER_PROVIDER_TIMEOUT_MS=1800000` and verification commands default to `ROADRUNNER_VERIFY_TIMEOUT_MS=600000`. Set either variable to `0` to disable that timeout. `--max-hours` caps provider and verification timeouts for the current step.
+Provider runs default to `ROADRUNNER_PROVIDER_TIMEOUT_MS=1800000`, verification commands default to `ROADRUNNER_VERIFY_TIMEOUT_MS=600000`, and OpenCode CLI validation defaults to `ROADRUNNER_OPENCODE_CHECK_TIMEOUT_MS=10000`. Set provider or verification timeout variables to `0` to disable that timeout. `--max-hours` caps provider and verification timeouts for the current step.
 
 Prompt files, provider logs, verification logs, and runner-generated markdown outputs under `.roadrunner/logs/` are written with restrictive filesystem permissions.
 
@@ -193,7 +193,7 @@ Verification:
 - npm run check
 ```
 
-Supported heading forms are `## step-id: Title`, `## step-id - Title`, and `## [step-id] Title`; heading levels `##` through `######` are accepted. Required fields are `Phase`, `Scope`, `Prompt`, `Acceptance`, and `Verification`. Unknown fields are ignored.
+Supported heading forms are `## step-id: Title`, `## step-id - Title`, and `## [step-id] Title`; heading levels `##` through `######` are accepted. Required fields are `Phase`, `Scope`, `Prompt`, `Acceptance`, and `Verification`. Unknown fields are ignored except inside multiline `Prompt`, where `Label:` lines remain part of the prompt until the next known field.
 
 During development in this repo:
 
@@ -205,10 +205,11 @@ npm run format
 npm run typecheck
 npm test
 npm run coverage
+npm run smoke:pack
 npm run check
 ```
 
-`npm test` runs the Vitest unit/integration suite plus the deterministic fake-provider e2e. `npm run lint` runs Biome linting plus the AI route check. `npm run format` syncs AI routes and formats supported files with Biome. `npm run coverage` enforces a 95% coverage guardrail for authored `src/**/*.ts`; behavior, failure modes, and regression value matter more than reaching a higher number. `npm run e2e:real` is opt-in through `scripts/e2e-real.ts` and runs OpenCode for real with `ROADRUNNER_E2E_REAL_OPENCODE=1`; it is intentionally excluded from `test`, `coverage`, and `check`.
+`npm test` runs the Vitest unit/integration suite plus the deterministic fake-provider e2e. `npm run lint` runs Biome linting plus the AI route check. `npm run format` syncs AI routes and formats supported files with Biome. `npm run coverage` enforces a 95% coverage guardrail for authored `src/**/*.ts`; behavior, failure modes, and regression value matter more than reaching a higher number. `npm run smoke:pack` verifies the package dry-run includes the built CLI, templates, README, and `roadrunner` bin. `npm run e2e:real` is opt-in through `scripts/e2e-real.ts` and runs OpenCode for real with `ROADRUNNER_E2E_REAL_OPENCODE=1`; run it before declaring compatibility with a real OpenCode version.
 
 For real-provider debugging, run `ROADRUNNER_OPENCODE_DEBUG=1 npm run e2e:real`. Roadrunner streams provider output to each `*.opencode.log` while the process is running and prints the provider PID plus log path when each OpenCode subprocess starts. `npm run e2e:real` defaults `ROADRUNNER_PROVIDER_TIMEOUT_MS` to `300000`; override it to fail faster or allow longer provider runs.
 
@@ -254,12 +255,12 @@ npm run ai:check
 - `ROADMAP.md` is only an import source; `.roadrunner/queue.json` is the mutable live queue.
 - `queue[0]` is always the current task.
 - Planning is mandatory before execution.
-- In git repositories, planning fails if the planning agent mutates project files.
+- Planning fails if the planning agent mutates project files; Roadrunner uses git status in git repositories and a filesystem fingerprint fallback elsewhere.
 - The reconciler updates the configured queue file, defaulting to `.roadrunner/queue.json`; other file changes are not treated as Roadrunner safety violations.
 - Cleanup only targets subprocesses registered by Roadrunner itself.
 - Cleanup fails closed when a registered process identity cannot be verified.
 - Nested OpenCode is rejected by default.
-- Concurrent `run` processes are rejected by the configured lock file.
+- Concurrent `run` and `import-roadmap` queue writers are rejected by the configured lock file.
 - Provider prompts are passed through prompt files, not process argv.
 - Runtime prompt and log files are written with restrictive permissions.
 - OpenCode permission bypass is disabled by default and requires `dangerouslySkipPermissions: true`.
@@ -273,4 +274,4 @@ model: openai/gpt-5.5
 variant: xhigh
 ```
 
-Install OpenCode separately and ensure `opencode run --help` supports `--model`, `--variant`, `--agent`, `--file`, and `--dangerously-skip-permissions`. `roadrunner check`, `plan`, and `run` validate this before launching provider work.
+Install OpenCode separately and ensure `opencode run --help` supports `--model`, `--variant`, `--agent`, `--file`, and `--dangerously-skip-permissions`. `roadrunner check`, `plan`, and `run` validate this before launching provider work, with `ROADRUNNER_OPENCODE_CHECK_TIMEOUT_MS` bounding the validation command.

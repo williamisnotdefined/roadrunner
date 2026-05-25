@@ -123,6 +123,13 @@ describe("OpenCodeProvider", () => {
 
       await writeFile(path.join(binDir, "opencode"), "#!/usr/bin/env node\nconsole.error('bad help');\nprocess.exit(2);\n", { mode: 0o755 });
       expect((await validateOpenCodeCli())[0]).toMatch(/opencode run --help failed/);
+
+      await writeFile(path.join(binDir, "opencode"), "#!/usr/bin/env node\nif (process.argv.includes('--help')) setInterval(() => {}, 1000);\n", { mode: 0o755 });
+      process.env.ROADRUNNER_OPENCODE_CHECK_TIMEOUT_MS = "50";
+      expect(await validateOpenCodeCli()).toEqual(["opencode run --help timed out after 50 ms."]);
+
+      process.env.ROADRUNNER_OPENCODE_CHECK_TIMEOUT_MS = "nope";
+      expect(await validateOpenCodeCli()).toEqual(["ROADRUNNER_OPENCODE_CHECK_TIMEOUT_MS must be a positive integer, got nope."]);
     } finally {
       await removeDir(directory);
     }

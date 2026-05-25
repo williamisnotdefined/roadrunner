@@ -21,6 +21,7 @@ describe("init", () => {
       expect(await pathExists(path.join(path.dirname(paths.config), ".gitignore"))).toBe(true);
       expect(await pathExists(path.join(paths.prompts, "plan-step.md"))).toBe(true);
       expect(await readFile(paths.goals, "utf8")).toMatch(/Plan -> Execute -> Verify -> Reconcile/);
+      expect((await readJson<QueueFile>(paths.queue)).queue).toEqual([]);
     } finally {
       await rm(tempDir, { force: true, recursive: true });
     }

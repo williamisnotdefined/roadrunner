@@ -3,6 +3,7 @@ import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import { type ProjectContext, pathExists } from "./config.js";
+import { processIdentityStatus, readProcessInfo } from "./process-info.js";
 
 export interface ProcessRecord {
   command: string[];
@@ -58,9 +59,9 @@ export async function cleanupProcesses(context: ProjectContext, { force = false 
       continue;
     }
 
-    const sameProcess = await isSameProcess(record);
-    if (!sameProcess && !processGroupExists(processGroupId)) {
-      results.push({ pid: record.pid, role: record.role, status: "stale" });
+    const signalable = await signalableProcessGroup(record, processGroupId);
+    if (!signalable.ok) {
+      results.push({ pid: record.pid, role: record.role, status: signalable.status });
       continue;
     }
 
@@ -68,13 +69,13 @@ export async function cleanupProcesses(context: ProjectContext, { force = false 
     results.push({ pid: record.pid, role: record.role, signal: "SIGTERM", status: signaled ? "signaled" : "missing" });
     await sleep(1000);
 
-    if (force && ((await isSameProcess(record)) || processGroupExists(processGroupId))) {
+    if (force && (await signalableProcessGroup(record, processGroupId)).ok) {
       signalProcessGroup(processGroupId, "SIGKILL");
       results.push({ pid: record.pid, role: record.role, signal: "SIGKILL", status: "signaled" });
       await sleep(100);
     }
 
-    if ((await isSameProcess(record)) || processGroupExists(processGroupId)) survivors.push(record);
+    if ((await signalableProcessGroup(record, processGroupId)).ok) survivors.push(record);
   }
 
   await writeProcesses(survivors, context);
@@ -90,39 +91,11 @@ async function writeProcesses(processes: ProcessRecord[], context: ProjectContex
   await writeFile(context.paths.processRegistry, `${JSON.stringify({ processes }, null, 2)}\n`, { mode: 0o600 });
 }
 
-async function isSameProcess(record: ProcessRecord): Promise<boolean> {
-  const info = await readProcessInfo(record.pid);
-  if (!info) return false;
-  if (record.startTimeTicks === undefined || info.startTimeTicks === undefined) return false;
-  return info.startTimeTicks === record.startTimeTicks;
-}
-
-async function readProcessInfo(pid: number): Promise<{ startTimeTicks?: string } | null> {
-  /* v8 ignore next -- non-Linux cleanup fails closed because no start-time identity is available. */
-  if (process.platform !== "linux") return processExists(pid) ? {} : null;
-
-  try {
-    const stat = await readFile(`/proc/${pid}/stat`, "utf8");
-    const fields = stat
-      .slice(stat.lastIndexOf(")") + 2)
-      .trim()
-      .split(/\s+/);
-    return { startTimeTicks: fields[19]! };
-  } catch {
-    return null;
-  }
-}
-
-/* v8 ignore next -- non-Linux fallback helper. */
-function processExists(pid: number): boolean {
-  /* v8 ignore start -- exercised only by non-Linux process identity fallback. */
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
-  }
-  /* v8 ignore stop */
+async function signalableProcessGroup(record: ProcessRecord, processGroupId: number): Promise<{ ok: true } | { ok: false; status: string }> {
+  const status = await processIdentityStatus(record);
+  if (status === "same") return { ok: true };
+  if (status === "missing" && record.startTimeTicks !== undefined && processGroupExists(processGroupId)) return { ok: true };
+  return { ok: false, status: "stale" };
 }
 
 function safeProcessGroupId(record: ProcessRecord): number | null {

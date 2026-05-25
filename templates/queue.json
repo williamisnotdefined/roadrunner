@@ -2,17 +2,7 @@
   "version": 2,
   "model": "openai/gpt-5.5",
   "variant": "xhigh",
-  "queue": [
-    {
-      "id": "bootstrap-first-step",
-      "phase": "Bootstrap",
-      "title": "Define the first implementation step",
-      "scope": ["README.md"],
-      "prompt": "Replace this placeholder with the first concrete implementation step for this project.",
-      "acceptance": ["the step has clear acceptance criteria"],
-      "verification": ["npm run check"]
-    }
-  ],
+  "queue": [],
   "history": [],
   "blocked": []
 }

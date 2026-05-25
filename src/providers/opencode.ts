@@ -33,6 +33,7 @@ export interface ProviderRunResult {
 
 const nestedOpenCodeEnvKeys = ["OPENCODE_SESSION", "OPENCODE_SESSION_ID", "OPENCODE_SERVER", "OPENCODE_WORKSPACE", "OPENCODE_APP_INFO"];
 const defaultProviderTimeoutMs = 30 * 60 * 1000;
+const defaultOpenCodeCheckTimeoutMs = 10_000;
 const forceKillDelayMs = 1_000;
 const promptMessage = "Follow the attached Roadrunner prompt file exactly.";
 const execFileAsync = promisify(execFile);
@@ -102,6 +103,7 @@ export class OpenCodeProvider {
           context,
         ).catch((error: Error) => {
           registeredPid = null;
+          /* v8 ignore next -- registration settling after close is a nondeterministic process race. */
           if (settled) return;
           registrationFailed = true;
           appendOutput(`Failed to register provider process: ${error.message}\n`);
@@ -136,6 +138,7 @@ export class OpenCodeProvider {
 
     return new Promise((resolve) => {
       const onClose = async (code: number | null) => {
+        /* v8 ignore next -- close after error is a nondeterministic child-process race. */
         if (settled) return;
         settled = true;
         clearTimeout(timeout);
@@ -163,12 +166,17 @@ export class OpenCodeProvider {
 
 export async function validateOpenCodeCli(): Promise<string[]> {
   try {
-    const result = await execFileAsync("opencode", ["run", "--help"]);
+    const timeoutMs = openCodeCheckTimeoutMs(process.env.ROADRUNNER_OPENCODE_CHECK_TIMEOUT_MS);
+    const result = await execFileAsync("opencode", ["run", "--help"], { killSignal: "SIGKILL", timeout: timeoutMs });
     const help = `${result.stdout}\n${result.stderr}`;
     return requiredRunFlags.filter((flag) => !help.includes(flag)).map((flag) => `opencode run --help is missing required flag ${flag}.`);
   } catch (error) {
+    if ((error as NodeJS.ErrnoException).message.includes("ROADRUNNER_OPENCODE_CHECK_TIMEOUT_MS")) return [(error as Error).message];
     const code = (error as NodeJS.ErrnoException).code;
     if (code === "ENOENT") return ["opencode must be installed and available in PATH."];
+    if ((error as { killed?: boolean; signal?: NodeJS.Signals }).killed || (error as { signal?: NodeJS.Signals }).signal === "SIGKILL") {
+      return [`opencode run --help timed out after ${openCodeCheckTimeoutMs(process.env.ROADRUNNER_OPENCODE_CHECK_TIMEOUT_MS)} ms.`];
+    }
     return [`opencode run --help failed: ${(error as Error).message}`];
   }
 }
@@ -184,6 +192,13 @@ function providerTimeoutMs(value: string | undefined): number {
   if (value === undefined) return defaultProviderTimeoutMs;
   const timeoutMs = Number(value);
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 0) throw new Error(`ROADRUNNER_PROVIDER_TIMEOUT_MS must be a non-negative integer, got ${value}.`);
+  return timeoutMs;
+}
+
+function openCodeCheckTimeoutMs(value: string | undefined): number {
+  if (value === undefined) return defaultOpenCodeCheckTimeoutMs;
+  const timeoutMs = Number(value);
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) throw new Error(`ROADRUNNER_OPENCODE_CHECK_TIMEOUT_MS must be a positive integer, got ${value}.`);
   return timeoutMs;
 }
 
@@ -207,7 +222,9 @@ function signalChildProcessGroup(pid: number | undefined, signal: NodeJS.Signals
   try {
     process.kill(process.platform === "win32" ? pid : -pid, signal);
   } catch {
+    /* v8 ignore start -- process may exit between timeout scheduling and signaling. */
     /* Best effort: timeout cleanup is also covered by the process registry cleanup command. */
+    /* v8 ignore stop */
   }
 }
 

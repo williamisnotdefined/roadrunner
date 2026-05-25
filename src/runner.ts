@@ -1,10 +1,12 @@
 import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmod, mkdir, open, readFile, rm, writeFile } from "node:fs/promises";
+import type { Stats } from "node:fs";
+import { chmod, lstat, mkdir, readFile, readdir, readlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 
 import { defaultModel, defaultVariant, type ProjectContext } from "./config.js";
+import { acquireProjectLock } from "./lock.js";
 import {
   formatStep,
   goalsPathLabel,
@@ -61,6 +63,7 @@ const defaultVerificationTimeoutMs = 10 * 60 * 1000;
 const defaultProviderTimeoutMs = 30 * 60 * 1000;
 const forceKillDelayMs = 1_000;
 const execFileAsync = promisify(execFile);
+const fallbackFingerprintIgnoredDirectories = new Set([".git", "coverage", "dist", "node_modules", "test-output"]);
 
 export async function status(context: ProjectContext): Promise<RoadrunnerStatus> {
   const queueFile = await readValidatedQueue(context);
@@ -88,22 +91,31 @@ export async function plan(
 
 export async function run(context: ProjectContext, options: RunOptions = {}): Promise<number> {
   const { maxHours, maxSteps = 1 } = options;
-  const releaseLock = await acquireRunLock(context);
+  const releaseLock = await acquireProjectLock(context);
 
   try {
     emitRunEvent(options, { type: "validate" });
     const snapshot = await readRunSnapshot(context);
     await validateProject(context);
     let completed = 0;
+    let completedResult: number | undefined;
     const deadline = maxHours === undefined ? null : Date.now() + maxHours * 60 * 60 * 1000;
 
+    let primaryError: unknown;
+    let cleanupError: unknown;
     try {
       while (completed < maxSteps) {
-        if (deadline !== null && Date.now() >= deadline) return completed;
+        if (deadline !== null && Date.now() >= deadline) {
+          completedResult = completed;
+          break;
+        }
 
         const queueFile = await readValidatedQueue(context);
         const step = nextStep(queueFile);
-        if (!step) return completed;
+        if (!step) {
+          completedResult = completed;
+          break;
+        }
         await ensureProviderAvailable(context);
 
         emitRunEvent(options, { step, type: "step" });
@@ -172,11 +184,21 @@ export async function run(context: ProjectContext, options: RunOptions = {}): Pr
         completed += 1;
       }
 
-      return completed;
+      completedResult ??= completed;
+    } catch (error) {
+      primaryError = error;
+      throw error;
     } finally {
       emitRunEvent(options, { type: "cleanup" });
-      await cleanupProcesses(context);
+      try {
+        await cleanupProcesses(context, { force: true });
+      } catch (error) {
+        if (primaryError === undefined) cleanupError = error;
+      }
     }
+
+    if (cleanupError !== undefined) throw cleanupError;
+    return completedResult;
   } finally {
     await releaseLock();
   }
@@ -402,59 +424,6 @@ async function queueForBlocking(context: ProjectContext, fallbackQueueFile: Queu
   return fallbackQueueFile;
 }
 
-async function acquireRunLock(context: ProjectContext): Promise<() => Promise<void>> {
-  await mkdir(path.dirname(context.paths.lock), { recursive: true });
-  const lock = { pid: process.pid, startedAt: new Date().toISOString() };
-
-  try {
-    const handle = await open(context.paths.lock, "wx", 0o600);
-    try {
-      await handle.writeFile(`${JSON.stringify(lock, null, 2)}\n`);
-    } finally {
-      await handle.close();
-    }
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "EEXIST" || !(await removeStaleRunLock(context))) throw new Error(`Roadrunner run lock already exists at ${context.paths.lock}.`);
-    return acquireRunLock(context);
-  }
-
-  let released = false;
-  return async () => {
-    if (released) return;
-    released = true;
-    await releaseRunLock(context, lock);
-  };
-}
-
-async function releaseRunLock(context: ProjectContext, lock: { pid: number; startedAt: string }): Promise<void> {
-  try {
-    const current = JSON.parse(await readFile(context.paths.lock, "utf8")) as { pid?: unknown; startedAt?: unknown };
-    if (current.pid === lock.pid && current.startedAt === lock.startedAt) await rm(context.paths.lock, { force: true });
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") return;
-  }
-}
-
-async function removeStaleRunLock(context: ProjectContext): Promise<boolean> {
-  try {
-    const value = JSON.parse(await readFile(context.paths.lock, "utf8")) as { pid?: unknown };
-    if (typeof value.pid !== "number" || processExists(value.pid)) return false;
-    await rm(context.paths.lock, { force: true });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function processExists(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
-  }
-}
-
 function providerEnvForDeadline(deadline: number | null | undefined): Record<string, string> {
   if (deadline === null || deadline === undefined) return {};
   const remaining = remainingDeadlineMs(deadline);
@@ -525,6 +494,7 @@ async function runShell(context: ProjectContext, command: string, logPath: strin
     output += chunk.toString();
   });
   return new Promise((resolve) => {
+    /* v8 ignore start -- shell spawn errors are defensive because commands run through the platform shell. */
     child.on("error", async (error: Error) => {
       if (settled) return;
       settled = true;
@@ -537,6 +507,7 @@ async function runShell(context: ProjectContext, command: string, logPath: strin
       await writePrivateFile(logPath, output);
       resolve({ code: 1, output });
     });
+    /* v8 ignore stop */
     child.on("close", async (code: number | null) => {
       if (settled) return;
       settled = true;
@@ -613,7 +584,7 @@ export interface StatusEntry {
 
 async function projectMutationFingerprint(context: ProjectContext): Promise<string | null> {
   const statusOutput = await gitStatusOutput(context);
-  if (statusOutput === null) return null;
+  if (statusOutput === null) return filesystemMutationFingerprint(context);
 
   const entries = parseStatusEntries(statusOutput).filter((entry) => !isRoadrunnerRuntimePath(context, entry.path));
   const head = await gitHead(context);
@@ -626,6 +597,61 @@ async function projectMutationFingerprint(context: ProjectContext): Promise<stri
   );
 
   return JSON.stringify({ head, fingerprints });
+}
+
+async function filesystemMutationFingerprint(context: ProjectContext): Promise<string> {
+  const entries: Array<{ content?: string; path: string; target?: string; type: string }> = [];
+  await collectFilesystemFingerprintEntries(context, context.root, entries);
+  entries.sort((left, right) => left.path.localeCompare(right.path));
+  return JSON.stringify({ entries, mode: "filesystem" });
+}
+
+async function collectFilesystemFingerprintEntries(context: ProjectContext, absolutePath: string, entries: Array<{ content?: string; path: string; target?: string; type: string }>): Promise<void> {
+  const relativePath = path.relative(context.root, absolutePath).split(path.sep).join(path.posix.sep);
+  if (relativePath.length > 0 && isIgnoredFilesystemFingerprintPath(context, relativePath, absolutePath)) return;
+
+  let stat: Stats;
+  try {
+    stat = await lstat(absolutePath);
+  } catch (error) {
+    /* v8 ignore start -- lstat failures during traversal are filesystem races. */
+    entries.push({ path: relativePath, type: `unreadable:${(error as NodeJS.ErrnoException).code ?? "unknown"}` });
+    return;
+    /* v8 ignore stop */
+  }
+
+  if (stat.isDirectory()) {
+    let names: string[];
+    try {
+      names = await readdir(absolutePath);
+    } catch (error) {
+      /* v8 ignore start -- directory read failures during traversal are filesystem races. */
+      entries.push({ path: relativePath, type: `unreadable-directory:${(error as NodeJS.ErrnoException).code ?? "unknown"}` });
+      return;
+      /* v8 ignore stop */
+    }
+
+    await Promise.all(names.sort().map((name) => collectFilesystemFingerprintEntries(context, path.join(absolutePath, name), entries)));
+    return;
+  }
+
+  if (stat.isSymbolicLink()) {
+    try {
+      entries.push({ path: relativePath, target: await readlink(absolutePath), type: "symlink" });
+    } catch (error) {
+      /* v8 ignore next -- symlink read failures during traversal are filesystem races. */
+      entries.push({ path: relativePath, type: `unreadable-symlink:${(error as NodeJS.ErrnoException).code ?? "unknown"}` });
+    }
+    return;
+  }
+
+  if (stat.isFile()) {
+    entries.push({ content: await fileFingerprint(absolutePath), path: relativePath, type: "file" });
+    return;
+  }
+
+  /* v8 ignore next -- special filesystem nodes are platform-specific and defensive. */
+  entries.push({ path: relativePath, type: "other" });
 }
 
 async function gitStatusOutput(context: ProjectContext): Promise<string | null> {
@@ -682,6 +708,11 @@ async function fileFingerprint(filePath: string): Promise<string> {
 function isRoadrunnerRuntimePath(context: ProjectContext, relativePath: string): boolean {
   const absolutePath = path.resolve(context.root, relativePath);
   return isSameOrInside(context.paths.logs, absolutePath) || absolutePath === context.paths.processRegistry || absolutePath === context.paths.lock;
+}
+
+function isIgnoredFilesystemFingerprintPath(context: ProjectContext, relativePath: string, absolutePath: string): boolean {
+  if (isRoadrunnerRuntimePath(context, relativePath)) return true;
+  return relativePath.split(path.posix.sep).some((segment) => fallbackFingerprintIgnoredDirectories.has(segment)) || isSameOrInside(path.join(context.root, ".roadrunner", "logs"), absolutePath);
 }
 
 function isSameOrInside(parent: string, child: string): boolean {

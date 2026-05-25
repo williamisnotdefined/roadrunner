@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
@@ -141,7 +141,7 @@ Verification:
     }
   });
 
-  test("importRoadmap preserves existing open steps absent from the roadmap", async () => {
+  test("importRoadmap replaces existing open steps absent from the roadmap", async () => {
     const tempDir = await mkdtemp(path.join(os.tmpdir(), "roadrunner-roadmap-open-"));
     try {
       await writeFile(path.join(tempDir, "ROADMAP.md"), sampleRoadmap());
@@ -168,7 +168,7 @@ Verification:
 
       const imported = await importRoadmap(context);
 
-      expect(imported.queue.map((step) => step.id)).toEqual(["first-step", "manual-step"]);
+      expect(imported.queue.map((step) => step.id)).toEqual(["first-step"]);
     } finally {
       await rm(tempDir, { force: true, recursive: true });
     }
@@ -234,6 +234,20 @@ Verification:
     } finally {
       await rm(root, { force: true, recursive: true });
       await rm(outside, { force: true, recursive: true });
+    }
+  });
+
+  test("importRoadmap rejects active Roadrunner locks", async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "roadrunner-roadmap-locked-"));
+    try {
+      await writeFile(path.join(tempDir, "ROADMAP.md"), sampleRoadmap());
+      const context = await loadContext(tempDir, { _: [] });
+      await mkdir(path.dirname(context.paths.lock), { recursive: true });
+      await writeFile(context.paths.lock, `${JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }, null, 2)}\n`);
+
+      await expect(importRoadmap(context)).rejects.toThrow(/import-roadmap lock already exists/);
+    } finally {
+      await rm(tempDir, { force: true, recursive: true });
     }
   });
 });

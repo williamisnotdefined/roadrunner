@@ -1,5 +1,5 @@
 import { rmSync, writeFileSync } from "node:fs";
-import { readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { readdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
@@ -365,6 +365,38 @@ describe("runner", () => {
     }
   });
 
+  test("plans outside git repositories with symlinks", async () => {
+    const directory = await tempDir("roadrunner-runner-no-git-symlink-");
+    try {
+      const binDir = await createFakeOpenCodeBin(directory);
+      process.env.PATH = withPath(binDir);
+      process.env.ROADRUNNER_FAKE_OPENCODE_MODE = "success";
+      const context = await createInitializedProject(directory);
+      await writeFile(path.join(directory, "target.txt"), "target\n");
+      await symlink("target.txt", path.join(directory, "link.txt"));
+
+      expect((await plan(context))?.result.code).toBe(0);
+    } finally {
+      await removeDir(directory);
+    }
+  });
+
+  test("blocks planning agents that change files outside git repositories", async () => {
+    const directory = await tempDir("roadrunner-runner-no-git-plan-dirty-");
+    try {
+      const binDir = await createFakeOpenCodeBin(directory);
+      process.env.PATH = withPath(binDir);
+      process.env.ROADRUNNER_FAKE_OPENCODE_MODE = "plan-dirty";
+      const context = await createInitializedProject(directory);
+
+      await expect(runRoadrunner(context)).rejects.toThrow(/Planning failed/);
+      const queue = await readJson<QueueFile>(context.paths.queue);
+      expect(queue.blocked[0]).toMatchObject({ blockedReason: "Planning exited 1", id: "first-step" });
+    } finally {
+      await removeDir(directory);
+    }
+  });
+
   test("allows verification commands that mutate files", async () => {
     const project = await setupRunnerProject("success", sampleRoadmap({ verification: "node -e \"require('node:fs').writeFileSync('verify-dirty.txt', 'dirty\\n')\"" }));
     try {
@@ -411,6 +443,17 @@ describe("runner", () => {
     }
   });
 
+  test("rejects corrupt run locks", async () => {
+    const project = await setupRunnerProject("success");
+    try {
+      await writeFile(project.context.paths.lock, "not json\n");
+
+      await expect(runRoadrunner(project.context)).rejects.toThrow(/run lock already exists/);
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
   test("removes stale run locks", async () => {
     const project = await setupRunnerProject("success");
     try {
@@ -418,6 +461,21 @@ describe("runner", () => {
       queue.queue = [];
       await writeJson(project.context.paths.queue, queue);
       await writeFile(project.context.paths.lock, `${JSON.stringify({ pid: 99999999, startedAt: new Date().toISOString() }, null, 2)}\n`);
+
+      expect(await runRoadrunner(project.context)).toBe(0);
+      expect(await pathExists(project.context.paths.lock)).toBe(false);
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
+  test("removes run locks whose pid has been reused", async () => {
+    const project = await setupRunnerProject("success");
+    try {
+      const queue = await readJson<QueueFile>(project.context.paths.queue);
+      queue.queue = [];
+      await writeJson(project.context.paths.queue, queue);
+      await writeFile(project.context.paths.lock, `${JSON.stringify({ pid: process.pid, startedAt: "old-lock", startTimeTicks: "definitely-not-current" }, null, 2)}\n`);
 
       expect(await runRoadrunner(project.context)).toBe(0);
       expect(await pathExists(project.context.paths.lock)).toBe(false);
