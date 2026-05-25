@@ -27,7 +27,7 @@ describe("runner", () => {
   test("plans the current step without skipped permissions", async () => {
     const project = await setupRunnerProject("success");
     try {
-      const argsFile = path.join(project.directory, "args.json");
+      const argsFile = path.join(project.context.paths.logs, "args.json");
       process.env.ROADRUNNER_FAKE_OPENCODE_ARGS_FILE = argsFile;
 
       const result = await plan(project.context);
@@ -71,6 +71,10 @@ describe("runner", () => {
       expect(ok.output).toMatch(/marker.txt/);
       expect(failed.ok).toBe(false);
       expect(failed.output).toMatch(/process.exit/);
+      await expect(verify(project.context, step, project.context.paths.logs, { deadline: Date.now() - 1 })).rejects.toThrow(/deadline/);
+      process.env.ROADRUNNER_VERIFY_TIMEOUT_MS = "bad";
+      await expect(verify(project.context, step, project.context.paths.logs)).rejects.toThrow(/ROADRUNNER_VERIFY_TIMEOUT_MS/);
+      delete process.env.ROADRUNNER_VERIFY_TIMEOUT_MS;
     } finally {
       await removeDir(project.directory);
     }
@@ -79,7 +83,9 @@ describe("runner", () => {
   test("runs a successful step, commits it, and reconciles the queue", async () => {
     const project = await setupRunnerProject("success");
     try {
-      const completed = await runRoadrunner(project.context, { maxSteps: 1 });
+      process.env.ROADRUNNER_PROVIDER_TIMEOUT_MS = "100000";
+      process.env.ROADRUNNER_VERIFY_TIMEOUT_MS = "0";
+      const completed = await runRoadrunner(project.context, { maxHours: 1, maxSteps: 1 });
       const queue = await readJson<QueueFile>(project.context.paths.queue);
       const log = await run("git", ["log", "--oneline"], project.directory);
 
@@ -94,11 +100,23 @@ describe("runner", () => {
     }
   });
 
+  test("completes a queue-only step when implementation makes no file changes", async () => {
+    const project = await setupRunnerProject("noop", sampleRoadmap({ verification: "node -e \"process.exit(0)\"" }));
+    try {
+      expect(await runRoadrunner(project.context, { maxSteps: 1 })).toBe(1);
+      const queue = await readJson<QueueFile>(project.context.paths.queue);
+      expect(queue.history.map((step) => step.id)).toEqual(["first-step"]);
+      expect(queue.blocked).toEqual([]);
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
   test("reports run progress events", async () => {
     const project = await setupRunnerProject("success");
     const events: string[] = [];
     try {
-      await runRoadrunner(project.context, { maxSteps: 1, onEvent: (event) => events.push(event.type) });
+      await runRoadrunner(project.context, { maxHours: 1, maxSteps: 1, onEvent: (event) => events.push(event.type) });
 
       expect(events).toEqual([
         "validate",
@@ -197,13 +215,78 @@ describe("runner", () => {
     }
   });
 
+  test("rejects verification commands that mutate files", async () => {
+    const project = await setupRunnerProject("success", sampleRoadmap({ verification: "node -e \"require('node:fs').writeFileSync('verify-dirty.txt', 'dirty\\n')\"" }));
+    try {
+      await expect(runRoadrunner(project.context)).rejects.toThrow(/Verification changed files/);
+      const queue = await readJson<QueueFile>(project.context.paths.queue);
+      expect(queue.blocked[0]).toMatchObject({ blockedReason: "Verification changed files.", id: "first-step" });
+      expect((await run("git", ["status", "--short"], project.directory)).stdout).toBe("");
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
+  test("times out verification commands", async () => {
+    process.env.ROADRUNNER_VERIFY_TIMEOUT_MS = "50";
+    const project = await setupRunnerProject("fix-fail", sampleRoadmap({ verification: "node -e \"Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0)\"" }));
+    try {
+      await expect(runRoadrunner(project.context)).rejects.toThrow(/Verification failed/);
+      const queue = await readJson<QueueFile>(project.context.paths.queue);
+      expect(queue.blocked[0]).toMatchObject({ id: "first-step" });
+      expect((await readFile(path.join(project.context.paths.logs, "preflight-git-status.log"), "utf8")).length).toBeGreaterThanOrEqual(0);
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
+  test("rejects concurrent runs with an active lock", async () => {
+    const project = await setupRunnerProject("success");
+    try {
+      await writeFile(project.context.paths.lock, `${JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }, null, 2)}\n`);
+
+      await expect(runRoadrunner(project.context)).rejects.toThrow(/run lock already exists/);
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
+  test("removes stale run locks", async () => {
+    const project = await setupRunnerProject("success");
+    try {
+      const queue = await readJson<QueueFile>(project.context.paths.queue);
+      queue.queue = [];
+      await writeFile(project.context.paths.queue, `${JSON.stringify(queue, null, 2)}\n`);
+      await commitAll(project.directory, "Empty queue");
+      await writeFile(project.context.paths.lock, `${JSON.stringify({ pid: 99999999, startedAt: new Date().toISOString() }, null, 2)}\n`);
+
+      expect(await runRoadrunner(project.context)).toBe(0);
+      expect(await pathExists(project.context.paths.lock)).toBe(false);
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
   test("rejects provider changes to GOALS.md", async () => {
     const project = await setupRunnerProject("goals-dirty");
     try {
       await expect(runRoadrunner(project.context)).rejects.toThrow(/GOALS\.md is read-only/);
       const queue = await readJson<QueueFile>(project.context.paths.queue);
-      expect(queue.queue.map((step) => step.id)).toEqual(["first-step"]);
-      expect(queue.history).toEqual([]);
+      expect(queue.queue).toEqual([]);
+      expect(queue.blocked[0]).toMatchObject({ id: "first-step" });
+      expect((await run("git", ["status", "--short"], project.directory)).stdout).toBe("");
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
+  test("rejects implementation agents that mutate queue state", async () => {
+    const project = await setupRunnerProject("queue-dirty");
+    try {
+      await expect(runRoadrunner(project.context)).rejects.toThrow(/Implementation changed Roadrunner queue state directly/);
+      const queue = await readJson<QueueFile>(project.context.paths.queue);
+      expect(queue.blocked[0]?.blockedReason).toMatch(/Implementation changed Roadrunner queue state directly/);
+      expect((await run("git", ["status", "--short"], project.directory)).stdout).toBe("");
     } finally {
       await removeDir(project.directory);
     }
@@ -314,7 +397,7 @@ describe("runner", () => {
       const log = await run("git", ["log", "--oneline"], project.directory);
 
       expect(queue.source).toBe("reconciled-roadmap.md");
-      expect(log.stdout).toMatch(/Reconcile Roadrunner queue/);
+      expect(log.stdout).toMatch(/Complete Roadrunner step first-step/);
     } finally {
       await removeDir(project.directory);
     }
@@ -336,12 +419,13 @@ describe("runner", () => {
     const project = await setupRunnerProject("reconcile-queue");
     try {
       const hookPath = path.join(project.directory, ".git/hooks/commit-msg");
-      await writeFile(hookPath, "#!/bin/sh\ngrep -q 'Reconcile Roadrunner queue' \"$1\" && exit 1\nexit 0\n", { mode: 0o755 });
+      await writeFile(hookPath, "#!/bin/sh\ngrep -q 'Complete Roadrunner step' \"$1\" && exit 1\nexit 0\n", { mode: 0o755 });
 
-      await expect(runRoadrunner(project.context)).rejects.toThrow(/git commit failed for reconcile-commit/);
+      await expect(runRoadrunner(project.context)).rejects.toThrow(/git commit failed for queue-commit/);
       const queue = await readJson<QueueFile>(project.context.paths.queue);
       expect(queue.source).toBe("ROADMAP.md");
-      expect(queue.history.map((step) => step.id)).toEqual(["first-step"]);
+      expect(queue.history).toEqual([]);
+      expect(queue.blocked[0]).toMatchObject({ id: "first-step" });
       expect((await run("git", ["status", "--short"], project.directory)).stdout).toBe("");
     } finally {
       await removeDir(project.directory);
@@ -390,7 +474,7 @@ describe("runner", () => {
   });
 });
 
-async function setupRunnerProject(mode: string): Promise<{ context: ProjectContext; directory: string }> {
+async function setupRunnerProject(mode: string, roadmap = sampleRoadmap()): Promise<{ context: ProjectContext; directory: string }> {
   const directory = await tempDir("roadrunner-runner-");
   const binDir = await createFakeOpenCodeBin(directory);
   process.env.PATH = withPath(binDir);
@@ -401,7 +485,7 @@ async function setupRunnerProject(mode: string): Promise<{ context: ProjectConte
   delete process.env.OPENCODE_WORKSPACE;
   delete process.env.OPENCODE_APP_INFO;
 
-  await createInitializedProject(directory, sampleRoadmap());
+  await createInitializedProject(directory, roadmap);
   await initGit(directory);
   await commitAll(directory, "Initial project");
   const context = await loadContext(directory, { _: [] });

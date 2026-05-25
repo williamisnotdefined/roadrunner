@@ -245,6 +245,35 @@ describe("process registry", () => {
     }
   });
 
+  test("rejects registry records from a different cwd", async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "roadrunner-process-cwd-"));
+    try {
+      const context = await loadContext(tempDir, { _: [] });
+      await writeJson(context.paths.processRegistry, {
+        processes: [{ command: ["missing"], cwd: path.dirname(tempDir), pid: 99999999, role: "tampered", startTimeTicks: "old" }],
+      });
+
+      expect(await cleanupProcesses(context)).toEqual([{ pid: 99999999, role: "tampered", status: "invalid-cwd" }]);
+      expect(await readProcesses(context)).toEqual([]);
+    } finally {
+      await rm(tempDir, { force: true, recursive: true });
+    }
+  });
+
+  test("treats records without start time as stale on Linux", async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "roadrunner-process-no-start-"));
+    try {
+      const context = await loadContext(tempDir, { _: [] });
+      await writeJson(context.paths.processRegistry, {
+        processes: [{ command: [process.execPath], cwd: tempDir, pid: process.pid, role: "missing-start" }],
+      });
+
+      expect(await cleanupProcesses(context)).toEqual([{ pid: process.pid, role: "missing-start", status: "stale" }]);
+    } finally {
+      await rm(tempDir, { force: true, recursive: true });
+    }
+  });
+
   test("rejects registering missing pids", async () => {
     const tempDir = await mkdtemp(path.join(os.tmpdir(), "roadrunner-process-missing-"));
     try {

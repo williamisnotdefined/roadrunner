@@ -47,6 +47,11 @@ export async function cleanupProcesses(context: ProjectContext, { force = false 
   const results: Array<{ pid: number; role: string; signal?: string; status: string }> = [];
 
   for (const record of await readProcesses(context)) {
+    if (path.resolve(record.cwd) !== context.root) {
+      results.push({ pid: record.pid, role: record.role, status: "invalid-cwd" });
+      continue;
+    }
+
     if (!(await isSameProcess(record))) {
       results.push({ pid: record.pid, role: record.role, status: "stale" });
       continue;
@@ -80,14 +85,20 @@ async function writeProcesses(processes: ProcessRecord[], context: ProjectContex
     await rm(context.paths.processRegistry, { force: true });
     return;
   }
-  await writeFile(context.paths.processRegistry, `${JSON.stringify({ processes }, null, 2)}\n`);
+  await writeFile(context.paths.processRegistry, `${JSON.stringify({ processes }, null, 2)}\n`, { mode: 0o600 });
 }
 
 async function isSameProcess(record: ProcessRecord): Promise<boolean> {
-  return (await readProcessInfo(record.pid))?.startTimeTicks === record.startTimeTicks;
+  const info = await readProcessInfo(record.pid);
+  if (!info) return false;
+  if (record.startTimeTicks === undefined) return info.startTimeTicks === undefined;
+  return info.startTimeTicks === record.startTimeTicks;
 }
 
-async function readProcessInfo(pid: number): Promise<{ startTimeTicks: string } | null> {
+async function readProcessInfo(pid: number): Promise<{ startTimeTicks?: string } | null> {
+  /* v8 ignore next -- non-Linux process identity degrades to pid existence at runtime. */
+  if (process.platform !== "linux") return processExists(pid) ? {} : null;
+
   try {
     const stat = await readFile(`/proc/${pid}/stat`, "utf8");
     const fields = stat
@@ -100,6 +111,18 @@ async function readProcessInfo(pid: number): Promise<{ startTimeTicks: string } 
   }
 }
 
+/* v8 ignore next -- non-Linux fallback helper. */
+function processExists(pid: number): boolean {
+  /* v8 ignore start -- exercised only by non-Linux process identity fallback. */
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+  /* v8 ignore stop */
+}
+
 function safeProcessGroupId(record: ProcessRecord): number | null {
   if (record.processGroupId === undefined) return record.pid;
   return record.processGroupId === record.pid ? record.processGroupId : null;
@@ -107,7 +130,8 @@ function safeProcessGroupId(record: ProcessRecord): number | null {
 
 function signalProcessGroup(pid: number, signal: NodeJS.Signals): boolean {
   try {
-    process.kill(-pid, signal);
+    /* v8 ignore next -- Windows process signaling is covered by platform branching at runtime. */
+    process.kill(process.platform === "win32" ? pid : -pid, signal);
     return true;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;

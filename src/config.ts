@@ -67,7 +67,7 @@ export function projectPaths(projectRoot = process.cwd(), overrides: PathOverrid
 
 export async function loadContext(projectRoot = process.cwd(), args: CliArgs = { _: [] }): Promise<ProjectContext> {
   const flagOverrides = pathOverridesFromArgs(args);
-  const configPath = flagOverrides.config ?? (await defaultConfigPath(projectRoot));
+  const configPath = flagOverrides.config ? resolveProjectPath(projectRoot, flagOverrides.config) : await defaultConfigPath(projectRoot);
   const fileConfig = (await pathExists(configPath)) ? await readJson<RoadrunnerConfig>(configPath) : {};
   const paths = projectPaths(projectRoot, { ...fileConfig.paths, ...flagOverrides, config: configPath });
 

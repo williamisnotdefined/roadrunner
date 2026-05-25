@@ -77,7 +77,9 @@ function fakeOpenCodeScript(): string {
 import fs from "node:fs";
 import path from "node:path";
 
-const prompt = process.argv[process.argv.length - 1] || "";
+const fileIndex = process.argv.indexOf("--file");
+const promptFile = fileIndex >= 0 ? process.argv[fileIndex + 1] : "";
+const prompt = promptFile ? fs.readFileSync(promptFile, "utf8") : process.argv[process.argv.length - 1] || "";
 const mode = process.env.ROADRUNNER_FAKE_OPENCODE_MODE || "success";
 if (process.env.ROADRUNNER_FAKE_OPENCODE_ARGS_FILE) {
   fs.writeFileSync(process.env.ROADRUNNER_FAKE_OPENCODE_ARGS_FILE, JSON.stringify(process.argv.slice(2)) + "\\n");
@@ -161,6 +163,12 @@ test("supports todo CRUD", () => {
     `);
   } else if (mode === "noop") {
     // no changes
+  } else if (mode === "queue-dirty") {
+    fs.writeFileSync("marker.txt", "ok\\n");
+    const queuePath = path.join(".roadrunner", "queue.json");
+    const queue = JSON.parse(fs.readFileSync(queuePath, "utf8"));
+    queue.source = "implementation-touched-queue.json";
+    fs.writeFileSync(queuePath, JSON.stringify(queue, null, 2) + "\\n");
   } else if (mode === "verify-fail" || mode === "fix-success" || mode === "fix-fail") {
     fs.writeFileSync("marker.txt", "bad\\n");
   } else {

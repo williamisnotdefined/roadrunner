@@ -62,6 +62,22 @@ describe("config", () => {
     }
   });
 
+  test("loadContext resolves relative config flags from the project root", async () => {
+    const tempDir = await import("node:fs/promises").then((fs) => fs.mkdtemp(path.join(os.tmpdir(), "roadrunner-config-flag-")));
+    try {
+      await mkdir(path.join(tempDir, "config"), { recursive: true });
+      await writeFile(path.join(tempDir, "config/roadrunner.json"), `${JSON.stringify({ allowNestedOpenCode: true, paths: { queue: "state/queue.json" } }, null, 2)}\n`);
+
+      const context = await loadContext(tempDir, { _: [], config: "config/roadrunner.json" });
+
+      expect(context.paths.config).toBe(path.join(tempDir, "config/roadrunner.json"));
+      expect(context.paths.queue).toBe(path.join(tempDir, "state/queue.json"));
+      expect(context.config.allowNestedOpenCode).toBe(true);
+    } finally {
+      await rm(tempDir, { force: true, recursive: true });
+    }
+  });
+
   test("readJson, writeJson, and pathExists handle files", async () => {
     const tempDir = await import("node:fs/promises").then((fs) => fs.mkdtemp(path.join(os.tmpdir(), "roadrunner-json-")));
     try {

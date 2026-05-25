@@ -5,7 +5,7 @@ import { describe, expect, test } from "vitest";
 import { formatRunEvent, helpText, main } from "../src/cli.js";
 import { readJson, writeJson } from "../src/config.js";
 import type { QueueFile, QueueStep } from "../src/queue.js";
-import { createInitializedProject, removeDir, sampleRoadmap, tempDir } from "./helpers.js";
+import { commitAll, createInitializedProject, initGit, removeDir, sampleRoadmap, tempDir } from "./helpers.js";
 import { createFakeOpenCodeBin, withPath } from "./helpers.js";
 
 describe("cli", () => {
@@ -137,11 +137,51 @@ describe("cli", () => {
       process.env.PATH = withPath(binDir);
       const context = await createInitializedProject(directory);
       context.config.allowNestedOpenCode = true;
+      await initGit(directory);
+      await commitAll(directory, "Initial project");
 
       expect(await main(["plan"], { cwd: directory, io: { stdout: (message) => output.push(message) } })).toBe(0);
       expect(output.join("\n")).toMatch(/Plan written to/);
     } finally {
       process.env.PATH = originalPath;
+      await removeDir(directory);
+    }
+  });
+
+  test("returns an error when queued planning fails", async () => {
+    const directory = await tempDir("roadrunner-cli-plan-fail-");
+    const errors: string[] = [];
+    const originalEnv = { ...process.env };
+    try {
+      const binDir = await createFakeOpenCodeBin(directory);
+      process.env.PATH = withPath(binDir);
+      process.env.ROADRUNNER_FAKE_OPENCODE_MODE = "plan-fail";
+      await createInitializedProject(directory);
+      await initGit(directory);
+      await commitAll(directory, "Initial project");
+
+      expect(await main(["plan"], { cwd: directory, io: { stderr: (message) => errors.push(message) } })).toBe(1);
+      expect(errors.join("\n")).toMatch(/Planning failed/);
+    } finally {
+      process.env = originalEnv;
+      await removeDir(directory);
+    }
+  });
+
+  test("run command reports zero completed steps for a clean empty queue", async () => {
+    const directory = await tempDir("roadrunner-cli-run-empty-");
+    const output: string[] = [];
+    try {
+      const context = await createInitializedProject(directory);
+      const queue = await readJson<QueueFile>(context.paths.queue);
+      queue.queue = [];
+      await writeFile(context.paths.queue, `${JSON.stringify(queue, null, 2)}\n`);
+      await initGit(directory);
+      await commitAll(directory, "Initial empty queue project");
+
+      expect(await main(["run", "--max-steps", "1"], { cwd: directory, io: { stdout: (message) => output.push(message) } })).toBe(0);
+      expect(output.join("\n")).toMatch(/Completed 0 step\(s\)/);
+    } finally {
       await removeDir(directory);
     }
   });

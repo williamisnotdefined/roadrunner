@@ -138,7 +138,7 @@ Prints only the current `queue[0]` step.
 
 ### `plan`
 
-Runs the planning agent for the current step and writes plan logs under `.roadrunner/logs/`. Planning is run without skipped permissions.
+Validates the project, requires a clean git worktree when a step is queued, runs the planning agent for the current step, and writes plan logs under `.roadrunner/logs/`. Planning is run without skipped permissions and fails if the planner changes project files.
 
 ### `run`
 
@@ -148,7 +148,11 @@ Runs autonomous cycles up to `--max-steps` or `--max-hours`:
 Plan -> Execute -> Verify -> Commit -> Reconcile
 ```
 
-The runner requires a clean git worktree before starting. Runtime files such as logs, process registries, and locks are excluded from Roadrunner's internal cleanliness checks.
+The runner requires a clean git worktree before starting and holds `.roadrunner/roadmap.lock` for the duration of the run. Runtime files such as logs, process registries, and locks are excluded from Roadrunner's internal cleanliness checks.
+
+Provider runs default to `ROADRUNNER_PROVIDER_TIMEOUT_MS=1800000` and verification commands default to `ROADRUNNER_VERIFY_TIMEOUT_MS=600000`. Set either variable to `0` to disable that timeout. `--max-hours` caps provider and verification timeouts for the current step.
+
+Verification commands are expected to be read-only. If verification mutates tracked or untracked project files, Roadrunner blocks the step, restores the worktree, and records the diff under `.roadrunner/logs/`.
 
 ### `cleanup`
 
@@ -178,7 +182,7 @@ Verification:
 Commit: Add first feature
 ```
 
-Supported heading forms are `## step-id: Title`, `## step-id - Title`, and `## [step-id] Title`. Supported fields are `Phase`, `Scope`, `Prompt`, `Acceptance`, `Verification`, `Commit`, and `Commit Message`.
+Supported heading forms are `## step-id: Title`, `## step-id - Title`, and `## [step-id] Title`; heading levels `##` through `######` are accepted. Supported fields are `Phase`, `Scope`, `Prompt`, `Acceptance`, `Verification`, `Commit`, and `Commit Message`.
 
 During development in this repo:
 
@@ -242,6 +246,8 @@ npm run ai:check
 - The reconciler may only edit the configured queue file, defaulting to `.roadrunner/queue.json`.
 - Cleanup only targets subprocesses registered by Roadrunner itself.
 - Nested OpenCode is rejected by default.
+- Concurrent `run` processes are rejected by the configured lock file.
+- Provider prompts are passed through prompt files, not process argv.
 
 ## Provider
 

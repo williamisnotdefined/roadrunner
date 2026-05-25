@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { createWriteStream, type WriteStream } from "node:fs";
-import { mkdir } from "node:fs/promises";
+import { chmod, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { defaultModel, defaultVariant, type ProjectContext } from "../config.js";
@@ -31,6 +31,8 @@ export interface ProviderRunResult {
 }
 
 const nestedOpenCodeEnvKeys = ["OPENCODE_SESSION", "OPENCODE_SESSION_ID", "OPENCODE_SERVER", "OPENCODE_WORKSPACE", "OPENCODE_APP_INFO"];
+const defaultProviderTimeoutMs = 30 * 60 * 1000;
+const promptMessage = "Follow the attached Roadrunner prompt file exactly.";
 
 export class OpenCodeProvider {
   readonly model: string;
@@ -42,103 +44,111 @@ export class OpenCodeProvider {
   }
 
   async run({ agent, context, env = {}, logPath, onStart, prompt, role, skipPermissions = true }: ProviderRunInput): Promise<ProviderRunResult> {
-    const nestedIndicator = nestedOpenCodeIndicator(process.env);
+    const childEnv: NodeJS.ProcessEnv = { ...process.env, ...env, OPENCODE_MODEL: this.model, OPENCODE_VARIANT: this.variant };
+    const nestedIndicator = nestedOpenCodeIndicator(childEnv);
     if (nestedIndicator && !context.config.allowNestedOpenCode) {
       throw new Error(`Refusing to launch nested OpenCode session (${nestedIndicator} is set). Set allowNestedOpenCode: true to override.`);
     }
 
+    if (!context.config.allowNestedOpenCode) for (const key of nestedOpenCodeEnvKeys) delete childEnv[key];
+
     await mkdir(path.dirname(logPath), { recursive: true });
-    const logStream = createWriteStream(logPath, { flags: "w" });
-    const childEnv: NodeJS.ProcessEnv = { ...process.env, ...env, OPENCODE_MODEL: this.model, OPENCODE_VARIANT: this.variant };
+    const promptFilePath = await writePromptFile(logPath, prompt);
+    const logStream = createWriteStream(logPath, { flags: "w", mode: 0o600 });
+    logStream.on("error", Function.prototype as (error: Error) => void);
     const debug = childEnv.ROADRUNNER_OPENCODE_DEBUG === "1";
-    const timeoutMs = Number(childEnv.ROADRUNNER_PROVIDER_TIMEOUT_MS ?? 0);
-    const args = ["run", "--model", this.model, "--variant", this.variant, "--agent", agent];
+    const timeoutMs = providerTimeoutMs(childEnv.ROADRUNNER_PROVIDER_TIMEOUT_MS);
+    const args = ["run", "--model", this.model, "--variant", this.variant, "--agent", agent, promptMessage, "--file", promptFilePath];
 
     if (debug) args.push("--print-logs", "--log-level", "DEBUG");
 
     if (skipPermissions) args.push("--dangerously-skip-permissions");
-    args.push(prompt);
-
-    for (const key of nestedOpenCodeEnvKeys) delete childEnv[key];
 
     const child = spawn("opencode", args, {
       cwd: context.root,
       detached: true,
       env: childEnv,
+      stdio: ["ignore", "pipe", "pipe"],
     });
 
     let output = "";
-    let registeredPid: number | null = null;
+    let registeredPid: number | null = child.pid ?? null;
+    let registrationFailed = false;
     let timedOut = false;
     let timeout: NodeJS.Timeout | undefined;
     let killTimeout: NodeJS.Timeout | undefined;
-    const command = ["opencode", ...args.slice(0, -1), "<prompt>"];
+    let settled = false;
+    const command = ["opencode", ...args.map((argument) => (argument === promptFilePath ? "<prompt-file>" : argument))];
+
+    const appendOutput = (text: string) => {
+      writeProviderOutput(logStream, text, (value) => {
+        output += value;
+      });
+    };
+
+    const registrationDone = child.pid
+      ? registerProcess(
+          {
+            command,
+            cwd: context.root,
+            pid: child.pid,
+            role,
+          },
+          context,
+        ).catch((error: Error) => {
+          registeredPid = null;
+          /* v8 ignore next -- close can win the race before registration fails. */
+          if (settled) return;
+          registrationFailed = true;
+          appendOutput(`Failed to register provider process: ${error.message}\n`);
+          signalChildProcessGroup(child.pid, "SIGTERM");
+          killTimeout = setTimeout(signalChildProcessGroup, 5_000, child.pid, "SIGKILL");
+        })
+      : Promise.resolve();
 
     onStart?.({ command, debug, logPath, pid: child.pid ?? null, role });
-
-    if (child.pid) {
-      await registerProcess(
-        {
-          command,
-          cwd: context.root,
-          pid: child.pid,
-          role,
-        },
-        context,
-      );
-      registeredPid = child.pid;
-    }
 
     if (timeoutMs > 0) {
       timeout = setTimeout(() => {
         timedOut = true;
         const message = `Provider timed out after ${timeoutMs} ms. Sending SIGTERM.\n`;
-        writeProviderOutput(logStream, message, (value) => {
-          output += value;
-        });
+        appendOutput(message);
         process.stderr.write(message);
         signalChildProcessGroup(child.pid, "SIGTERM");
-        /* v8 ignore next 5 -- SIGKILL fallback only runs when a provider ignores SIGTERM. */
-        killTimeout = setTimeout(() => {
-          writeProviderOutput(logStream, "Provider did not exit after SIGTERM. Sending SIGKILL.\n", (value) => {
-            output += value;
-          });
-          signalChildProcessGroup(child.pid, "SIGKILL");
-        }, 5_000);
+        killTimeout = setTimeout(signalChildProcessGroup, 5_000, child.pid, "SIGKILL");
       }, timeoutMs);
     }
 
     child.stdout.on("data", (chunk: Buffer) => {
       const text = chunk.toString();
-      writeProviderOutput(logStream, text, (value) => {
-        output += value;
-      });
+      appendOutput(text);
       process.stdout.write(text);
     });
     child.stderr.on("data", (chunk: Buffer) => {
       const text = chunk.toString();
-      writeProviderOutput(logStream, text, (value) => {
-        output += value;
-      });
+      appendOutput(text);
       process.stderr.write(text);
     });
 
     return new Promise((resolve) => {
       const onClose = async (code: number | null) => {
+        /* v8 ignore next -- close is detached before the spawn error handler resolves. */
+        if (settled) return;
+        settled = true;
         clearTimeout(timeout);
         clearTimeout(killTimeout);
+        await registrationDone;
         await unregisterRegisteredProcess(registeredPid, context);
         await closeLogStream(logStream);
-        resolve({ code: timedOut ? 124 : code, output });
+        resolve({ code: registrationFailed ? 1 : timedOut ? 124 : code, output });
       };
 
       child.on("error", async (error: Error) => {
         child.off("close", onClose);
         clearTimeout(timeout);
         clearTimeout(killTimeout);
-        writeProviderOutput(logStream, `${error.message}\n`, (value) => {
-          output += value;
-        });
+        appendOutput(`${error.message}\n`);
+        await registrationDone;
         await unregisterRegisteredProcess(registeredPid, context);
         await closeLogStream(logStream);
         resolve({ code: 1, output });
@@ -148,9 +158,29 @@ export class OpenCodeProvider {
   }
 }
 
+async function writePromptFile(logPath: string, prompt: string): Promise<string> {
+  const promptFilePath = path.join(path.dirname(logPath), `${path.basename(logPath, path.extname(logPath))}.prompt-input.md`);
+  await writeFile(promptFilePath, prompt, { mode: 0o600 });
+  await chmod(promptFilePath, 0o600);
+  return promptFilePath;
+}
+
+function providerTimeoutMs(value: string | undefined): number {
+  if (value === undefined) return defaultProviderTimeoutMs;
+  const timeoutMs = Number(value);
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 0) throw new Error(`ROADRUNNER_PROVIDER_TIMEOUT_MS must be a non-negative integer, got ${value}.`);
+  return timeoutMs;
+}
+
 function writeProviderOutput(logStream: WriteStream, text: string, appendOutput: (text: string) => void): void {
   appendOutput(text);
-  logStream.write(text);
+  /* v8 ignore start -- stream write failures depend on filesystem errors during provider execution. */
+  try {
+    if (!logStream.destroyed) logStream.write(text);
+  } catch {
+    /* Logging is best-effort once the provider is already running. */
+  }
+  /* v8 ignore stop */
 }
 
 async function unregisterRegisteredProcess(pid: number | null, context: ProjectContext): Promise<void> {
@@ -162,17 +192,18 @@ function signalChildProcessGroup(pid: number | undefined, signal: NodeJS.Signals
   if (!pid) return;
 
   try {
-    process.kill(-pid, signal);
+    /* v8 ignore next -- Windows process-tree signaling is covered by platform branching at runtime. */
+    process.kill(process.platform === "win32" ? pid : -pid, signal);
   } catch {
     /* Best effort: timeout cleanup is also covered by the process registry cleanup command. */
   }
 }
 
 function closeLogStream(logStream: WriteStream): Promise<void> {
-  return new Promise((resolve, reject) => {
-    logStream.once("error", reject);
+  return new Promise((resolve) => {
+    logStream.once("error", resolve);
     logStream.end(() => {
-      logStream.off("error", reject);
+      logStream.off("error", resolve);
       resolve();
     });
   });

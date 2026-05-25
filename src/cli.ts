@@ -65,6 +65,7 @@ export async function main(argv = process.argv.slice(2), { cwd = process.cwd(), 
       out(formatCliStep("Planning next queued step"));
       const result = await plan(context, { onProviderStart: (event) => out(formatProviderStartEvent(event)) });
       if (!result) out(formatCliInfo("No queued step."));
+      else if (result.result.code !== 0) throw new Error(`Planning failed for ${result.step.id} (exit ${String(result.result.code)}). See ${path.join(result.logDir, "plan.opencode.log")}.`);
       else out(formatCliSuccess(`Plan written to ${result.logDir}`));
     } else if (command === "run") {
       out(formatCliStep("Running Roadrunner"));

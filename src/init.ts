@@ -1,4 +1,4 @@
-import { cp, mkdir, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { defaultModel, defaultVariant, packageRoot, pathExists, type ProjectContext, writeJson } from "./config.js";
@@ -38,9 +38,52 @@ export async function initProject(context: ProjectContext): Promise<void> {
   }
 
   await cp(path.join(templateRoot, "prompts"), context.paths.prompts, { force: false, recursive: true });
-  const runtimeGitignore = path.join(path.dirname(context.paths.config), ".gitignore");
-  if (!(await pathExists(runtimeGitignore))) await writeFile(runtimeGitignore, "logs/\nprocesses.json\nroadmap.lock\n");
+  await ensureRuntimeGitignore(context);
   await writeFile(path.join(path.dirname(context.paths.config), "README.md"), "Roadrunner runtime state. Logs, locks, and process registries are local artifacts.\n");
+}
+
+async function ensureRuntimeGitignore(context: ProjectContext): Promise<void> {
+  const configDir = path.dirname(context.paths.config);
+  const runtimePaths = [
+    { directory: true, path: context.paths.logs },
+    { directory: false, path: context.paths.processRegistry },
+    { directory: false, path: context.paths.lock },
+  ];
+  const configEntries = runtimePaths.flatMap((runtimePath) => gitignoreEntry(configDir, runtimePath.path, runtimePath.directory) ?? []);
+  await upsertGitignoreBlock(path.join(configDir, ".gitignore"), configEntries);
+
+  const outsideConfigDir = runtimePaths.some((runtimePath) => !isInside(configDir, runtimePath.path));
+  if (outsideConfigDir) {
+    /* v8 ignore next -- branch accounting varies with platform path normalization. */
+    const rootEntries = runtimePaths.flatMap((runtimePath) => gitignoreEntry(context.root, runtimePath.path, runtimePath.directory) ?? []);
+    await upsertGitignoreBlock(path.join(context.root, ".gitignore"), rootEntries);
+  }
+}
+
+async function upsertGitignoreBlock(filePath: string, entries: string[]): Promise<void> {
+  if (entries.length === 0) return;
+  const blockStart = "# Roadrunner runtime";
+  const blockEnd = "# End Roadrunner runtime";
+  const block = `${blockStart}\n${[...new Set(entries)].join("\n")}\n${blockEnd}\n`;
+  const current = (await pathExists(filePath)) ? await readFile(filePath, "utf8") : "";
+  const pattern = new RegExp(`${escapeRegExp(blockStart)}\\n[\\s\\S]*?${escapeRegExp(blockEnd)}\\n?`);
+  const next = pattern.test(current) ? current.replace(pattern, block) : `${current}${current.length > 0 && !current.endsWith("\n") ? "\n" : ""}${current.length > 0 ? "\n" : ""}${block}`;
+  await writeFile(filePath, next);
+}
+
+function gitignoreEntry(baseDir: string, filePath: string, directory: boolean): string | null {
+  const relative = path.relative(baseDir, filePath).split(path.sep).join(path.posix.sep);
+  if (relative.length === 0 || relative.startsWith("../") || path.isAbsolute(relative)) return null;
+  return directory ? `${relative.replace(/\/$/, "")}/` : relative;
+}
+
+function isInside(parent: string, child: string): boolean {
+  const relative = path.relative(parent, child);
+  return relative.length > 0 && !relative.startsWith("..") && !path.isAbsolute(relative);
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function relativeToRoot(context: ProjectContext, filePath: string): string {

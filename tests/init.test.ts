@@ -39,6 +39,24 @@ describe("init", () => {
     }
   });
 
+  test("initProject ignores customized runtime paths", async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "roadrunner-init-runtime-ignore-"));
+    try {
+      const context = await loadContext(tempDir, { _: [], lock: "state/road.lock", logs: "custom-logs", processes: "state/processes.json" });
+      await writeFile(path.join(tempDir, ".gitignore"), "existing-ignore");
+
+      await initProject(context);
+
+      const gitignore = await readFile(path.join(tempDir, ".gitignore"), "utf8");
+      expect(gitignore).toMatch(/existing-ignore/);
+      expect(gitignore).toMatch(/custom-logs\//);
+      expect(gitignore).toMatch(/state\/processes\.json/);
+      expect(gitignore).toMatch(/state\/road\.lock/);
+    } finally {
+      await rm(tempDir, { force: true, recursive: true });
+    }
+  });
+
   test("initProject imports roadmap when available", async () => {
     const tempDir = await mkdtemp(path.join(os.tmpdir(), "roadrunner-init-roadmap-"));
     try {

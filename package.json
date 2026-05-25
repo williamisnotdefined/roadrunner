@@ -10,11 +10,12 @@
     "ai:check": "tsx scripts/ai/sync-routes.ts --check",
     "ai:sync": "tsx scripts/ai/sync-routes.ts",
     "build": "tsc -p tsconfig.json",
-    "check": "npm run lint && npm run typecheck && npm run coverage && npm run build",
+    "check": "npm run lint && npm run typecheck && npm run coverage && npm run build && npm run smoke:dist",
     "coverage": "vitest run --coverage",
     "e2e:real": "tsx scripts/e2e-real.ts",
     "format": "npm run ai:sync && biome format --write .",
     "lint": "biome lint . && npm run ai:check",
+    "smoke:dist": "node dist/src/cli.js help",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
