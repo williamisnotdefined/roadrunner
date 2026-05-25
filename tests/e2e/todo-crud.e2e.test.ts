@@ -5,6 +5,7 @@ import { afterEach, describe, expect, test } from "vitest";
 import { main } from "../../src/cli.js";
 import { readJson, writeJson } from "../../src/config.js";
 import type { QueueFile } from "../../src/queue.js";
+import { run as runRoadrunner } from "../../src/runner.js";
 import { commitAll, createFakeOpenCodeBin, initGit, run, withPath } from "../helpers.js";
 
 const outputRoot = path.resolve("test-output/e2e/todo-crud");
@@ -60,7 +61,13 @@ Verification:
     await initGit(outputRoot);
     await commitAll(outputRoot, "Initial Todo CRUD target");
 
-    expect(await main(["run", "--max-steps", "1"], { cwd: outputRoot })).toBe(0);
+    expect(
+      await main(["run", "--max-steps", "1"], {
+        cwd: outputRoot,
+        runTui: (context, options) => runRoadrunner(context, { maxHours: options.maxHours, maxSteps: options.maxSteps }),
+        terminal: { isInteractive: true },
+      }),
+    ).toBe(0);
 
     const queue = await readJson<QueueFile>(path.join(outputRoot, ".roadrunner/queue.json"));
     const testResult = await run("npm", ["test"], outputRoot);

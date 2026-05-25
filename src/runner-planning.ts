@@ -13,6 +13,7 @@ export interface PlanOptions {
   onOutput?: () => void;
   onProviderStart?: (event: ProviderStartEvent) => void;
   signal?: AbortSignal;
+  streamProviderOutput?: boolean;
 }
 
 export interface PlanStepResult {
@@ -30,7 +31,7 @@ export async function planStep(context: ProjectContext, step: QueueStep, snapsho
   });
 
   await writePrivateFile(path.join(logDir, "plan.prompt.md"), prompt);
-  const beforePlanFingerprint = await projectMutationFingerprint(context);
+  const beforePlanFingerprint = await projectMutationFingerprint(context, { includeIgnoredFiles: true });
   let result = await providerFor(context).run({
     agent: "plan",
     context,
@@ -42,9 +43,10 @@ export async function planStep(context: ProjectContext, step: QueueStep, snapsho
     role: "plan",
     signal: options.signal,
     skipPermissions: false,
+    streamOutput: options.streamProviderOutput,
   });
 
-  const afterPlanFingerprint = await projectMutationFingerprint(context);
+  const afterPlanFingerprint = await projectMutationFingerprint(context, { includeIgnoredFiles: true });
   if (beforePlanFingerprint !== null && afterPlanFingerprint !== null && beforePlanFingerprint !== afterPlanFingerprint) {
     const message = "Planning modified project files. Planning agents must be read-only.";
     result = { code: result.code === 0 ? 1 : result.code, output: `${result.output}${result.output.endsWith("\n") ? "" : "\n"}${message}\n` };

@@ -50,7 +50,7 @@ describe("runner restart control", () => {
     expect(events[0]).toMatchObject({ phase: "implement", step: sampleStep, type: "task-restart-requested" });
   });
 
-  test("restarts instead of blocking when requested during reconciliation", async () => {
+  test("does not restart a completed task during post-step reconciliation", async () => {
     const project = await setupRunnerProject("success");
     const events: string[] = [];
     let control: RoadrunnerRunControl | null = null;
@@ -67,7 +67,7 @@ describe("runner restart control", () => {
           events.push(event.type);
           if (event.type === "provider-start" && event.role === "reconcile" && !restartRequested) {
             restartRequested = true;
-            if (!control?.restartCurrentTask()) throw new Error("Expected active task restart control.");
+            if (control?.restartCurrentTask() !== false) throw new Error("Expected completed task restart to be unavailable.");
           }
         },
       });
@@ -75,8 +75,8 @@ describe("runner restart control", () => {
 
       expect(completed).toBe(1);
       expect(restartRequested).toBe(true);
-      expect(events).toContain("task-restart-requested");
-      expect(events).toContain("task-restart");
+      expect(events).not.toContain("task-restart-requested");
+      expect(events).not.toContain("task-restart");
       expect(queue.history.map((step) => step.id)).toEqual(["first-step"]);
       expect(queue.blocked).toEqual([]);
     } finally {
@@ -99,6 +99,22 @@ describe("runner restart control", () => {
       expect(events).toContainEqual(expect.objectContaining({ attempt: 2, step: expect.objectContaining({ id: "first-step" }), type: "task-restart" }));
       expect(queue.history.map((step) => step.id)).toEqual(["first-step"]);
       expect(queue.blocked).toEqual([]);
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
+  test("blocks instead of retrying with stale queue after a restarted attempt mutates queue", async () => {
+    const project = await setupRunnerProject("queue-dirty-hang");
+    process.env.ROADRUNNER_AUTO_RESTART_IDLE_MS = "500";
+    process.env.ROADRUNNER_MAX_AUTO_RESTARTS_PER_STEP = "2";
+    process.env.ROADRUNNER_PROVIDER_TIMEOUT_MS = "0";
+
+    try {
+      await expect(runRoadrunner(project.context, { maxSteps: 1 })).rejects.toThrow(/queue changed before retrying/);
+      const queue = await readJson<QueueFile>(project.context.paths.queue);
+
+      expect(queue.blocked[0]).toMatchObject({ blockedReason: "Roadrunner queue changed before retrying first-step.", id: "first-step", title: "Build first step" });
     } finally {
       await removeDir(project.directory);
     }

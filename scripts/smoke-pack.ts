@@ -5,7 +5,7 @@ import { readFile } from "node:fs/promises";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
-const requiredFiles = ["README.md", "dist/src/cli.js", "package.json", "templates/GOALS.md", "templates/prompts/plan-step.md", "templates/queue.json"];
+const requiredFiles = ["README.md", "dist/src/cli.js", "package.json", "templates/GOALS.md", "templates/prompts/plan-step.md", "templates/prompts/startup-refresh.md", "templates/queue.json"];
 
 try {
   const packageJson = JSON.parse(await readFile("package.json", "utf8")) as { bin?: Record<string, string> };

@@ -1,5 +1,5 @@
 ---
-applyTo: "src/runner.ts,src/queue.ts,src/process-registry.ts,templates/prompts/*.md"
+applyTo: "src/runner*.ts,src/queue.ts,src/process-registry.ts,templates/prompts/*.md"
 ---
 
 Generated from `ai/registry.json`. Do not edit manually.
@@ -20,8 +20,10 @@ Use this skill when changing Roadrunner autonomous roadmap runs, plan-execute-ve
 ## Workflow
 
 - Keep `queue[0]` as the only current task.
+- Keep run startup as a hard operational reset that rebuilds the queue from roadmap and repository state.
 - Keep planning mandatory before implementation.
-- Keep reconciliation mandatory and focused on optimizing future queue items, not source edits.
+- Mark verified tasks done before post-step reconciliation.
+- Keep reconciliation mandatory and focused on optimizing open queue items, not source edits.
 - Keep automatic idle restarts bounded and routed through Roadrunner-owned cleanup.
 - Keep the run-start goals snapshot immutable.
 - Keep cleanup constrained to Roadrunner-owned subprocesses.
@@ -35,18 +37,22 @@ Use this skill when changing Roadrunner autonomous roadmap runs, plan-execute-ve
 
 ## Always
 
-- Follow `Plan -> Execute -> Verify -> Reconcile/Optimize`.
+- Follow `Startup Queue Refresh -> Plan -> Execute -> Verify -> Mark Done -> Reconcile/Optimize`.
+- Treat `.roadrunner/queue.json` as a generated operational artifact at run start.
+- Rebuild stale or missing run queues from `GOALS.md`, the configured roadmap file, and current repository state.
 - Treat `queue[0]` as the current task.
-- Preserve `history` and `blocked` records.
-- Let reconciliation optimize only future queue items, such as grouping microtasks, splitting oversized tasks, reordering dependencies, and adding or removing obsolete future work.
+- Mark verified work done before reconciliation.
+- Preserve `history` and `blocked` records during post-step reconciliation.
+- Let reconciliation optimize open queue items, such as grouping microtasks, splitting oversized tasks, reordering dependencies, and adding or removing obsolete future work.
 - Automatically restart an idle current task attempt from planning when provider or verification activity stalls beyond the configured idle threshold.
 - Treat the run's loaded goals snapshot as immutable.
 - Stop on persistent blockers.
 
 ## Never
 
-- Do not rewrite history during reconciliation.
-- Do not let reconciliation edit source files or the current `queue[0]` item.
+- Do not trust stale queue state at run start.
+- Do not rewrite history during post-step reconciliation.
+- Do not let startup refresh or reconciliation edit source files.
 - Do not bypass verification.
 - Do not reread `GOALS.md` mid-run.
 
@@ -71,23 +77,25 @@ Use this skill when changing Roadrunner autonomous roadmap runs, plan-execute-ve
 
 # Roadmap Loop
 
-Roadrunner executes a queue of deliverable tasks. Each task follows:
+Roadrunner executes a queue of deliverable tasks. Each run starts by hard-resetting the operational queue from the roadmap and current repository state:
 
 ```txt
-Plan -> Execute -> Verify -> Reconcile/Optimize
+Startup Queue Refresh -> Plan -> Execute -> Verify -> Mark Done -> Reconcile/Optimize
 ```
 
-The queue lives in the configured queue file, defaulting to `.roadrunner/queue.json` in the target project. It contains `version`, `model`, `variant`, `queue`, `history`, and `blocked`. The first queued item is the only current task.
+The queue lives in the configured queue file, defaulting to `.roadrunner/queue.json` in the target project. It contains `version`, `model`, `variant`, `queue`, `history`, and `blocked`. The first queued item is the only current task during implementation attempts.
 
-`GOALS.md` is loaded once at the start of a run and used as an immutable in-memory goal snapshot for all prompts in that run. `ROADMAP.md` is read only by `init` and `import-roadmap`; after import, the queue file is the live task state.
+`GOALS.md` is loaded once at the start of a run and used as an immutable in-memory goal snapshot for all prompts in that run. The configured roadmap file is also read at run start. `.roadrunner/queue.json` is treated as a generated operational artifact for the current run, not as durable source of truth.
 
-Roadmaps may be imported from Markdown into the queue. Import preserves existing `history` and `blocked` records and only queues steps that have not already been closed.
+Startup queue refresh overwrites stale or missing queue state, seeds from operational roadmap Markdown when possible, and then asks the provider to audit the current repository state. It may move already satisfied roadmap work to `history`, keep relevant work in `queue`, put still-relevant blockers in `blocked`, and drop obsolete or superseded work. It may only mutate the configured queue file.
 
-Reconciliation always runs after a verified step. It may optimize future `queue[1..]` items by grouping microtasks, splitting oversized tasks, reordering dependencies, adding discovered future work, and removing obsolete work. It must preserve `version`, `model`, `variant`, `history`, `blocked`, and the current `queue[0]` item exactly, and it may only mutate the configured queue file.
+Roadmaps may still be imported manually from Markdown into the queue with `import-roadmap`, but autonomous `run` does not depend on pre-imported queue state.
+
+After verification passes, Roadrunner marks the current step done before reconciliation. Reconciliation then optimizes open `queue` items by grouping microtasks, splitting oversized tasks, reordering dependencies, adding discovered future work, and removing obsolete work. It must preserve `version`, `model`, `variant`, `history`, and `blocked`, and it may only mutate the configured queue file.
 
 Roadrunner does not require a clean git worktree, does not restore file changes, and does not create commits. Failures update the queue state by blocking the current step when possible.
 
-Interactive runs may accept a `rstask` control command. It aborts the active Roadrunner-owned subprocess, cleans registered Roadrunner subprocesses, and retries the current `queue[0]` task from planning. Restarting a task does not reset project files, rewrite history, or skip verification.
+Interactive `run` executions open a terminal dashboard with task navigation, log viewing, session debug logs, and a restart action for the current task. Restarting aborts the active Roadrunner-owned subprocess, cleans registered Roadrunner subprocesses, and retries the current `queue[0]` task from planning. Restarting a task does not reset project files, rewrite history, or skip verification. Once a verified task is marked done, post-step reconciliation cannot restart that completed task.
 
 Provider and verification activity is watched for idle stalls. By default, a task attempt that produces no activity for ten minutes is aborted and restarted from planning. Automatic restarts are limited per step, defaulting to three, after which Roadrunner blocks the current task with a clear idle-restart reason. `ROADRUNNER_AUTO_RESTART_IDLE_MS` and `ROADRUNNER_MAX_AUTO_RESTARTS_PER_STEP` override the defaults; `0` disables the automatic restart path.
 

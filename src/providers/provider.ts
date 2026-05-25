@@ -11,6 +11,7 @@ export interface ProviderRunInput {
   role: string;
   signal?: AbortSignal;
   skipPermissions?: boolean;
+  streamOutput?: boolean;
 }
 
 export interface ProviderStartEvent {

@@ -1,12 +1,13 @@
 import { execFile, spawn } from "node:child_process";
-import { createWriteStream, type WriteStream } from "node:fs";
+import type { WriteStream } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 
 import { defaultModel, defaultVariant, type ProjectContext } from "../config.js";
 import { registerProcess, unregisterProcess } from "../process-registry.js";
-import { writePrivateFile } from "../run-artifacts.js";
+import { processTreeExists, signalProcessTree } from "../process-tree.js";
+import { createPrivateWriteStream, writePrivateFile } from "../run-artifacts.js";
 import { openCodeCheckTimeoutMs, providerTimeoutMs } from "../timeouts.js";
 import type { Provider, ProviderRunInput, ProviderRunResult } from "./provider.js";
 
@@ -25,7 +26,7 @@ export class OpenCodeProvider implements Provider {
     this.variant = variant;
   }
 
-  async run({ agent, context, env = {}, logPath, onOutput, onStart, prompt, role, signal, skipPermissions = false }: ProviderRunInput): Promise<ProviderRunResult> {
+  async run({ agent, context, env = {}, logPath, onOutput, onStart, prompt, role, signal, skipPermissions = false, streamOutput = true }: ProviderRunInput): Promise<ProviderRunResult> {
     const childEnv: NodeJS.ProcessEnv = { ...process.env, ...env, OPENCODE_MODEL: this.model, OPENCODE_VARIANT: this.variant };
     const nestedIndicator = nestedOpenCodeIndicator(childEnv);
     if (nestedIndicator && !context.config.allowNestedOpenCode) {
@@ -36,7 +37,7 @@ export class OpenCodeProvider implements Provider {
 
     await mkdir(path.dirname(logPath), { recursive: true });
     const promptFilePath = await writePromptFile(logPath, prompt);
-    const logStream = createWriteStream(logPath, { flags: "w", mode: 0o600 });
+    const logStream = await createPrivateWriteStream(logPath);
     logStream.on("error", Function.prototype as (error: Error) => void);
     const debug = childEnv.ROADRUNNER_OPENCODE_DEBUG === "1";
     const timeoutMs = providerTimeoutMs(childEnv.ROADRUNNER_PROVIDER_TIMEOUT_MS);
@@ -73,8 +74,8 @@ export class OpenCodeProvider implements Provider {
     const terminateChild = (message: string) => {
       if (forceKillDone) return;
       appendOutput(message);
-      process.stderr.write(message);
-      signalChildProcessGroup(child.pid, "SIGTERM");
+      if (streamOutput) process.stderr.write(message);
+      signalProviderProcessTree(child.pid, "SIGTERM");
       ({ done: forceKillDone, timeout: killTimeout } = scheduleChildProcessGroupKill(child.pid));
     };
 
@@ -118,13 +119,13 @@ export class OpenCodeProvider implements Provider {
       const text = chunk.toString();
       onOutput?.();
       appendOutput(text);
-      process.stdout.write(text);
+      if (streamOutput) process.stdout.write(text);
     });
     child.stderr.on("data", (chunk: Buffer) => {
       const text = chunk.toString();
       onOutput?.();
       appendOutput(text);
-      process.stderr.write(text);
+      if (streamOutput) process.stderr.write(text);
     });
 
     return new Promise((resolve) => {
@@ -193,24 +194,11 @@ async function unregisterRegisteredProcess(pid: number | null, context: ProjectC
   if (pid !== null) await unregisterProcess(pid, context);
 }
 
-function signalChildProcessGroup(pid: number | undefined, signal: NodeJS.Signals): void {
-  /* v8 ignore next -- spawned provider processes have a pid before timeout signaling. */
-  if (!pid) return;
-
-  try {
-    process.kill(process.platform === "win32" ? pid : -pid, signal);
-  } catch {
-    /* v8 ignore start -- process may exit between timeout scheduling and signaling. */
-    /* Best effort: timeout cleanup is also covered by the process registry cleanup command. */
-    /* v8 ignore stop */
-  }
-}
-
 function scheduleChildProcessGroupKill(pid: number | undefined): { done: Promise<void>; timeout: NodeJS.Timeout } {
   let timeout: NodeJS.Timeout;
   const done = new Promise<void>((resolve) => {
     timeout = setTimeout(() => {
-      signalChildProcessGroup(pid, "SIGKILL");
+      signalProviderProcessTree(pid, "SIGKILL");
       resolve();
     }, forceKillDelayMs);
   });
@@ -220,7 +208,7 @@ function scheduleChildProcessGroupKill(pid: number | undefined): { done: Promise
 
 /* v8 ignore start -- timeout cleanup timing is covered by black-box provider timeout tests. */
 async function finishScheduledChildProcessGroupKill(pid: number | undefined, forceKillDone: Promise<void> | undefined, killTimeout: NodeJS.Timeout | undefined): Promise<void> {
-  if (forceKillDone && childProcessGroupExists(pid)) {
+  if (forceKillDone && processTreeExists(pid)) {
     await forceKillDone;
     return;
   }
@@ -228,20 +216,15 @@ async function finishScheduledChildProcessGroupKill(pid: number | undefined, for
   clearTimeout(killTimeout);
 }
 
-function childProcessGroupExists(pid: number | undefined): boolean {
-  if (!pid) return false;
+/* v8 ignore stop */
 
+function signalProviderProcessTree(pid: number | undefined, signal: NodeJS.Signals): void {
   try {
-    process.kill(process.platform === "win32" ? pid : -pid, 0);
-    return true;
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code === "ESRCH") return false;
-    if (code === "EPERM") return true;
-    throw error;
+    signalProcessTree(pid, signal);
+  } catch {
+    /* Best effort: timeout cleanup is also covered by the process registry cleanup command. */
   }
 }
-/* v8 ignore stop */
 
 function closeLogStream(logStream: WriteStream): Promise<void> {
   return new Promise((resolve) => {

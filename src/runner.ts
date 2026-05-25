@@ -7,6 +7,8 @@ import { validateConfiguredProvider, type ProviderStartEvent } from "./providers
 import { readRunSnapshot } from "./run-snapshot.js";
 import { planStep, type PlanOptions } from "./runner-planning.js";
 import { createRunControl, runStepWithRestarts, type RunControlState } from "./runner-execution.js";
+import { reconcileQueue } from "./runner-reconciliation.js";
+import { refreshQueueAtRunStart } from "./runner-startup.js";
 
 export type { PlanOptions } from "./runner-planning.js";
 export { verify } from "./runner-verification.js";
@@ -24,6 +26,7 @@ export interface RunOptions {
   onActivity?: (event: RoadrunnerRunActivityEvent) => void;
   onControl?: (control: RoadrunnerRunControl) => void;
   onEvent?: (event: RoadrunnerRunEvent) => void;
+  streamProviderOutput?: boolean;
 }
 
 export type RoadrunnerRunPhase = "plan" | "implement" | "verify" | "fix" | "verify-fixed" | "reconcile";
@@ -46,6 +49,7 @@ export type RoadrunnerRunEvent =
   | { step: QueueStep; type: "reconcile" }
   | { step: QueueStep; type: "step" }
   | { step: QueueStep; type: "step-complete" }
+  | { type: "startup-refresh" }
   | { idleMs: number; maxRestarts: number; phase: RoadrunnerRunPhase | null; restart: number; step: QueueStep; type: "task-auto-restart-requested" }
   | { idleMs: number; maxRestarts: number; phase: RoadrunnerRunPhase | null; step: QueueStep; type: "task-auto-restart-limit-exceeded" }
   | { attempt: number; step: QueueStep; type: "task-restart" }
@@ -68,17 +72,22 @@ export async function plan(
   context: ProjectContext,
   options: PlanOptions = {},
 ): Promise<{ logDir: string; result: { code: number | null; output: string }; step: QueueStep } | null> {
-  const snapshot = await readRunSnapshot(context);
-  const queueFile = await readValidatedQueue(context);
-  const step = nextStep(queueFile);
-  if (!step) return null;
-  await ensureProviderAvailable(context);
+  const releaseLock = await acquireProjectLock(context, "Roadrunner plan");
+  try {
+    const snapshot = await readRunSnapshot(context);
+    const queueFile = await readValidatedQueue(context);
+    const step = nextStep(queueFile);
+    if (!step) return null;
+    await ensureProviderAvailable(context);
 
-  return planStep(context, step, snapshot, options);
+    return planStep(context, step, snapshot, options);
+  } finally {
+    await releaseLock();
+  }
 }
 
 export async function run(context: ProjectContext, options: RunOptions = {}): Promise<number> {
-  const { maxHours, maxSteps = 1 } = options;
+  const { maxHours, maxSteps = 1, streamProviderOutput = false } = options;
   const releaseLock = await acquireProjectLock(context);
   const controlState: RunControlState = { current: null };
   options.onControl?.(createRunControl(controlState, (event) => emitRunEvent(options, event)));
@@ -86,14 +95,22 @@ export async function run(context: ProjectContext, options: RunOptions = {}): Pr
   try {
     emitRunEvent(options, { type: "validate" });
     const snapshot = await readRunSnapshot(context);
-    await validateProject(context);
+    const deadline = maxHours === undefined ? null : Date.now() + maxHours * 60 * 60 * 1000;
     let completed = 0;
     let completedResult: number | undefined;
-    const deadline = maxHours === undefined ? null : Date.now() + maxHours * 60 * 60 * 1000;
 
     let primaryError: unknown;
     let cleanupError: unknown;
     try {
+      if (deadline !== null && Date.now() >= deadline) {
+        completedResult = 0;
+      } else {
+        await cleanupProcesses(context, { force: true });
+        await ensureProviderAvailable(context);
+        await refreshQueueAtRunStart(context, snapshot, { deadline, streamProviderOutput });
+        emitRunEvent(options, { type: "startup-refresh" });
+      }
+
       while (completed < maxSteps) {
         if (deadline !== null && Date.now() >= deadline) {
           completedResult = completed;
@@ -109,7 +126,7 @@ export async function run(context: ProjectContext, options: RunOptions = {}): Pr
         await ensureProviderAvailable(context);
 
         emitRunEvent(options, { step, type: "step" });
-        await runStepWithRestarts({
+        const stepResult = await runStepWithRestarts({
           context,
           controlState,
           deadline,
@@ -118,8 +135,16 @@ export async function run(context: ProjectContext, options: RunOptions = {}): Pr
           queueFile,
           snapshot,
           step,
+          streamProviderOutput,
         });
         completed += 1;
+        emitRunEvent(options, { step: stepResult.step, type: "reconcile" });
+        await reconcileQueue(context, stepResult.step, snapshot, stepResult.logDir, {
+          deadline,
+          onOutput: () => emitRunActivity(options, { phase: "reconcile", step: stepResult.step }),
+          onProviderStart: (event) => emitRunEvent(options, { ...event, step: stepResult.step, type: "provider-start" }),
+          streamProviderOutput,
+        });
       }
 
       completedResult ??= completed;
@@ -148,10 +173,6 @@ function emitRunActivity(options: RunOptions, event: RoadrunnerRunActivityEvent)
 
 function emitRunEvent(options: RunOptions, event: RoadrunnerRunEvent): void {
   if (options.onEvent) options.onEvent(event);
-}
-
-async function validateProject(context: ProjectContext): Promise<void> {
-  await readValidatedQueue(context);
 }
 
 export async function validateProvider(context: ProjectContext): Promise<string[]> {

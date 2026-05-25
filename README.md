@@ -2,13 +2,13 @@
 
 Goal-directed autonomous software engineering loop.
 
-Roadrunner turns a project goal and a task queue into a repeatable cycle:
+Roadrunner turns project goals, a roadmap, and current repository state into a repeatable cycle:
 
 ```txt
-Plan -> Execute -> Verify -> Reconcile/Optimize
+Startup Queue Refresh -> Plan -> Execute -> Verify -> Mark Done -> Reconcile/Optimize
 ```
 
-It is designed to run coding agents over roadmap steps, with explicit planning, verification, process cleanup, and queue reconciliation that can optimize future work.
+It is designed to run coding agents over roadmap-derived steps, with explicit planning, verification, process cleanup, startup queue refresh, and queue reconciliation that can optimize future work.
 
 ## Commands
 
@@ -28,7 +28,7 @@ tsx src/cli.ts cleanup
 
 Roadrunner always treats the current working directory as the target project. Run the CLI from the project you want it to modify, not from the Roadrunner repository.
 
-If you run it from `~/git/rubiks-cube-solver`, Roadrunner reads and writes files in `~/git/rubiks-cube-solver` and stores its queue state under that project's `.roadrunner/` directory. Roadrunner does not require a clean git worktree and does not create commits.
+If you run it from `~/git/rubiks-cube-solver`, Roadrunner reads and writes files in `~/git/rubiks-cube-solver` and stores its queue state under that project's `.roadrunner/` directory. Roadrunner does not require a clean git worktree and does not create its own commits; provider agents and verification commands still run in the target project and may execute git commands if your prompts, roadmap, or scripts ask them to.
 
 Example: work on `~/git/rubiks-cube-solver` using this local Roadrunner checkout.
 
@@ -52,7 +52,7 @@ cd ~/git/rubiks-cube-solver
 node /home/wozzp/git/roadrunner/dist/src/cli.js init --goals GOALS.md --roadmap ROADMAP.md
 ```
 
-`init` creates `.roadrunner/config.json`, `.roadrunner/queue.json`, `.roadrunner/prompts/`, and `.roadrunner/logs/`. If `ROADMAP.md` exists, it imports roadmap steps into `.roadrunner/queue.json`; otherwise the queue starts empty.
+`init` creates `.roadrunner/config.json`, `.roadrunner/queue.json`, `.roadrunner/prompts/`, and `.roadrunner/logs/`. If `ROADMAP.md` exists, it imports roadmap steps into the initial `.roadrunner/queue.json`; otherwise the queue starts empty. Autonomous `run` refreshes this queue again at every run start.
 
 Validate and inspect the target project before running:
 
@@ -76,10 +76,10 @@ cd ~/git/rubiks-cube-solver
 node /home/wozzp/git/roadrunner/dist/src/cli.js run --max-steps 999 --max-hours 72
 ```
 
-For each queued step, `run` performs:
+At run start, `run` cleans registered Roadrunner-owned subprocesses, reads `GOALS.md`, reads the configured roadmap, ignores stale queue state, and refreshes `.roadrunner/queue.json` from roadmap plus current repository state. For each remaining queued step, `run` performs:
 
 ```txt
-Plan -> Execute -> Verify -> Reconcile/Optimize
+Plan -> Execute -> Verify -> Mark Done -> Reconcile/Optimize
 ```
 
 With `--max-steps 999 --max-hours 72`, Roadrunner will keep working until one of these happens:
@@ -90,7 +90,7 @@ With `--max-steps 999 --max-hours 72`, Roadrunner will keep working until one of
 - A provider, verification, or reconciliation failure blocks the run.
 - The current task stays idle past the automatic restart limit and is blocked.
 
-`GOALS.md` is loaded once at the start of `run` and remains the in-memory goal for that execution. `ROADMAP.md` is read only by `init` and `import-roadmap`; after import, `.roadrunner/queue.json` is the live task state. `--goals` and `--roadmap` are resolved relative to the target project directory.
+`GOALS.md` is loaded once at the start of `run` and remains the in-memory goal for that execution. The configured roadmap is read at run start. `.roadrunner/queue.json` is generated live task state for the current run, so deleting it or leaving a stale queue behind does not require manual cleanup before the next `run`. `--goals` and `--roadmap` are resolved relative to the target project directory.
 
 Run commands as separate shell commands, or join them with `&&`. Do not paste multiple `node ...` commands on one line without a separator.
 
@@ -153,20 +153,24 @@ Validates the project, loads `GOALS.md` into memory for the planning prompt, run
 Runs autonomous cycles up to `--max-steps` or `--max-hours`:
 
 ```txt
-Plan -> Execute -> Verify -> Reconcile/Optimize
+Startup Queue Refresh -> Plan -> Execute -> Verify -> Mark Done -> Reconcile/Optimize
 ```
 
 The runner holds `.roadrunner/roadmap.lock` for the duration of the run to avoid concurrent Roadrunner commands mutating the same queue. `import-roadmap` also takes this lock before writing `.roadrunner/queue.json`. Roadrunner does not block because of unrelated user edits, dirty git state, provider git commands, or verification commands that mutate files.
 
-At run start, Roadrunner reads `GOALS.md` once and uses that immutable in-memory snapshot for planning, implementation, fixing, and reconciliation prompts. Edits to `GOALS.md` during a run only affect future runs.
+At run start, Roadrunner reads `GOALS.md` once and uses that immutable in-memory snapshot for startup refresh, planning, implementation, fixing, and reconciliation prompts. It also reads the configured roadmap and hard-resets `.roadrunner/queue.json` as a generated operational artifact. The startup refresh agent may mark already satisfied roadmap work as `history`, keep relevant pending work in `queue`, and remove obsolete or superseded work from the run queue. Edits to `GOALS.md` during a run only affect future runs.
+
+After a step verifies successfully, Roadrunner moves it to `history` before running post-step reconciliation. If reconciliation fails, verified progress remains recorded instead of being blocked or retried as unfinished work.
 
 Provider runs default to `ROADRUNNER_PROVIDER_TIMEOUT_MS=1800000`, verification commands default to `ROADRUNNER_VERIFY_TIMEOUT_MS=600000`, automatic idle restarts default to `ROADRUNNER_AUTO_RESTART_IDLE_MS=600000` and `ROADRUNNER_MAX_AUTO_RESTARTS_PER_STEP=3`, and OpenCode CLI validation defaults to `ROADRUNNER_OPENCODE_CHECK_TIMEOUT_MS=10000`. Set provider, verification, automatic restart idle, or max automatic restart variables to `0` to disable that timeout/restart path. `--max-hours` caps provider and verification timeouts for the current step.
 
-In an interactive terminal, `run` prints a live heartbeat for the active task, including phase, attempt, elapsed task time, elapsed phase time, idle time since the last provider/command output, PID, and log path when available. Type `rstask` and press Enter to abort the current Roadrunner-owned subprocess and restart the current `queue[0]` task from planning. Roadrunner also auto-restarts idle task attempts from planning when no provider or verification activity arrives before the configured idle threshold. Restarting does not reset or revert project files; it only stops registered Roadrunner subprocesses and repeats the task attempt.
+`run` requires an interactive terminal and opens a full-screen task dashboard. The dashboard shows done, current, next, and blocked tasks; task details; available log files; and a scrollable log viewer. Use Up/Down to select tasks or logs, Tab to switch panels, Enter to open the selected log, and `r` to restart the current `queue[0]` task from planning after confirmation. Provider output is captured to log files instead of being streamed over the UI.
+
+Each run also writes a debug session directory under `.roadrunner/logs/` with `session.log` for human-readable events and `events.ndjson` for machine-readable events. Roadrunner also auto-restarts idle task attempts from planning when no provider or verification activity arrives before the configured idle threshold. Restarting does not reset or revert project files; it only stops registered Roadrunner subprocesses and repeats the task attempt.
 
 Prompt files, provider logs, verification logs, and runner-generated markdown outputs under `.roadrunner/logs/` are written with restrictive filesystem permissions.
 
-Implementation, fix, and reconciliation provider runs use normal OpenCode permissions by default. Set `dangerouslySkipPermissions: true` in `.roadrunner/config.json` only when you intentionally want Roadrunner to pass OpenCode's `--dangerously-skip-permissions` flag.
+Startup refresh, implementation, fix, and reconciliation provider runs use normal OpenCode permissions by default. Set `dangerouslySkipPermissions: true` in `.roadrunner/config.json` only when you intentionally want Roadrunner to pass OpenCode's `--dangerously-skip-permissions` flag.
 
 ### `cleanup`
 
@@ -198,6 +202,8 @@ Verification:
 
 Supported heading forms are `## step-id: Title`, `## step-id - Title`, and `## [step-id] Title`; heading levels `##` through `######` are accepted. Required fields are `Phase`, `Scope`, `Prompt`, `Acceptance`, and `Verification`. Unknown fields are ignored except inside multiline `Prompt`, where `Label:` lines remain part of the prompt until the next known field.
 
+Autonomous `run` can also start from a more strategic roadmap that is not in this operational format. In that case startup refresh asks the provider to compile the roadmap and current repository state into a valid operational `.roadrunner/queue.json` before execution.
+
 During development in this repo:
 
 ```bash
@@ -213,9 +219,9 @@ npm run smoke:pack
 npm run check
 ```
 
-`npm test` runs the Vitest unit/integration suite plus the deterministic fake-provider e2e. `npm run lint` runs Biome linting plus the AI route check. `npm run format` syncs AI routes and formats supported files with Biome. `npm run size:check` enforces file-size guardrails for authored TypeScript. `npm run coverage` enforces a 95% coverage guardrail for authored `src/**/*.ts`; behavior, failure modes, and regression value matter more than reaching a higher number. `npm run smoke:pack` verifies the package dry-run includes the built CLI, templates, README, and `roadrunner` bin. `npm run e2e:real` is opt-in through `scripts/e2e-real.ts` and runs OpenCode for real with `ROADRUNNER_E2E_REAL_OPENCODE=1`; run it before declaring compatibility with a real OpenCode version.
+`npm test` runs the Vitest unit/integration suite plus the deterministic fake-provider e2e. `npm run lint` runs Biome linting plus the AI route check. `npm run format` syncs AI routes and formats supported files with Biome. `npm run size:check` enforces file-size guardrails for authored TypeScript. `npm run coverage` enforces a 95% coverage guardrail for authored `src/**/*.ts`; behavior, failure modes, and regression value matter more than reaching a higher number. `npm run smoke:pack` verifies the package dry-run includes the built CLI, templates, README, and `roadrunner` bin. `npm run e2e:real` is opt-in through `scripts/e2e-real.ts` and runs OpenCode for real with `ROADRUNNER_E2E_REAL_OPENCODE=1`; run it before declaring compatibility with a real OpenCode version. The real e2e creates a unique target under `test-output/e2e-real/` and validates the generated Todo API through a black-box Node script.
 
-For real-provider debugging, run `ROADRUNNER_OPENCODE_DEBUG=1 npm run e2e:real`. Roadrunner streams provider output to each `*.opencode.log` while the process is running and prints the provider PID plus log path when each OpenCode subprocess starts. `npm run e2e:real` defaults `ROADRUNNER_PROVIDER_TIMEOUT_MS` to `300000`; override it to fail faster or allow longer provider runs.
+For real-provider debugging, run `ROADRUNNER_OPENCODE_DEBUG=1 npm run e2e:real`. Roadrunner writes provider output to each `*.opencode.log` while the process is running. `npm run e2e:real` defaults `ROADRUNNER_PROVIDER_TIMEOUT_MS` to `300000`; override it to fail faster or allow longer provider runs.
 
 E2E outputs are written under `test-output/`:
 
@@ -256,11 +262,13 @@ npm run ai:check
 ## Safety Model
 
 - `GOALS.md` is loaded once into memory at run start.
-- `ROADMAP.md` is only an import source; `.roadrunner/queue.json` is the mutable live queue.
-- `queue[0]` is always the current task.
+- The configured roadmap is read at run start; `.roadrunner/queue.json` is generated mutable live queue state.
+- Startup refresh may only update the configured queue file and must not edit source files.
+- `queue[0]` is the current implementation task after startup refresh selects pending work.
 - Planning is mandatory before execution.
 - Planning fails if the planning agent mutates project files; Roadrunner uses git status in git repositories and a filesystem fingerprint fallback elsewhere.
-- The reconciler may optimize future `queue[1..]` work by grouping, splitting, reordering, adding, or removing tasks, but it must preserve `queue[0]`, `history`, `blocked`, and queue metadata.
+- Verified tasks are moved to `history` before reconciliation.
+- The reconciler may optimize open `queue` work by grouping, splitting, reordering, adding, or removing tasks, but it must preserve `history`, `blocked`, and queue metadata.
 - Reconciliation may only update the configured queue file, defaulting to `.roadrunner/queue.json`; other file changes are treated as Roadrunner safety violations.
 - Idle provider or verification phases are automatically restarted from planning up to the configured per-step limit.
 - Cleanup only targets subprocesses registered by Roadrunner itself.

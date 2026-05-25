@@ -1,0 +1,75 @@
+import type { QueueFile, QueueStep } from "./queue.js";
+
+export type TaskRowStatus = "blocked" | "current" | "done" | "next";
+
+export interface TaskRow {
+  icon: string;
+  id: string;
+  phase: string;
+  status: TaskRowStatus;
+  statusLabel: string;
+  step: QueueStep;
+  title: string;
+}
+
+export interface TaskStats {
+  blocked: number;
+  current: number;
+  done: number;
+  next: number;
+}
+
+const labels: Record<TaskRowStatus, { icon: string; label: string }> = {
+  blocked: { icon: "!", label: "Blocked" },
+  current: { icon: "▶", label: "Now" },
+  done: { icon: "✓", label: "Done" },
+  next: { icon: "·", label: "Next" },
+};
+
+export function taskRowsFromQueue(queueFile: QueueFile): TaskRow[] {
+  return [
+    ...queueFile.history.map((step) => taskRow(step, "done")),
+    ...queueFile.queue.slice(0, 1).map((step) => taskRow(step, "current")),
+    ...queueFile.queue.slice(1).map((step) => taskRow(step, "next")),
+    ...queueFile.blocked.map((step) => taskRow(step, "blocked")),
+  ];
+}
+
+export function taskStats(queueFile: QueueFile): TaskStats {
+  return {
+    blocked: queueFile.blocked.length,
+    current: queueFile.queue.length > 0 ? 1 : 0,
+    done: queueFile.history.length,
+    next: Math.max(0, queueFile.queue.length - 1),
+  };
+}
+
+export function selectedTaskIndex(rows: TaskRow[], selectedTaskId: string | null): number {
+  if (rows.length === 0) return -1;
+  const selected = selectedTaskId ? rows.findIndex((row) => row.id === selectedTaskId) : -1;
+  if (selected >= 0) return selected;
+  const current = rows.findIndex((row) => row.status === "current");
+  return current >= 0 ? current : 0;
+}
+
+export function taskTableData(rows: TaskRow[], selectedTaskId: string | null): string[][] {
+  return [
+    ["Status", "ID", "Phase", "Title"],
+    ...rows.map((row) => {
+      const marker = row.id === selectedTaskId ? "›" : " ";
+      return [`${marker} ${row.icon} ${row.statusLabel}`, row.id, row.phase, row.title];
+    }),
+  ];
+}
+
+function taskRow(step: QueueStep, status: TaskRowStatus): TaskRow {
+  return {
+    icon: labels[status].icon,
+    id: step.id,
+    phase: step.phase,
+    status,
+    statusLabel: labels[status].label,
+    step,
+    title: step.title,
+  };
+}

@@ -72,7 +72,7 @@ Verification:
 
 function fakeOpenCodeScript(): string {
   return (
-`#!/usr/bin/env node
+    `#!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync, spawn } from "node:child_process";
@@ -103,6 +103,33 @@ function runChecked(command, args) {
   } catch (error) {
     process.exit(typeof error.status === "number" ? error.status : 1);
   }
+}
+
+if (prompt.includes("Roadrunner Startup Queue Refresh")) {
+  const queuePath = path.join(".roadrunner", "queue.json");
+  if (mode === "startup-refresh-extra") fs.writeFileSync("unexpected-startup.txt", "nope\\n");
+  if (mode === "startup-refresh-invalid") {
+    const queue = JSON.parse(fs.readFileSync(queuePath, "utf8"));
+    queue.version = 99;
+    fs.writeFileSync(queuePath, JSON.stringify(queue, null, 2) + "\\n");
+  }
+  if (mode === "startup-refresh-fail") {
+    console.error("startup refresh failed");
+    process.exit(9);
+  }
+  if (mode === "startup-refresh-inferred-done") {
+    const queue = JSON.parse(fs.readFileSync(queuePath, "utf8"));
+    const completed = queue.queue.shift();
+    if (completed) queue.history.push({ ...completed, completedAt: "2026-01-01T00:00:00.000Z" });
+    fs.writeFileSync(queuePath, JSON.stringify(queue, null, 2) + "\\n");
+  }
+  if (mode === "startup-refresh-from-strategic") {
+    const queue = JSON.parse(fs.readFileSync(queuePath, "utf8"));
+    queue.queue = [{ id: "strategic-step", phase: "Strategy", title: "Build strategic step", scope: ["marker.txt"], prompt: "Create marker.txt with ok content.", acceptance: ["marker exists"], verification: ["node -e \\"require('node:fs').readFileSync('marker.txt', 'utf8').includes('ok') || process.exit(1)\\""] }];
+    fs.writeFileSync(queuePath, JSON.stringify(queue, null, 2) + "\\n");
+  }
+  console.log("startup refreshed");
+  process.exit(0);
 }
 
 if (mode === "provider-fail-queue-dirty" && prompt.includes("Roadrunner Implement Step")) {
@@ -185,6 +212,7 @@ if (mode === "spawn-child-on-term") {
 
 if (prompt.includes("Roadrunner Plan Step")) {
   if (mode === "plan-dirty") fs.writeFileSync("plan-dirty.txt", "nope\\n");
+  if (mode === "plan-ignored-dirty") fs.writeFileSync(".env", "SECRET=changed\\n");
   if (mode === "plan-delete") fs.rmSync("delete-me.txt", { force: true });
   console.log("Plan: implement the requested step.");
   process.exit(0);
@@ -252,6 +280,14 @@ test("supports todo CRUD", () => {
     const queue = JSON.parse(fs.readFileSync(queuePath, "utf8"));
     queue.queue[0].title = "Implementation touched queue";
     fs.writeFileSync(queuePath, JSON.stringify(queue, null, 2) + "\\n");
+  } else if (mode === "queue-dirty-hang") {
+    fs.writeFileSync("marker.txt", "ok\\n");
+    const queuePath = path.join(".roadrunner", "queue.json");
+    const queue = JSON.parse(fs.readFileSync(queuePath, "utf8"));
+    queue.queue[0].title = "Implementation touched queue before restart";
+    fs.writeFileSync(queuePath, JSON.stringify(queue, null, 2) + "\\n");
+    console.log("queue dirty before hang");
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0);
   } else if (mode === "git-commit") {
     fs.writeFileSync("marker.txt", "ok\\n");
     runChecked("git", ["add", "marker.txt"]);
@@ -268,7 +304,7 @@ test("supports todo CRUD", () => {
     runChecked(realGit, ["add", "marker.txt"]);
     runChecked(realGit, ["commit", "-m", "Agent implementation commit"]);
     runChecked(realGit, ["tag", "-f", "baseline-tag"]);
-  } else if (mode === "verify-fail" || mode === "fix-success" || mode === "fix-fail" || mode === "fix-commit-bypass") {
+  } else if (mode === "verify-fail" || mode === "fix-success" || mode === "fix-fail" || mode === "fix-commit-bypass" || mode === "fix-queue-dirty") {
     fs.writeFileSync("marker.txt", "bad\\n");
   } else {
     fs.writeFileSync("marker.txt", "ok\\n");
@@ -279,6 +315,12 @@ test("supports todo CRUD", () => {
 
 if (prompt.includes("Roadrunner Fix Failure")) {
   fs.writeFileSync("marker.txt", "ok\\n");
+  if (mode === "fix-queue-dirty") {
+    const queuePath = path.join(".roadrunner", "queue.json");
+    const queue = JSON.parse(fs.readFileSync(queuePath, "utf8"));
+    queue.queue[0].title = "Fix touched queue";
+    fs.writeFileSync(queuePath, JSON.stringify(queue, null, 2) + "\\n");
+  }
   if (mode === "fix-commit-bypass") {
     runChecked(realGit, ["add", "marker.txt"]);
     runChecked(realGit, ["commit", "-m", "Agent fix commit"]);
@@ -298,6 +340,7 @@ if (prompt.includes("Roadrunner Reconcile Queue") || prompt.includes("Roadrunner
     process.exit(9);
   }
   if (mode === "reconcile-extra") fs.writeFileSync("unexpected.txt", "nope\\n");
+  if (mode === "reconcile-ignored-dirty") fs.writeFileSync(".env", "SECRET=changed\\n");
   if (mode === "reconcile-commit-bypass") {
     fs.writeFileSync("unexpected.txt", "nope\\n");
     runChecked(realGit, ["add", "unexpected.txt"]);
@@ -331,7 +374,7 @@ if (prompt.includes("Roadrunner Reconcile Queue") || prompt.includes("Roadrunner
   if (mode === "reconcile-future-queue") {
     const queuePath = path.join(".roadrunner", "queue.json");
     const queue = JSON.parse(fs.readFileSync(queuePath, "utf8"));
-    if (queue.queue[1]) queue.queue[1].title = "Reconciled future step";
+    if (queue.queue[0]) queue.queue[0].title = "Reconciled future step";
     fs.writeFileSync(queuePath, JSON.stringify(queue, null, 2) + "\\n");
   }
   console.log("reconciled");

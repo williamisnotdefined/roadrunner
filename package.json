@@ -5,7 +5,11 @@
   "bin": {
     "roadrunner": "dist/src/cli.js"
   },
-  "files": ["dist/src", "templates", "README.md"],
+  "files": [
+    "dist/src",
+    "templates",
+    "README.md"
+  ],
   "scripts": {
     "ai:check": "tsx scripts/ai/sync-routes.ts --check",
     "ai:sync": "tsx scripts/ai/sync-routes.ts",
@@ -27,6 +31,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.15",
+    "@types/blessed": "^0.1.27",
     "@types/node": "^25.9.1",
     "@vitest/coverage-v8": "^4.1.7",
     "tsx": "^4.22.3",
@@ -34,6 +39,7 @@
     "vitest": "^4.1.7"
   },
   "dependencies": {
+    "blessed": "^0.1.81",
     "chalk": "^5.6.2"
   }
 }

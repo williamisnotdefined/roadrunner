@@ -1,13 +1,20 @@
-import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
+import { constants, type WriteStream } from "node:fs";
+import { chmod, mkdir, open, readFile } from "node:fs/promises";
 import path from "node:path";
 
-import type { ProjectContext } from "./config.js";
+import { packageRoot, pathExists, type ProjectContext } from "./config.js";
 
 export async function renderPrompt(context: ProjectContext, name: string, values: Record<string, string>): Promise<string> {
-  const promptPath = path.join(context.paths.prompts, name);
+  const promptPath = await promptTemplatePath(context, name);
   let template = await readFile(promptPath, "utf8");
   for (const [key, value] of Object.entries(values)) template = template.replaceAll(`{{${key}}}`, value);
   return template;
+}
+
+async function promptTemplatePath(context: ProjectContext, name: string): Promise<string> {
+  const projectPromptPath = path.join(context.paths.prompts, name);
+  if (await pathExists(projectPromptPath)) return projectPromptPath;
+  return path.join(packageRoot, "templates", "prompts", name);
 }
 
 export async function createLogDir(context: ProjectContext, name: string): Promise<string> {
@@ -19,6 +26,21 @@ export async function createLogDir(context: ProjectContext, name: string): Promi
 }
 
 export async function writePrivateFile(filePath: string, content: string): Promise<void> {
-  await writeFile(filePath, content, { mode: 0o600 });
-  await chmod(filePath, 0o600);
+  const handle = await openPrivateFile(filePath);
+  try {
+    await handle.writeFile(content);
+  } finally {
+    await handle.close();
+  }
+}
+
+export async function createPrivateWriteStream(filePath: string): Promise<WriteStream> {
+  const handle = await openPrivateFile(filePath);
+  return handle.createWriteStream({ autoClose: true });
+}
+
+async function openPrivateFile(filePath: string) {
+  const handle = await open(filePath, constants.O_CREAT | constants.O_TRUNC | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600);
+  await handle.chmod(0o600);
+  return handle;
 }

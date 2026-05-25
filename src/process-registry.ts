@@ -4,6 +4,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 import { type ProjectContext, pathExists } from "./config.js";
 import { processIdentityStatus, readProcessInfo } from "./process-info.js";
+import { processTreeExists, signalProcessTree } from "./process-tree.js";
 
 export interface ProcessRecord {
   command: string[];
@@ -104,27 +105,9 @@ function safeProcessGroupId(record: ProcessRecord): number | null {
 }
 
 function signalProcessGroup(pid: number, signal: NodeJS.Signals): boolean {
-  try {
-    /* v8 ignore next -- Windows process signaling is covered by platform branching at runtime. */
-    process.kill(process.platform === "win32" ? pid : -pid, signal);
-    return true;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
-    return false;
-  }
+  return signalProcessTree(pid, signal);
 }
 
 function processGroupExists(pid: number): boolean {
-  try {
-    /* v8 ignore next -- Windows process signaling is covered by platform branching at runtime. */
-    process.kill(process.platform === "win32" ? pid : -pid, 0);
-    return true;
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code === "ESRCH") return false;
-    /* v8 ignore start -- EPERM and unexpected group-probe failures depend on OS permissions. */
-    if (code === "EPERM") return true;
-    throw error;
-    /* v8 ignore stop */
-  }
+  return processTreeExists(pid);
 }

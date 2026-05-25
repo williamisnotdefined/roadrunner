@@ -5,6 +5,7 @@ import { describe, expect, test } from "vitest";
 
 import { loadContext } from "../src/config.js";
 import { parseStatusEntries, parseStatusPaths, projectMutationFingerprint } from "../src/mutation-fingerprint.js";
+import { commitAll, initGit } from "./helpers.js";
 
 describe("mutation fingerprint", () => {
   test("parses git status paths including renames", () => {
@@ -34,6 +35,31 @@ describe("mutation fingerprint", () => {
 
       await writeFile(path.join(directory, "unexpected.txt"), "changed\n");
       expect(await projectMutationFingerprint(context, { ignoredPaths: [context.paths.queue] })).not.toBe(before);
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  test("can include git-ignored files without fingerprinting heavy ignored directories", async () => {
+    const directory = await import("node:fs/promises").then((fs) => fs.mkdtemp(path.join(os.tmpdir(), "roadrunner-fingerprint-ignored-")));
+    try {
+      await mkdir(path.join(directory, ".roadrunner"), { recursive: true });
+      await writeFile(path.join(directory, ".gitignore"), ".env\ndist/\n");
+      await mkdir(path.join(directory, "dist"), { recursive: true });
+      await writeFile(path.join(directory, "dist", "bundle.js"), "before\n");
+      await initGit(directory);
+      await commitAll(directory, "Initial ignore rules");
+      const context = await loadContext(directory, { _: [] });
+      const defaultBefore = await projectMutationFingerprint(context);
+      const strictBefore = await projectMutationFingerprint(context, { includeIgnoredFiles: true });
+
+      await writeFile(path.join(directory, "dist", "bundle.js"), "after\n");
+      expect(await projectMutationFingerprint(context, { includeIgnoredFiles: true })).toBe(strictBefore);
+
+      await writeFile(path.join(directory, ".env"), "SECRET=changed\n");
+
+      expect(await projectMutationFingerprint(context)).toBe(defaultBefore);
+      expect(await projectMutationFingerprint(context, { includeIgnoredFiles: true })).not.toBe(strictBefore);
     } finally {
       await rm(directory, { force: true, recursive: true });
     }

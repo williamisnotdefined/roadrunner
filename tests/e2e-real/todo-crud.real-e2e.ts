@@ -1,25 +1,24 @@
 #!/usr/bin/env tsx
 
 import { execFile } from "node:child_process";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 
 import { main } from "../../src/cli.js";
 import { readJson, writeJson } from "../../src/config.js";
 import type { QueueFile } from "../../src/queue.js";
+import { run as runRoadrunner } from "../../src/runner.js";
 import { run } from "../helpers.js";
 
 const execFileAsync = promisify(execFile);
-const outputRoot = path.resolve("test-output/e2e-real/todo-crud");
 
 if (process.env.ROADRUNNER_E2E_REAL_OPENCODE !== "1") {
   throw new Error("Refusing to run real OpenCode e2e without ROADRUNNER_E2E_REAL_OPENCODE=1.");
 }
 
 await ensureOpenCode();
-await rm(outputRoot, { force: true, recursive: true });
-await mkdir(outputRoot, { recursive: true });
+const outputRoot = await createOutputRoot();
 
 await writeFile(
   path.join(outputRoot, "GOALS.md"),
@@ -31,6 +30,7 @@ Requirements:
 
 - Keep generated application code inside this target project.
 - Use Node's built-in test runner.
+- Export createTodoStore from src/todos.js with create, list, update, and remove methods.
 - Provide create, list, update, and delete behavior.
 `,
 );
@@ -46,8 +46,9 @@ Scope:
 - package.json
 - src/todos.js
 - test/todos.test.js
-Prompt: Implement a minimal ESM Todo CRUD store and a Node test suite. Keep the implementation dependency-free.
+Prompt: Implement a minimal dependency-free ESM Todo CRUD store. Export createTodoStore from src/todos.js with create(title), list(), update(id, patch), and remove(id). Add a Node test suite that exercises that API.
 Acceptance:
+- createTodoStore is exported from src/todos.js
 - todos can be created, listed, updated, and deleted
 - tests exercise the full CRUD behavior
 - npm test passes
@@ -61,7 +62,14 @@ const configPath = path.join(outputRoot, ".roadrunner/config.json");
 const config = await readJson<Record<string, unknown>>(configPath);
 await writeJson(configPath, { ...config, allowNestedOpenCode: true, dangerouslySkipPermissions: true });
 
-await requireOk(main(["run", "--max-steps", "1"], { cwd: outputRoot }), "roadrunner run failed");
+await requireOk(
+  main(["run", "--max-steps", "1"], {
+    cwd: outputRoot,
+    runTui: (context, options) => runRoadrunner(context, { maxHours: options.maxHours, maxSteps: options.maxSteps }),
+    terminal: { isInteractive: true },
+  }),
+  "roadrunner run failed",
+);
 
 const queue = await readJson<QueueFile>(path.join(outputRoot, ".roadrunner/queue.json"));
 assert(queue.queue.length === 0, "Expected queue to be empty.");
@@ -71,9 +79,16 @@ assert(queue.blocked.length === 0, "Expected blocked queue to be empty.");
 const testResult = await run("npm", ["test"], outputRoot);
 assert(testResult.stdout.includes("todo") || testResult.stdout.includes("CRUD"), "Expected generated Todo tests to run.");
 
-assert((await readFile(path.join(outputRoot, "src/todos.js"), "utf8")).length > 0, "Expected generated Todo source file.");
+await assertTodoApi(outputRoot);
+assert((await readFile(path.join(outputRoot, "src/todos.js"), "utf8")).includes("createTodoStore"), "Expected generated Todo source file to export createTodoStore.");
 
 console.log(`Real OpenCode e2e completed in ${outputRoot}`);
+
+async function createOutputRoot(): Promise<string> {
+  const parent = path.resolve("test-output/e2e-real");
+  await mkdir(parent, { recursive: true });
+  return mkdtemp(path.join(parent, "todo-crud-"));
+}
 
 async function ensureOpenCode(): Promise<void> {
   try {
@@ -87,6 +102,26 @@ async function ensureOpenCode(): Promise<void> {
 async function requireOk(result: Promise<number>, message: string): Promise<void> {
   const code = await result;
   if (code !== 0) throw new Error(`${message} Exit code: ${code}.`);
+}
+
+async function assertTodoApi(cwd: string): Promise<void> {
+  await run(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      `import { createTodoStore } from "./src/todos.js";
+const store = createTodoStore();
+const todo = store.create("Ship Roadrunner");
+if (!todo || todo.title !== "Ship Roadrunner") throw new Error("create failed");
+if (store.list().length !== 1) throw new Error("list failed");
+const updated = store.update(todo.id, { completed: true });
+if (!updated?.completed) throw new Error("update failed");
+if (!store.remove(todo.id)) throw new Error("remove failed");
+if (store.list().length !== 0) throw new Error("final list failed");`,
+    ],
+    cwd,
+  );
 }
 
 function assert(condition: boolean, message: string): asserts condition {

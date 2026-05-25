@@ -41,6 +41,21 @@ describe("runner planning", () => {
     }
   });
 
+  test("blocks planning agents that change git-ignored files", async () => {
+    const project = await setupRunnerProject("plan-ignored-dirty");
+    try {
+      await writeFile(path.join(project.directory, ".gitignore"), ".env\n");
+      await commitAll(project.directory, "Ignore local env files");
+
+      await expect(runRoadrunner(project.context)).rejects.toThrow(/Planning failed/);
+      expect(await readFile(path.join(project.directory, ".env"), "utf8")).toBe("SECRET=changed\n");
+      const queue = await readJson<QueueFile>(project.context.paths.queue);
+      expect(queue.blocked[0]).toMatchObject({ blockedReason: "Planning exited 1", id: "first-step" });
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
   test("plans in git repositories without commits", async () => {
     const directory = await tempDir("roadrunner-runner-unborn-git-");
     try {

@@ -4,6 +4,7 @@ import path from "node:path";
 
 import type { ProjectContext } from "./config.js";
 import { registerProcess, unregisterProcess } from "./process-registry.js";
+import { signalProcessTree as signalRegisteredProcessTree } from "./process-tree.js";
 import { writePrivateFile } from "./run-artifacts.js";
 
 const forceKillDelayMs = 1_000;
@@ -14,7 +15,13 @@ export interface RunShellOptions {
   timeoutMs?: number;
 }
 
-export async function runShell(context: ProjectContext, command: string, logPath: string, role: string, { onOutput, signal, timeoutMs = 0 }: RunShellOptions = {}): Promise<{ code: number | null; output: string }> {
+export async function runShell(
+  context: ProjectContext,
+  command: string,
+  logPath: string,
+  role: string,
+  { onOutput, signal, timeoutMs = 0 }: RunShellOptions = {},
+): Promise<{ code: number | null; output: string }> {
   await mkdir(path.dirname(logPath), { recursive: true });
   const child = spawn(command, [], { cwd: context.root, detached: process.platform !== "win32", env: process.env, shell: true });
   let output = "";
@@ -30,7 +37,7 @@ export async function runShell(context: ProjectContext, command: string, logPath
   const terminateProcess = (message: string) => {
     if (forceKillDone) return;
     output += message;
-    signalProcessTree(child.pid, "SIGTERM");
+    signalShellProcessTree(child.pid, "SIGTERM");
     ({ done: forceKillDone, timeout: killTimeout } = scheduleProcessTreeKill(child.pid, (text) => {
       output += text;
     }));
@@ -99,23 +106,22 @@ export async function runShell(context: ProjectContext, command: string, logPath
   });
 }
 
-function signalProcessTree(pid: number | undefined, signal: NodeJS.Signals): void {
-  if (!pid) return;
-  try {
-    process.kill(process.platform === "win32" ? pid : -pid, signal);
-  } catch {
-    /* Cleanup is best-effort after timeout or registration failure. */
-  }
-}
-
 function scheduleProcessTreeKill(pid: number | undefined, appendOutput: (text: string) => void): { done: Promise<void>; timeout: NodeJS.Timeout } {
   let timeout: NodeJS.Timeout;
   const done = new Promise<void>((resolve) => {
     timeout = setTimeout(() => {
       appendOutput("Process did not exit after SIGTERM. Sending SIGKILL.\n");
-      signalProcessTree(pid, "SIGKILL");
+      signalShellProcessTree(pid, "SIGKILL");
       resolve();
     }, forceKillDelayMs);
   });
   return { done, timeout: timeout! };
+}
+
+function signalShellProcessTree(pid: number | undefined, signal: NodeJS.Signals): void {
+  try {
+    signalRegisteredProcessTree(pid, signal);
+  } catch {
+    /* Cleanup is best-effort after timeout or registration failure. */
+  }
 }

@@ -2,6 +2,7 @@
 
 import { realpathSync } from "node:fs";
 import path from "node:path";
+import type { Readable, Writable } from "node:stream";
 import { fileURLToPath } from "node:url";
 
 import chalk from "chalk";
@@ -9,11 +10,13 @@ import chalk from "chalk";
 import { cleanupProcesses } from "./process-registry.js";
 import { formatStep, nextStep, normalizeQueueFile, readQueue, validateGoals, validateQueueFile } from "./queue.js";
 import { initProject } from "./init.js";
-import { loadContext } from "./config.js";
+import { loadContext, type ProjectContext } from "./config.js";
 import { integerOption, optionalNumberOption, parseArgs } from "./args.js";
-import { plan, run, status, validateProvider, type RoadrunnerRunEvent } from "./runner.js";
+import { shouldPrintHelp, validateCliInvocation } from "./cli-validation.js";
+import { plan, status, validateProvider, type RoadrunnerRunEvent } from "./runner.js";
 import { importRoadmap } from "./roadmap.js";
-import { createRunFeedback, formatDuration } from "./run-cli-feedback.js";
+import { formatDuration } from "./duration.js";
+import { runWithTui, type RunTuiOptions } from "./run-tui.js";
 
 export interface CliIo {
   stderr?: (message: string) => void;
@@ -23,20 +26,28 @@ export interface CliIo {
 export interface CliMainOptions {
   cwd?: string;
   io?: CliIo;
+  runTui?: (context: ProjectContext, options: RunTuiOptions) => Promise<number>;
+  terminal?: {
+    input?: Readable;
+    isInteractive?: boolean;
+    output?: Writable;
+  };
 }
 
-export async function main(argv = process.argv.slice(2), { cwd = process.cwd(), io = {} }: CliMainOptions = {}): Promise<number> {
+export async function main(argv = process.argv.slice(2), { cwd = process.cwd(), io = {}, runTui, terminal }: CliMainOptions = {}): Promise<number> {
   const out = io.stdout ?? ((message: string) => console.log(message));
   const err = io.stderr ?? ((message: string) => console.error(message));
   const args = parseArgs(argv);
   const command = args._[0] ?? "help";
 
   try {
-    const projectCommands = new Set(["check", "cleanup", "import-roadmap", "init", "next", "plan", "run", "status"]);
-    if (command === "help" || !projectCommands.has(command)) {
+    if (shouldPrintHelp(args, command)) {
       out(helpText());
       return 0;
     }
+
+    const invocationErrors = validateCliInvocation(command, args);
+    if (invocationErrors.length > 0) throw new Error(invocationErrors.join("\n"));
 
     const context = await loadContext(cwd, args);
 
@@ -80,25 +91,13 @@ export async function main(argv = process.argv.slice(2), { cwd = process.cwd(), 
         throw new Error(`Planning failed for ${result.step.id} (exit ${String(result.result.code)}). See ${path.join(result.logDir, "plan.opencode.log")}.`);
       else out(formatCliSuccess(`Plan written to ${result.logDir}`));
     } else if (command === "run") {
-      out(formatCliStep("Running Roadrunner"));
-      const feedback = createRunFeedback({ stdout: out });
-      let completed = 0;
-      try {
-        completed = await run(context, {
-          maxHours: optionalNumberOption(args["max-hours"]),
-          maxSteps: integerOption(args["max-steps"], 1),
-          onActivity: feedback.onActivity,
-          onControl: feedback.onControl,
-          onEvent: (event) => {
-            feedback.beforeEvent();
-            out(formatRunEvent(event));
-            feedback.onEvent(event);
-          },
-        });
-      } finally {
-        feedback.stop();
-      }
-      out(formatCliSuccess(`Completed ${completed} step(s).`));
+      await (runTui ?? runWithTui)(context, {
+        input: terminal?.input,
+        isInteractive: terminal?.isInteractive,
+        maxHours: optionalNumberOption(args["max-hours"]),
+        maxSteps: integerOption(args["max-steps"], 1),
+        output: terminal?.output,
+      });
     } else {
       out(formatCliStep("Cleaning Roadrunner-owned processes"));
       const results = await cleanupProcesses(context, { force: Boolean(args.force) });
@@ -131,6 +130,8 @@ export function formatRunEvent(event: RoadrunnerRunEvent): string {
       return formatCliStep(`Selected step ${event.step.id}: ${event.step.title}`);
     case "step-complete":
       return formatCliSuccess(`Completed ${event.step.id}`);
+    case "startup-refresh":
+      return formatCliStep("Refreshed queue from roadmap and repository state");
     case "task-auto-restart-limit-exceeded": {
       const phase = event.phase ? ` during ${event.phase}` : "";
       return formatCliError(`Auto-restart limit exceeded for ${event.step.id}${phase} after idle=${formatDuration(event.idleMs)} max=${event.maxRestarts}`);
@@ -186,8 +187,11 @@ Commands:
   roadrunner run [--config path] [--max-steps 1] [--max-hours n]
   roadrunner cleanup [--config path] [--force]
 
-Interactive run controls:
-  rstask             Restart the current task attempt from planning
+Run UI controls:
+  Up/Down            Select tasks or logs
+  Tab                Switch between task, logs, and log viewer panels
+  Enter              Open the selected task log
+  r                  Restart the current task attempt from planning
 
 Path overrides:
   --goals path        Path to GOALS.md

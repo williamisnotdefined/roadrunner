@@ -13,6 +13,7 @@ interface FixFailureOptions {
   onOutput?: () => void;
   onProviderStart?: (event: ProviderStartEvent) => void;
   signal?: AbortSignal;
+  streamProviderOutput?: boolean;
 }
 
 export async function verify(
@@ -64,6 +65,7 @@ export async function fixFailure(
     role: "fix-failure",
     signal: options.signal,
     skipPermissions: context.config.dangerouslySkipPermissions,
+    streamOutput: options.streamProviderOutput,
   });
   await writePrivateFile(path.join(logDir, "fix-failure.md"), result.output);
   return result;

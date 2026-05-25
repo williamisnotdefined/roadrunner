@@ -166,15 +166,16 @@ describe("runner", () => {
 
       expect(events).toEqual([
         "validate",
+        "startup-refresh",
         "step",
         "plan",
         "provider-start",
         "implement",
         "provider-start",
         "verify",
+        "step-complete",
         "reconcile",
         "provider-start",
-        "step-complete",
         "cleanup",
       ]);
     } finally {
@@ -220,19 +221,6 @@ describe("runner", () => {
     const project = await setupRunnerProject("success");
     try {
       expect(await runRoadrunner(project.context, { maxHours: 0, maxSteps: 1 })).toBe(0);
-    } finally {
-      await removeDir(project.directory);
-    }
-  });
-
-  test("returns zero when no queued steps are available", async () => {
-    const project = await setupRunnerProject("success");
-    try {
-      const queue = await readJson<QueueFile>(project.context.paths.queue);
-      queue.queue = [];
-      await writeJson(project.context.paths.queue, queue);
-
-      expect(await runRoadrunner(project.context)).toBe(0);
     } finally {
       await removeDir(project.directory);
     }
@@ -294,12 +282,14 @@ describe("runner", () => {
     }
   });
 
-  test("run rejects invalid queue state before agents", async () => {
+  test("run ignores invalid stale queue state during startup hard reset", async () => {
     const project = await setupRunnerProject("success");
     try {
       await writeFile(project.context.paths.queue, `${JSON.stringify({ version: 1 }, null, 2)}\n`);
 
-      await expect(runRoadrunner(project.context)).rejects.toThrow(/queue.version must be 2/);
+      expect(await runRoadrunner(project.context)).toBe(1);
+      const queue = await readJson<QueueFile>(project.context.paths.queue);
+      expect(queue.history.map((step) => step.id)).toEqual(["first-step"]);
     } finally {
       await removeDir(project.directory);
     }

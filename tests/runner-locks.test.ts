@@ -4,7 +4,7 @@ import { afterEach, describe, expect, test } from "vitest";
 
 import { pathExists, readJson, writeJson } from "../src/config.js";
 import type { QueueFile } from "../src/queue.js";
-import { run as runRoadrunner } from "../src/runner.js";
+import { plan, run as runRoadrunner } from "../src/runner.js";
 import { removeDir } from "./helpers.js";
 import { setupRunnerProject } from "./runner-helpers.js";
 
@@ -16,7 +16,7 @@ afterEach(() => {
 
 describe("runner locks", () => {
   test("rejects concurrent runs with an active lock", async () => {
-    const project = await setupRunnerProject("success");
+    const project = await setupRunnerProject("startup-refresh-inferred-done");
     try {
       await writeFile(project.context.paths.lock, `${JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }, null, 2)}\n`);
 
@@ -26,8 +26,19 @@ describe("runner locks", () => {
     }
   });
 
+  test("rejects standalone planning with an active lock", async () => {
+    const project = await setupRunnerProject("startup-refresh-inferred-done");
+    try {
+      await writeFile(project.context.paths.lock, `${JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }, null, 2)}\n`);
+
+      await expect(plan(project.context)).rejects.toThrow(/Roadrunner plan lock already exists/);
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
   test("rejects corrupt run locks", async () => {
-    const project = await setupRunnerProject("success");
+    const project = await setupRunnerProject("startup-refresh-inferred-done");
     try {
       await writeFile(project.context.paths.lock, "not json\n");
 
@@ -38,7 +49,7 @@ describe("runner locks", () => {
   });
 
   test("removes stale run locks", async () => {
-    const project = await setupRunnerProject("success");
+    const project = await setupRunnerProject("startup-refresh-inferred-done");
     try {
       const queue = await readJson<QueueFile>(project.context.paths.queue);
       queue.queue = [];
@@ -53,7 +64,7 @@ describe("runner locks", () => {
   });
 
   test("removes run locks whose pid has been reused", async () => {
-    const project = await setupRunnerProject("success");
+    const project = await setupRunnerProject("startup-refresh-inferred-done");
     try {
       const queue = await readJson<QueueFile>(project.context.paths.queue);
       queue.queue = [];
@@ -68,7 +79,7 @@ describe("runner locks", () => {
   });
 
   test("does not remove a replacement run lock on release", async () => {
-    const project = await setupRunnerProject("success");
+    const project = await setupRunnerProject("startup-refresh-inferred-done");
     try {
       const queue = await readJson<QueueFile>(project.context.paths.queue);
       queue.queue = [];
@@ -89,7 +100,7 @@ describe("runner locks", () => {
   });
 
   test("does not remove a corrupt replacement run lock on release", async () => {
-    const project = await setupRunnerProject("success");
+    const project = await setupRunnerProject("startup-refresh-inferred-done");
     try {
       const queue = await readJson<QueueFile>(project.context.paths.queue);
       queue.queue = [];
@@ -109,7 +120,7 @@ describe("runner locks", () => {
   });
 
   test("handles a missing run lock on release", async () => {
-    const project = await setupRunnerProject("success");
+    const project = await setupRunnerProject("startup-refresh-inferred-done");
     try {
       const queue = await readJson<QueueFile>(project.context.paths.queue);
       queue.queue = [];

@@ -13,6 +13,7 @@ export interface StatusEntry {
 }
 
 export interface ProjectMutationFingerprintOptions {
+  includeIgnoredFiles?: boolean;
   ignoredPaths?: string[];
 }
 
@@ -21,10 +22,12 @@ const fallbackFingerprintIgnoredDirectories = new Set([".git", "coverage", "dist
 
 export async function projectMutationFingerprint(context: ProjectContext, options: ProjectMutationFingerprintOptions = {}): Promise<string | null> {
   const ignoredPaths = normalizedIgnoredPaths(context, options.ignoredPaths ?? []);
-  const statusOutput = await gitStatusOutput(context);
+  const statusOutput = await gitStatusOutput(context, options.includeIgnoredFiles ?? false);
   if (statusOutput === null) return filesystemMutationFingerprint(context, ignoredPaths);
 
-  const entries = parseStatusEntries(statusOutput).filter((entry) => !isRoadrunnerRuntimePath(context, entry.path) && !isIgnoredRelativePath(entry.path, ignoredPaths));
+  const entries = parseStatusEntries(statusOutput).filter(
+    (entry) => !isRoadrunnerRuntimePath(context, entry.path) && !isIgnoredRelativePath(entry.path, ignoredPaths) && !isExcludedIgnoredStatusPath(context, entry),
+  );
   const head = await gitHead(context);
   const fingerprints = await Promise.all(
     entries.map(async (entry) => ({
@@ -127,9 +130,11 @@ async function collectFilesystemFingerprintEntries(
   entries.push({ path: relativePath, type: "other" });
 }
 
-async function gitStatusOutput(context: ProjectContext): Promise<string | null> {
+async function gitStatusOutput(context: ProjectContext, includeIgnoredFiles: boolean): Promise<string | null> {
   try {
-    const result = await execFileAsync("git", ["status", "--porcelain=v1", "-z", "--untracked-files=all"], { cwd: context.root, env: process.env, maxBuffer: 20 * 1024 * 1024 });
+    const args = ["status", "--porcelain=v1", "-z", "--untracked-files=all"];
+    if (includeIgnoredFiles) args.push("--ignored=matching");
+    const result = await execFileAsync("git", args, { cwd: context.root, env: process.env, maxBuffer: 20 * 1024 * 1024 });
     return result.stdout;
   } catch {
     return null;
@@ -147,7 +152,9 @@ async function gitHead(context: ProjectContext): Promise<string | null> {
 
 async function fileFingerprint(filePath: string): Promise<string> {
   try {
-    return createHash("sha256").update(await readFile(filePath)).digest("hex");
+    return createHash("sha256")
+      .update(await readFile(filePath))
+      .digest("hex");
   } catch (error) {
     return `unreadable:${(error as NodeJS.ErrnoException).code ?? "unknown"}`;
   }
@@ -177,7 +184,15 @@ function isIgnoredRelativePath(relativePath: string, ignoredPaths: Set<string>):
 
 function isIgnoredFilesystemFingerprintPath(context: ProjectContext, relativePath: string, absolutePath: string): boolean {
   if (isRoadrunnerRuntimePath(context, relativePath)) return true;
-  return relativePath.split(path.posix.sep).some((segment) => fallbackFingerprintIgnoredDirectories.has(segment)) || isSameOrInside(path.join(context.root, ".roadrunner", "logs"), absolutePath);
+  return (
+    relativePath.split(path.posix.sep).some((segment) => fallbackFingerprintIgnoredDirectories.has(segment)) ||
+    isSameOrInside(path.join(context.root, ".roadrunner", "logs"), absolutePath)
+  );
+}
+
+function isExcludedIgnoredStatusPath(context: ProjectContext, entry: StatusEntry): boolean {
+  if (entry.status !== "!!") return false;
+  return isIgnoredFilesystemFingerprintPath(context, entry.path, path.resolve(context.root, entry.path));
 }
 
 function isSameOrInside(parent: string, child: string): boolean {

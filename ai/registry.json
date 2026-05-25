@@ -88,8 +88,8 @@
         "github": ".github/instructions/roadmap-executor.instructions.md"
       },
       "toolConfig": {
-        "cursor": { "globs": "src/runner.ts,src/queue.ts,src/process-registry.ts,templates/prompts/*.md", "alwaysApply": false },
-        "github": { "applyTo": "src/runner.ts,src/queue.ts,src/process-registry.ts,templates/prompts/*.md" }
+        "cursor": { "globs": "src/runner*.ts,src/queue.ts,src/process-registry.ts,templates/prompts/*.md", "alwaysApply": false },
+        "github": { "applyTo": "src/runner*.ts,src/queue.ts,src/process-registry.ts,templates/prompts/*.md" }
       }
     },
     {

@@ -1,14 +1,14 @@
 # Roadrunner Reconcile And Optimize Queue
 
-Review project state and update the configured Roadrunner queue file as a queue strategist.
+Review project state after a verified step and update the configured Roadrunner queue file as a queue strategist.
 
-The goal is not only to keep the queue valid. Use this pass to optimize the remaining roadmap so future Roadrunner cycles work on meaningful deliverable capabilities instead of tiny mechanical edits.
+The completed step has already been moved to `history`. Use this pass to optimize the remaining queue so future Roadrunner cycles work on meaningful deliverable capabilities instead of tiny mechanical edits.
 
-Preserve `version`, `model`, `variant`, `history`, `blocked`, and `queue[0]` exactly. Roadrunner owns completion of the current step after reconciliation succeeds.
+Preserve `version`, `model`, `variant`, `history`, and `blocked` exactly.
 
-Only edit future items in `queue[1..]` and only edit the configured queue JSON file. Do not edit source code, docs, prompts, tests, configs, lockfiles, generated files, or runtime artifacts.
+Only edit open items in `queue` and only edit the configured queue JSON file. Do not edit source code, docs, prompts, tests, configs, lockfiles, generated files, or runtime artifacts.
 
-When useful, optimize `queue[1..]` by:
+When useful, optimize `queue` by:
 
 - grouping related microtasks that belong to the same capability;
 - splitting tasks that cross too many boundaries or cannot be verified coherently;
@@ -38,4 +38,10 @@ In your response, include a short Markdown summary with these headings before or
 
 ```json
 {{QUEUE_JSON}}
+```
+
+## Completed Step
+
+```json
+{{STEP_JSON}}
 ```

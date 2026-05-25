@@ -1,13 +1,13 @@
 import { readFile, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { PassThrough } from "node:stream";
 import { pathToFileURL } from "node:url";
 import { describe, expect, test } from "vitest";
 
 import { formatRunEvent, helpText, isCliEntrypoint, main } from "../src/cli.js";
 import { readJson, writeJson } from "../src/config.js";
+import { formatDuration } from "../src/duration.js";
 import type { QueueFile, QueueStep } from "../src/queue.js";
-import { createRunFeedback, formatDuration, formatRunProgress } from "../src/run-cli-feedback.js";
+import { formatRunProgress } from "../src/run-progress.js";
 import { createInitializedProject, removeDir, sampleRoadmap, tempDir } from "./helpers.js";
 import { createFakeOpenCodeBin, withPath } from "./helpers.js";
 
@@ -40,6 +40,7 @@ describe("cli", () => {
 
     const output = [
       formatRunEvent({ type: "validate" }),
+      formatRunEvent({ type: "startup-refresh" }),
       formatRunEvent({ step, type: "step" }),
       formatRunEvent({ step, type: "plan" }),
       formatRunEvent({ command: ["opencode", "run", "<prompt>"], debug: true, logPath: "/tmp/plan.log", pid: 123, role: "plan", step, type: "provider-start" }),
@@ -58,6 +59,7 @@ describe("cli", () => {
     ].join("\n");
 
     expect(output).toMatch(/Validating project/);
+    expect(output).toMatch(/Refreshed queue from roadmap and repository state/);
     expect(output).toMatch(/Selected step sample-step: Ship Sample/);
     expect(output).toMatch(/OpenCode plan started pid=123 log=\/tmp\/plan\.log debug=on/);
     expect(output).toMatch(/OpenCode plan started pid=n\/a log=\/tmp\/missing\.log/);
@@ -93,64 +95,12 @@ describe("cli", () => {
     ).toContain("implement sample-step attempt=2 elapsed=1m10s phase=1m00s idle=10s pid=123 log=/tmp/implement.log");
   });
 
-  test("run feedback renders progress and accepts rstask", async () => {
-    const input = new PassThrough();
-    const output: string[] = [];
-    const terminalOutput: string[] = [];
-    const step: QueueStep = {
-      acceptance: ["works"],
-      id: "sample-step",
-      phase: "Sample",
-      prompt: "Build it.",
-      scope: ["src/sample.ts"],
-      title: "Ship Sample",
-      verification: ["npm test"],
-    };
-    let now = 0;
-    let restartCount = 0;
-    const feedback = createRunFeedback({
-      input,
-      interactive: true,
-      intervalMs: 60_000,
-      now: () => now,
-      stdout: (message) => output.push(message),
-      terminal: {
-        clearLine: () => terminalOutput.push("<clear>"),
-        cursorTo: () => terminalOutput.push("<cursor>"),
-        write: (message) => terminalOutput.push(message),
-      },
-    });
-
-    feedback.onControl({
-      restartCurrentTask() {
-        restartCount += 1;
-        return true;
-      },
-    });
-    feedback.onEvent({ step, type: "step" });
-    now = 1_000;
-    feedback.onEvent({ step, type: "implement" });
-    now = 2_000;
-    feedback.onEvent({ command: ["opencode"], debug: false, logPath: "/tmp/implement.log", pid: 123, role: "implement", step, type: "provider-start" });
-    now = 3_000;
-    feedback.onActivity({ phase: "implement", step });
-    input.write("rstask\n");
-    await new Promise<void>((resolve) => setImmediate(resolve));
-    feedback.stop();
-
-    expect(output.join("\n")).toMatch(/type rstask/);
-    expect(restartCount).toBe(1);
-    expect(terminalOutput.join("\n")).toMatch(/implement sample-step/);
-    expect(terminalOutput.join("\n")).toMatch(/pid=123 log=\/tmp\/implement\.log/);
-  });
-
-  test("prints help for default and unknown commands", async () => {
+  test("prints help for default command", async () => {
     const directory = await tempDir("roadrunner-cli-help-");
     const output: string[] = [];
     try {
       expect(helpText()).toMatch(/import-roadmap/);
       expect(await main([], { cwd: directory, io: { stdout: (message) => output.push(message) } })).toBe(0);
-      expect(await main(["unknown"], { cwd: directory, io: { stdout: (message) => output.push(message) } })).toBe(0);
       expect(output.join("\n")).toMatch(/Roadrunner/);
     } finally {
       await removeDir(directory);
@@ -164,7 +114,6 @@ describe("cli", () => {
       await writeFile(path.join(directory, "roadrunner.config.json"), "not json\n");
 
       expect(await main([], { cwd: directory, io: { stdout: (message) => output.push(message) } })).toBe(0);
-      expect(await main(["unknown"], { cwd: directory, io: { stdout: (message) => output.push(message) } })).toBe(0);
       expect(output.join("\n")).toMatch(/Roadrunner/);
     } finally {
       await removeDir(directory);
@@ -310,17 +259,23 @@ describe("cli", () => {
     }
   });
 
-  test("run command reports zero completed steps for a clean empty queue", async () => {
-    const directory = await tempDir("roadrunner-cli-run-empty-");
-    const output: string[] = [];
+  test("run command launches the terminal UI with parsed limits", async () => {
+    const directory = await tempDir("roadrunner-cli-run-tui-");
+    let seen: { maxHours?: number; maxSteps?: number } | null = null;
     try {
-      const context = await createInitializedProject(directory);
-      const queue = await readJson<QueueFile>(context.paths.queue);
-      queue.queue = [];
-      await writeFile(context.paths.queue, `${JSON.stringify(queue, null, 2)}\n`);
+      await createInitializedProject(directory);
 
-      expect(await main(["run", "--max-steps", "1"], { cwd: directory, io: { stdout: (message) => output.push(message) } })).toBe(0);
-      expect(output.join("\n")).toMatch(/Completed 0 step\(s\)/);
+      expect(
+        await main(["run", "--max-steps", "2", "--max-hours", "3"], {
+          cwd: directory,
+          runTui: async (_context, options) => {
+            seen = { maxHours: options.maxHours, maxSteps: options.maxSteps };
+            return 0;
+          },
+          terminal: { isInteractive: true },
+        }),
+      ).toBe(0);
+      expect(seen).toEqual({ maxHours: 3, maxSteps: 2 });
     } finally {
       await removeDir(directory);
     }
@@ -331,7 +286,7 @@ describe("cli", () => {
     const errors: string[] = [];
     try {
       expect(await main(["run", "--max-hours"], { cwd: directory, io: { stderr: (message) => errors.push(message) } })).toBe(1);
-      expect(errors.join("\n")).toMatch(/got true/);
+      expect(errors.join("\n")).toMatch(/Expected a value for --max-hours/);
 
       expect(await main(["check"], { cwd: directory, io: { stderr: (message) => errors.push(message) } })).toBe(1);
       expect(errors.join("\n")).toMatch(/ENOENT|no such file/i);
@@ -357,19 +312,14 @@ describe("cli", () => {
     }
   });
 
-  test("run command reports empty queue without git clean checks", async () => {
-    const directory = await tempDir("roadrunner-cli-run-");
-    const output: string[] = [];
+  test("run command requires an interactive terminal", async () => {
+    const directory = await tempDir("roadrunner-cli-run-nontty-");
+    const errors: string[] = [];
     try {
-      const context = await createInitializedProject(directory);
-      const queue = await readJson<QueueFile>(context.paths.queue);
-      queue.queue = [];
-      await writeFile(context.paths.queue, `${JSON.stringify(queue, null, 2)}\n`);
+      await createInitializedProject(directory);
 
-      expect(await main(["run", "--max-steps", "1"], { cwd: directory, io: { stdout: (message) => output.push(message) } })).toBe(0);
-      expect(output.join("\n")).toMatch(/Running Roadrunner/);
-      expect(output.join("\n")).toMatch(/Completed 0 step\(s\)/);
-      expect(output.join("\n")).not.toMatch(/clean git worktree/);
+      expect(await main(["run", "--max-steps", "1"], { cwd: directory, io: { stderr: (message) => errors.push(message) }, terminal: { isInteractive: false } })).toBe(1);
+      expect(errors.join("\n")).toMatch(/requires an interactive terminal/);
     } finally {
       await removeDir(directory);
     }

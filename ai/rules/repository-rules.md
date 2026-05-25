@@ -5,9 +5,9 @@
 - Keep Roadrunner provider-agnostic where possible.
 - Keep OpenCode-specific behavior inside the provider adapter.
 - Keep autonomous runs plan-first and verification-gated.
-- Keep reconciliation as a queue optimization pass over future work, not a source-editing phase.
+- Keep startup queue refresh and reconciliation as queue-only phases, not source-editing phases.
 - Keep `GOALS.md` as a run-start in-memory snapshot during autonomous runs.
-- Keep `.roadrunner/queue.json` as the live autonomous task state.
+- Treat `.roadrunner/queue.json` as generated live task state that is rebuilt at run start from roadmap and repository state.
 
 ## Never
 
