@@ -13,8 +13,7 @@
       "scope": ["README.md"],
       "prompt": "Replace this placeholder with the first concrete implementation step for this project.",
       "acceptance": ["the step has clear acceptance criteria"],
-      "verification": ["npm run check"],
-      "commitMessage": "Implement first roadmap step"
+      "verification": ["npm run check"]
     }
   ],
   "history": [],

@@ -62,7 +62,7 @@
     },
     {
       "name": "roadmap-executor",
-      "description": "Use when changing Roadrunner autonomous roadmap runs, plan-execute-verify-commit-reconcile behavior, or queue semantics.",
+      "description": "Use when changing Roadrunner autonomous roadmap runs, plan-execute-verify-reconcile behavior, or queue semantics.",
       "canonicalPath": "ai/skills/roadmap-executor.md",
       "references": ["ai/rules/roadmap-autopilot-rules.md", "ai/rules/process-supervisor-rules.md", "ai/architecture/roadmap-loop.md", "ai/architecture/process-supervision.md"],
       "routes": {

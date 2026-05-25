@@ -18,6 +18,7 @@ describe("roadmap", () => {
     expect(queueFile.queue[0]?.title).toBe("Build first step");
     expect(queueFile.queue[0]?.scope).toEqual(["README.md", "src/feature.ts"]);
     expect(queueFile.queue[0]?.verification).toEqual(["npm run check"]);
+    expect(queueFile.queue[0]?.commitMessage).toBeUndefined();
   });
 
   test("parses roadmap with configured model and variant", () => {
@@ -68,7 +69,7 @@ Commit: Build third step
     expect(queueFile.queue.map((step) => step.id)).toEqual(["second-step", "third-step"]);
     expect(queueFile.queue[0]?.scope).toEqual(["README.md", "src/index.ts"]);
     expect(queueFile.queue[0]?.acceptance).toEqual(["works", "still works"]);
-    expect(queueFile.queue[0]?.commitMessage).toBe("Build second step");
+    expect(queueFile.queue[0]?.verification).toEqual(["npm test"]);
   });
 
   test("rejects roadmap steps with missing required fields", () => {

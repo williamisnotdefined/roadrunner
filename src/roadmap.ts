@@ -145,7 +145,6 @@ function stepFromSection(section: RoadmapSection, errors: string[]): QueueStep {
     prompt: textField(fields, "prompt", section, errors, { multiline: true }),
     acceptance: listField(fields, "acceptance", section, errors),
     verification: listField(fields, "verification", section, errors),
-    commitMessage: textField(fields, "commit", section, errors),
   };
 
   return step;

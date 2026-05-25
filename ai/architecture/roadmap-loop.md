@@ -3,9 +3,13 @@
 Roadrunner executes a queue of small tasks. Each task follows:
 
 ```txt
-Plan -> Execute -> Verify -> Commit -> Reconcile
+Plan -> Execute -> Verify -> Reconcile
 ```
 
 The queue lives in the configured queue file, defaulting to `.roadrunner/queue.json` in the target project. The first queued item is the only current task.
 
+`GOALS.md` is loaded once at the start of a run and used as an immutable in-memory goal snapshot for all prompts in that run. `ROADMAP.md` is read only by `init` and `import-roadmap`; after import, the queue file is the live task state.
+
 Roadmaps may be imported from Markdown into the queue. Import preserves existing `history` and `blocked` records and only queues steps that have not already been closed.
+
+Roadrunner does not require a clean git worktree, does not restore file changes, and does not create commits. Failures update the queue state by blocking the current step when possible.

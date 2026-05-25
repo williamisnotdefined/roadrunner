@@ -7,7 +7,7 @@ export interface QueueStep {
   acceptance: string[];
   blockedAt?: string;
   blockedReason?: string;
-  commitMessage: string;
+  commitMessage?: string;
   completedAt?: string;
   id: string;
   phase: string;
@@ -69,13 +69,18 @@ export function validateQueueFile(queueFile: unknown, { model = defaultModel, va
 
 export async function validateGoals(context: ProjectContext): Promise<string[]> {
   let content = "";
-  const label = goalPathLabel(context);
+  const label = goalsPathLabel(context);
   try {
     content = await readFile(context.paths.goals, "utf8");
   } catch {
     return [`${label} must exist.`];
   }
 
+  return validateGoalsContent(context, content);
+}
+
+export function validateGoalsContent(context: ProjectContext, content: string): string[] {
+  const label = goalsPathLabel(context);
   return content.trim().length === 0 ? [`${label} must not be empty.`] : [];
 }
 
@@ -99,7 +104,6 @@ export function formatStep(step: QueueStep | null): string {
     `Phase: ${step.phase}`,
     `Scope: ${step.scope.join(", ")}`,
     `Acceptance: ${step.acceptance.join("; ")}`,
-    `Commit: ${step.commitMessage}`,
   ].join("\n");
 }
 
@@ -119,9 +123,10 @@ export function markBlocked(queueFile: QueueFile, stepId: string, reason: string
 
 function validateStep(step: QueueStep, field: string, errors: string[]): void {
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(step?.id ?? "")) errors.push(`${field}.id must be kebab-case.`);
-  for (const key of ["phase", "title", "prompt", "commitMessage"] as const) {
+  for (const key of ["phase", "title", "prompt"] as const) {
     if (typeof step?.[key] !== "string" || step[key].length === 0) errors.push(`${field}.${key} must be a non-empty string.`);
   }
+  if (step?.commitMessage !== undefined && (typeof step.commitMessage !== "string" || step.commitMessage.length === 0)) errors.push(`${field}.commitMessage must be a non-empty string.`);
   for (const key of ["scope", "acceptance", "verification"] as const) {
     if (!Array.isArray(step?.[key]) || step[key].length === 0) {
       errors.push(`${field}.${key} must be a non-empty array.`);
@@ -134,7 +139,7 @@ function validateStep(step: QueueStep, field: string, errors: string[]): void {
   }
 }
 
-function goalPathLabel(context: ProjectContext): string {
+export function goalsPathLabel(context: ProjectContext): string {
   const root = (context as Partial<ProjectContext>).root;
   if (!root) return path.basename(context.paths.goals);
   const relative = path.relative(root, context.paths.goals).split(path.sep).join(path.posix.sep);

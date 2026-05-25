@@ -1,6 +1,6 @@
 # Roadmap Executor
 
-Use this skill when changing Roadrunner autonomous roadmap runs, plan-execute-verify-commit-reconcile behavior, or queue semantics.
+Use this skill when changing Roadrunner autonomous roadmap runs, plan-execute-verify-reconcile behavior, or queue semantics.
 
 ## Read First
 
@@ -13,5 +13,6 @@ Use this skill when changing Roadrunner autonomous roadmap runs, plan-execute-ve
 
 - Keep `queue[0]` as the only current task.
 - Keep planning mandatory before implementation.
+- Keep the run-start goals snapshot immutable.
 - Keep cleanup constrained to Roadrunner-owned subprocesses.
 - Stop on blockers rather than bypassing checks.

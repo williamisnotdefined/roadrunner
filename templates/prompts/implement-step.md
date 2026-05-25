@@ -1,6 +1,6 @@
 # Roadrunner Implement Step
 
-Implement exactly this step. Do not commit or push.
+Implement exactly this step.
 
 ## Goals
 

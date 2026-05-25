@@ -98,12 +98,8 @@ export async function main(argv = process.argv.slice(2), { cwd = process.cwd(), 
 
 export function formatRunEvent(event: RoadrunnerRunEvent): string {
   switch (event.type) {
-    case "clean-worktree":
-      return formatCliStep("Checking clean git worktree");
     case "cleanup":
       return formatCliStep("Cleaning Roadrunner-owned processes");
-    case "commit":
-      return formatCliStep(`Committing ${event.step.id}`);
     case "fix":
       return formatCliStep(`Fixing verification failure for ${event.step.id}`);
     case "implement":

@@ -5,10 +5,10 @@ Goal-directed autonomous software engineering loop.
 Roadrunner turns a project goal and a task queue into a repeatable cycle:
 
 ```txt
-Plan -> Execute -> Verify -> Commit -> Reconcile
+Plan -> Execute -> Verify -> Reconcile
 ```
 
-It is designed to run coding agents safely over small roadmap steps, with explicit planning, verification, commits, process cleanup, and queue reconciliation.
+It is designed to run coding agents over small roadmap steps, with explicit planning, verification, process cleanup, and queue reconciliation.
 
 ## Commands
 
@@ -28,7 +28,7 @@ tsx src/cli.ts cleanup
 
 Roadrunner always treats the current working directory as the target project. Run the CLI from the project you want it to modify, not from the Roadrunner repository.
 
-If you run it from `~/git/rubiks-cube-solver`, Roadrunner reads and writes files in `~/git/rubiks-cube-solver`, uses that repo's `.git`, and creates commits there.
+If you run it from `~/git/rubiks-cube-solver`, Roadrunner reads and writes files in `~/git/rubiks-cube-solver` and stores its queue state under that project's `.roadrunner/` directory. Roadrunner does not require a clean git worktree and does not create commits.
 
 Example: work on `~/git/rubiks-cube-solver` using this local Roadrunner checkout.
 
@@ -43,10 +43,7 @@ Then move into the target project:
 
 ```bash
 cd ~/git/rubiks-cube-solver
-git status --short
 ```
-
-`git status --short` should print nothing before `run`; Roadrunner refuses to start autonomous work on a dirty worktree.
 
 Initialize Roadrunner state in the target project:
 
@@ -82,7 +79,7 @@ node /home/wozzp/git/roadrunner/dist/src/cli.js run --max-steps 999 --max-hours 
 For each queued step, `run` performs:
 
 ```txt
-Plan -> Execute -> Verify -> Commit -> Reconcile
+Plan -> Execute -> Verify -> Reconcile
 ```
 
 With `--max-steps 999 --max-hours 72`, Roadrunner will keep working until one of these happens:
@@ -90,9 +87,9 @@ With `--max-steps 999 --max-hours 72`, Roadrunner will keep working until one of
 - The queue is empty.
 - 999 steps have completed.
 - 72 hours have elapsed.
-- A provider, verification, commit, or reconciliation failure blocks the run.
+- A provider, verification, or reconciliation failure blocks the run.
 
-Each successful step is committed in the target repository. `--goals` and `--roadmap` are resolved relative to the target project directory.
+`GOALS.md` is loaded once at the start of `run` and remains the in-memory goal for that execution. `ROADMAP.md` is read only by `init` and `import-roadmap`; after import, `.roadrunner/queue.json` is the live task state. `--goals` and `--roadmap` are resolved relative to the target project directory.
 
 Run commands as separate shell commands, or join them with `&&`. Do not paste multiple `node ...` commands on one line without a separator.
 
@@ -138,21 +135,21 @@ Prints only the current `queue[0]` step.
 
 ### `plan`
 
-Validates the project, requires a clean git worktree when a step is queued, runs the planning agent for the current step, and writes plan logs under `.roadrunner/logs/`. Planning is run without skipped permissions and fails if the planner changes project files.
+Validates the project, loads `GOALS.md` into memory for the planning prompt, runs the planning agent for the current step, and writes plan logs under `.roadrunner/logs/`. Planning is run without skipped permissions.
 
 ### `run`
 
 Runs autonomous cycles up to `--max-steps` or `--max-hours`:
 
 ```txt
-Plan -> Execute -> Verify -> Commit -> Reconcile
+Plan -> Execute -> Verify -> Reconcile
 ```
 
-The runner requires a clean git worktree before starting and holds `.roadrunner/roadmap.lock` for the duration of the run. Runtime files such as logs, process registries, and locks are excluded from Roadrunner's internal cleanliness checks.
+The runner holds `.roadrunner/roadmap.lock` for the duration of the run to avoid concurrent Roadrunner runners mutating the same queue. It does not block because of unrelated user edits, dirty git state, provider git commands, or verification commands that mutate files.
+
+At run start, Roadrunner reads `GOALS.md` once and uses that immutable in-memory snapshot for planning, implementation, fixing, and reconciliation prompts. Edits to `GOALS.md` during a run only affect future runs.
 
 Provider runs default to `ROADRUNNER_PROVIDER_TIMEOUT_MS=1800000` and verification commands default to `ROADRUNNER_VERIFY_TIMEOUT_MS=600000`. Set either variable to `0` to disable that timeout. `--max-hours` caps provider and verification timeouts for the current step.
-
-Verification commands are expected to be read-only. If verification mutates tracked or untracked project files, Roadrunner blocks the step, restores the worktree, and records the diff under `.roadrunner/logs/`.
 
 ### `cleanup`
 
@@ -178,11 +175,9 @@ Acceptance:
 
 Verification:
 - npm run check
-
-Commit: Add first feature
 ```
 
-Supported heading forms are `## step-id: Title`, `## step-id - Title`, and `## [step-id] Title`; heading levels `##` through `######` are accepted. Supported fields are `Phase`, `Scope`, `Prompt`, `Acceptance`, `Verification`, `Commit`, and `Commit Message`.
+Supported heading forms are `## step-id: Title`, `## step-id - Title`, and `## [step-id] Title`; heading levels `##` through `######` are accepted. Required fields are `Phase`, `Scope`, `Prompt`, `Acceptance`, and `Verification`. Legacy `Commit` and `Commit Message` fields are accepted but ignored.
 
 During development in this repo:
 
@@ -239,11 +234,11 @@ npm run ai:check
 
 ## Safety Model
 
-- `GOALS.md` is read-only product direction for autonomous runs.
-- `.roadrunner/queue.json` is the mutable queue.
+- `GOALS.md` is loaded once into memory at run start.
+- `ROADMAP.md` is only an import source; `.roadrunner/queue.json` is the mutable live queue.
 - `queue[0]` is always the current task.
 - Planning is mandatory before execution.
-- The reconciler may only edit the configured queue file, defaulting to `.roadrunner/queue.json`.
+- The reconciler updates the configured queue file, defaulting to `.roadrunner/queue.json`; other file changes are not treated as Roadrunner safety violations.
 - Cleanup only targets subprocesses registered by Roadrunner itself.
 - Nested OpenCode is rejected by default.
 - Concurrent `run` processes are rejected by the configured lock file.

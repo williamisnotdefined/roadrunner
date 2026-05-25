@@ -5,14 +5,13 @@ import { describe, expect, test } from "vitest";
 import { formatRunEvent, helpText, main } from "../src/cli.js";
 import { readJson, writeJson } from "../src/config.js";
 import type { QueueFile, QueueStep } from "../src/queue.js";
-import { commitAll, createInitializedProject, initGit, removeDir, sampleRoadmap, tempDir } from "./helpers.js";
+import { createInitializedProject, removeDir, sampleRoadmap, tempDir } from "./helpers.js";
 import { createFakeOpenCodeBin, withPath } from "./helpers.js";
 
 describe("cli", () => {
   test("formats run progress events", () => {
     const step: QueueStep = {
       acceptance: ["works"],
-      commitMessage: "Ship sample",
       id: "sample-step",
       phase: "Sample",
       prompt: "Build it.",
@@ -23,7 +22,6 @@ describe("cli", () => {
 
     const output = [
       formatRunEvent({ type: "validate" }),
-      formatRunEvent({ type: "clean-worktree" }),
       formatRunEvent({ step, type: "step" }),
       formatRunEvent({ step, type: "plan" }),
       formatRunEvent({ command: ["opencode", "run", "<prompt>"], debug: true, logPath: "/tmp/plan.log", pid: 123, role: "plan", step, type: "provider-start" }),
@@ -32,7 +30,6 @@ describe("cli", () => {
       formatRunEvent({ attempt: "initial", step, type: "verify" }),
       formatRunEvent({ step, type: "fix" }),
       formatRunEvent({ attempt: "fixed", step, type: "verify" }),
-      formatRunEvent({ step, type: "commit" }),
       formatRunEvent({ step, type: "reconcile" }),
       formatRunEvent({ step, type: "step-complete" }),
       formatRunEvent({ type: "cleanup" }),
@@ -152,8 +149,6 @@ describe("cli", () => {
       process.env.PATH = withPath(binDir);
       const context = await createInitializedProject(directory);
       context.config.allowNestedOpenCode = true;
-      await initGit(directory);
-      await commitAll(directory, "Initial project");
 
       expect(await main(["plan"], { cwd: directory, io: { stdout: (message) => output.push(message) } })).toBe(0);
       expect(output.join("\n")).toMatch(/Plan written to/);
@@ -172,8 +167,6 @@ describe("cli", () => {
       process.env.PATH = withPath(binDir);
       process.env.ROADRUNNER_FAKE_OPENCODE_MODE = "plan-fail";
       await createInitializedProject(directory);
-      await initGit(directory);
-      await commitAll(directory, "Initial project");
 
       expect(await main(["plan"], { cwd: directory, io: { stderr: (message) => errors.push(message) } })).toBe(1);
       expect(errors.join("\n")).toMatch(/Planning failed/);
@@ -191,8 +184,6 @@ describe("cli", () => {
       const queue = await readJson<QueueFile>(context.paths.queue);
       queue.queue = [];
       await writeFile(context.paths.queue, `${JSON.stringify(queue, null, 2)}\n`);
-      await initGit(directory);
-      await commitAll(directory, "Initial empty queue project");
 
       expect(await main(["run", "--max-steps", "1"], { cwd: directory, io: { stdout: (message) => output.push(message) } })).toBe(0);
       expect(output.join("\n")).toMatch(/Completed 0 step\(s\)/);
@@ -215,7 +206,24 @@ describe("cli", () => {
     }
   });
 
-  test("run command reports completed steps", async () => {
+  test("uses default stderr when no error io is provided", async () => {
+    const directory = await tempDir("roadrunner-cli-default-error-");
+    const originalError = console.error;
+    const errors: string[] = [];
+    try {
+      console.error = (message?: unknown) => {
+        errors.push(String(message));
+      };
+
+      expect(await main(["check"], { cwd: directory })).toBe(1);
+      expect(errors.join("\n")).toMatch(/ENOENT|no such file/i);
+    } finally {
+      console.error = originalError;
+      await removeDir(directory);
+    }
+  });
+
+  test("run command reports empty queue without git clean checks", async () => {
     const directory = await tempDir("roadrunner-cli-run-");
     const output: string[] = [];
     try {
@@ -224,9 +232,10 @@ describe("cli", () => {
       queue.queue = [];
       await writeFile(context.paths.queue, `${JSON.stringify(queue, null, 2)}\n`);
 
-      expect(await main(["run", "--max-steps", "1"], { cwd: directory, io: { stdout: (message) => output.push(message) } })).toBe(1);
+      expect(await main(["run", "--max-steps", "1"], { cwd: directory, io: { stdout: (message) => output.push(message) } })).toBe(0);
       expect(output.join("\n")).toMatch(/Running Roadrunner/);
-      expect(output.join("\n")).toMatch(/Checking clean git worktree/);
+      expect(output.join("\n")).toMatch(/Completed 0 step\(s\)/);
+      expect(output.join("\n")).not.toMatch(/clean git worktree/);
     } finally {
       await removeDir(directory);
     }

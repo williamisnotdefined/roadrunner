@@ -5,11 +5,11 @@
 - Keep Roadrunner provider-agnostic where possible.
 - Keep OpenCode-specific behavior inside the provider adapter.
 - Keep autonomous runs plan-first and verification-gated.
-- Keep commits small and step-scoped.
-- Treat `GOALS.md` in target projects as read-only during autonomous runs.
+- Keep `GOALS.md` as a run-start in-memory snapshot during autonomous runs.
+- Keep `.roadrunner/queue.json` as the live autonomous task state.
 
 ## Never
 
 - Do not kill arbitrary editor or agent processes.
 - Do not skip failing verification.
-- Do not let implementation agents commit, push, or mutate queue state directly.
+- Do not create automatic Roadrunner commits.

@@ -65,13 +65,13 @@ Commit: Implement Todo CRUD
 
     const queue = await readJson<QueueFile>(path.join(outputRoot, ".roadrunner/queue.json"));
     const testResult = await run("npm", ["test"], outputRoot);
-    const gitLog = await run("git", ["log", "--oneline"], outputRoot);
+    const gitStatus = await run("git", ["status", "--short"], outputRoot);
 
     expect(queue.queue).toEqual([]);
     expect(queue.history.map((step) => step.id)).toEqual(["todo-crud"]);
     expect(queue.blocked).toEqual([]);
     expect(testResult.stdout).toMatch(/supports todo CRUD/);
-    expect(gitLog.stdout.split("\n").filter(Boolean).length).toBeGreaterThanOrEqual(2);
+    expect(gitStatus.stdout).toMatch(/src\//);
     expect(await readFile(path.join(outputRoot, "src/todos.js"), "utf8")).toMatch(/createTodoStore/);
     expect(path.relative(path.resolve("test-output/e2e"), outputRoot)).toBe("todo-crud");
   }, 30_000);

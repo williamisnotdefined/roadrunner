@@ -1,11 +1,11 @@
 # Project Goals
 
-Describe the final product goal here. Roadrunner treats this file as read-only during autonomous runs.
+Describe the final product goal here. Roadrunner loads this file once at the start of each autonomous run and uses that in-memory snapshot throughout the run.
 
 The autonomous loop should move through:
 
 ```txt
-Plan -> Execute -> Verify -> Commit -> Reconcile
+Plan -> Execute -> Verify -> Reconcile
 ```
 
 ## Required Outcome

@@ -125,6 +125,7 @@ if (mode === "spawn-child-on-term") {
 
 if (prompt.includes("Roadrunner Plan Step")) {
   if (mode === "plan-dirty") fs.writeFileSync("plan-dirty.txt", "nope\\n");
+  if (mode === "goals-snapshot") fs.writeFileSync("GOALS.md", "# Goals\\n\\nChanged during run.\\n");
   console.log("Plan: implement the requested step.");
   process.exit(0);
 }
@@ -133,6 +134,9 @@ if (prompt.includes("Roadrunner Implement Step")) {
   if (mode === "goals-dirty") {
     fs.writeFileSync("GOALS.md", "changed\\n");
     fs.writeFileSync("marker.txt", "ok\\n");
+  } else if (mode === "goals-snapshot") {
+    fs.writeFileSync("marker.txt", "ok\\n");
+    fs.writeFileSync("goal-snapshot.txt", prompt.includes("Build the requested project.") ? "original\\n" : "changed\\n");
   } else if (mode === "todo-e2e") {
     fs.mkdirSync("src", { recursive: true });
     fs.mkdirSync("test", { recursive: true });

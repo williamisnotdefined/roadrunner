@@ -1,6 +1,6 @@
 # Roadrunner Fix Failure
 
-Fix the verification failure with the smallest correct change. Do not commit or push.
+Fix the verification failure with the smallest correct change.
 
 ## Goals
 

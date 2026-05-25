@@ -1,6 +1,6 @@
 ---
 name: roadmap-executor
-description: "Use when changing Roadrunner autonomous roadmap runs, plan-execute-verify-commit-reconcile behavior, or queue semantics."
+description: "Use when changing Roadrunner autonomous roadmap runs, plan-execute-verify-reconcile behavior, or queue semantics."
 ---
 
 Generated from `ai/registry.json`. Do not edit manually.
@@ -9,7 +9,7 @@ Generated from `ai/registry.json`. Do not edit manually.
 
 # Roadmap Executor
 
-Use this skill when changing Roadrunner autonomous roadmap runs, plan-execute-verify-commit-reconcile behavior, or queue semantics.
+Use this skill when changing Roadrunner autonomous roadmap runs, plan-execute-verify-reconcile behavior, or queue semantics.
 
 ## Read First
 
@@ -22,6 +22,7 @@ Use this skill when changing Roadrunner autonomous roadmap runs, plan-execute-ve
 
 - Keep `queue[0]` as the only current task.
 - Keep planning mandatory before implementation.
+- Keep the run-start goals snapshot immutable.
 - Keep cleanup constrained to Roadrunner-owned subprocesses.
 - Stop on blockers rather than bypassing checks.
 
@@ -33,16 +34,17 @@ Use this skill when changing Roadrunner autonomous roadmap runs, plan-execute-ve
 
 ## Always
 
-- Follow `Plan -> Execute -> Verify -> Commit -> Reconcile`.
+- Follow `Plan -> Execute -> Verify -> Reconcile`.
 - Treat `queue[0]` as the current task.
 - Preserve `history` and `blocked` records.
+- Treat the run's loaded goals snapshot as immutable.
 - Stop on persistent blockers.
 
 ## Never
 
 - Do not rewrite history during reconciliation.
 - Do not bypass verification.
-- Do not edit target `GOALS.md` during autonomous runs.
+- Do not reread `GOALS.md` mid-run.
 
 ## ai/rules/process-supervisor-rules.md
 
@@ -67,12 +69,16 @@ Use this skill when changing Roadrunner autonomous roadmap runs, plan-execute-ve
 Roadrunner executes a queue of small tasks. Each task follows:
 
 ```txt
-Plan -> Execute -> Verify -> Commit -> Reconcile
+Plan -> Execute -> Verify -> Reconcile
 ```
 
 The queue lives in the configured queue file, defaulting to `.roadrunner/queue.json` in the target project. The first queued item is the only current task.
 
+`GOALS.md` is loaded once at the start of a run and used as an immutable in-memory goal snapshot for all prompts in that run. `ROADMAP.md` is read only by `init` and `import-roadmap`; after import, the queue file is the live task state.
+
 Roadmaps may be imported from Markdown into the queue. Import preserves existing `history` and `blocked` records and only queues steps that have not already been closed.
+
+Roadrunner does not require a clean git worktree, does not restore file changes, and does not create commits. Failures update the queue state by blocking the current step when possible.
 
 ## ai/architecture/process-supervision.md
 
