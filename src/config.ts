@@ -40,6 +40,7 @@ export interface ProjectPaths {
 
 export interface RoadrunnerConfig {
   allowNestedOpenCode?: boolean;
+  dangerouslySkipPermissions?: boolean;
   provider?: string;
   model?: string;
   variant?: string;
@@ -47,7 +48,7 @@ export interface RoadrunnerConfig {
 }
 
 export interface ProjectContext {
-  config: Required<Pick<RoadrunnerConfig, "provider" | "model" | "variant">> & { allowNestedOpenCode: boolean; paths?: PathOverrides };
+  config: Required<Pick<RoadrunnerConfig, "provider" | "model" | "variant">> & { allowNestedOpenCode: boolean; dangerouslySkipPermissions: boolean; paths?: PathOverrides };
   paths: ProjectPaths;
   root: string;
 }
@@ -68,12 +69,13 @@ export function projectPaths(projectRoot = process.cwd(), overrides: PathOverrid
 export async function loadContext(projectRoot = process.cwd(), args: CliArgs = { _: [] }): Promise<ProjectContext> {
   const flagOverrides = pathOverridesFromArgs(args);
   const configPath = flagOverrides.config ? resolveProjectPath(projectRoot, flagOverrides.config) : await defaultConfigPath(projectRoot);
-  const fileConfig = (await pathExists(configPath)) ? await readJson<RoadrunnerConfig>(configPath) : {};
+  const fileConfig = (await pathExists(configPath)) ? await readConfig(configPath) : {};
   const paths = projectPaths(projectRoot, { ...fileConfig.paths, ...flagOverrides, config: configPath });
 
   return {
     config: {
       allowNestedOpenCode: fileConfig.allowNestedOpenCode ?? false,
+      dangerouslySkipPermissions: fileConfig.dangerouslySkipPermissions ?? false,
       provider: fileConfig.provider ?? "opencode",
       model: fileConfig.model ?? defaultModel,
       variant: fileConfig.variant ?? defaultVariant,
@@ -119,9 +121,55 @@ export async function readJson<T = unknown>(filePath: string): Promise<T> {
   return JSON.parse(await readFile(filePath, "utf8")) as T;
 }
 
+export function validateRoadrunnerConfig(value: unknown, filePath = "Roadrunner config"): string[] {
+  const errors: string[] = [];
+  if (!isRecord(value)) return [`${filePath} must be a JSON object.`];
+
+  const allowedConfigKeys = new Set(["allowNestedOpenCode", "dangerouslySkipPermissions", "provider", "model", "variant", "paths"]);
+  for (const key of Object.keys(value)) {
+    if (!allowedConfigKeys.has(key)) errors.push(`${filePath}.${key} is not a supported config key.`);
+  }
+
+  for (const key of ["allowNestedOpenCode", "dangerouslySkipPermissions"] as const) {
+    if (value[key] !== undefined && typeof value[key] !== "boolean") errors.push(`${filePath}.${key} must be a boolean.`);
+  }
+
+  for (const key of ["provider", "model", "variant"] as const) {
+    if (value[key] !== undefined && (typeof value[key] !== "string" || value[key].length === 0)) errors.push(`${filePath}.${key} must be a non-empty string.`);
+  }
+
+  if (value.paths !== undefined) {
+    if (!isRecord(value.paths)) {
+      errors.push(`${filePath}.paths must be a JSON object.`);
+    } else {
+      const allowedPathKeys = new Set(["config", "goals", "goal", "lock", "logs", "processes", "prompts", "queue", "roadmap"]);
+      for (const [key, pathValue] of Object.entries(value.paths)) {
+        if (!allowedPathKeys.has(key)) {
+          errors.push(`${filePath}.paths.${key} is not a supported path key.`);
+          continue;
+        }
+        if (typeof pathValue !== "string" || pathValue.length === 0) errors.push(`${filePath}.paths.${key} must be a non-empty string.`);
+      }
+    }
+  }
+
+  return errors;
+}
+
 export async function writeJson(filePath: string, value: unknown): Promise<void> {
   await mkdir(path.dirname(filePath), { recursive: true });
   await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+async function readConfig(filePath: string): Promise<RoadrunnerConfig> {
+  const value = await readJson<unknown>(filePath);
+  const errors = validateRoadrunnerConfig(value, filePath);
+  if (errors.length > 0) throw new Error(errors.join("\n"));
+  return value as RoadrunnerConfig;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function resolveProjectPath(projectRoot: string, filePath: string): string {

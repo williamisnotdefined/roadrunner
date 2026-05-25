@@ -1,4 +1,4 @@
-import { mkdir, open, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, open, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
 
@@ -19,7 +19,7 @@ import {
   type QueueValidationOptions,
 } from "./queue.js";
 import { cleanupProcesses, registerProcess, unregisterProcess } from "./process-registry.js";
-import { OpenCodeProvider, type ProviderRunResult, type ProviderStartEvent } from "./providers/opencode.js";
+import { OpenCodeProvider, validateOpenCodeCli, type ProviderRunResult, type ProviderStartEvent } from "./providers/opencode.js";
 
 export interface RoadrunnerStatus {
   blocked: number;
@@ -56,10 +56,10 @@ interface RunSnapshot {
 }
 
 const defaultVerificationTimeoutMs = 10 * 60 * 1000;
+const defaultProviderTimeoutMs = 30 * 60 * 1000;
 const forceKillDelayMs = 1_000;
 
 export async function status(context: ProjectContext): Promise<RoadrunnerStatus> {
-  await readRunSnapshot(context);
   const queueFile = await readValidatedQueue(context);
 
   return {
@@ -78,6 +78,7 @@ export async function plan(
   const queueFile = await readValidatedQueue(context);
   const step = nextStep(queueFile);
   if (!step) return null;
+  await ensureProviderAvailable(context);
 
   return planStep(context, step, snapshot, options);
 }
@@ -100,6 +101,7 @@ export async function run(context: ProjectContext, options: RunOptions = {}): Pr
         const queueFile = await readValidatedQueue(context);
         const step = nextStep(queueFile);
         if (!step) return completed;
+        await ensureProviderAvailable(context);
 
         emitRunEvent(options, { step, type: "step" });
         emitRunEvent(options, { step, type: "plan" });
@@ -119,7 +121,7 @@ export async function run(context: ProjectContext, options: RunOptions = {}): Pr
           ROADMAP_STATUS: formatStep(step),
           STEP_JSON: JSON.stringify(step, null, 2),
         });
-        await writeFile(path.join(logDir, "implement.prompt.md"), prompt);
+        await writePrivateFile(path.join(logDir, "implement.prompt.md"), prompt);
 
         emitRunEvent(options, { step, type: "implement" });
         const result = await providerFor(context).run({
@@ -130,6 +132,7 @@ export async function run(context: ProjectContext, options: RunOptions = {}): Pr
           onStart: (event) => emitRunEvent(options, { ...event, step, type: "provider-start" }),
           prompt,
           role: "implement",
+          skipPermissions: context.config.dangerouslySkipPermissions,
         });
 
         if (result.code !== 0) {
@@ -159,7 +162,7 @@ export async function run(context: ProjectContext, options: RunOptions = {}): Pr
           markDone(reconciledQueue, step.id);
           await writeQueue(reconciledQueue, context);
         } catch (error) {
-          await blockStep(context, queueFile, step, `Reconciliation failed: ${(error as Error).message}`);
+          await blockStep(context, queueFile, step, `Reconciliation failed: ${(error as Error).message}`, { useLatest: false });
           throw error;
         }
         emitRunEvent(options, { step, type: "step-complete" });
@@ -193,7 +196,7 @@ async function planStep(
     STEP_JSON: JSON.stringify(step, null, 2),
   });
 
-  await writeFile(path.join(logDir, "plan.prompt.md"), prompt);
+  await writePrivateFile(path.join(logDir, "plan.prompt.md"), prompt);
   const result = await providerFor(context).run({
     agent: "plan",
     context,
@@ -204,7 +207,7 @@ async function planStep(
     role: "plan",
     skipPermissions: false,
   });
-  await writeFile(path.join(logDir, "plan.md"), result.output);
+  await writePrivateFile(path.join(logDir, "plan.md"), result.output);
 
   return { logDir, result, step };
 }
@@ -266,7 +269,7 @@ async function fixFailure(
     PLAN_MD: planMarkdown,
     STEP_JSON: JSON.stringify(step, null, 2),
   });
-  await writeFile(path.join(logDir, "fix-failure.prompt.md"), prompt);
+  await writePrivateFile(path.join(logDir, "fix-failure.prompt.md"), prompt);
 
   const result = await providerFor(context).run({
     agent: "build",
@@ -276,8 +279,9 @@ async function fixFailure(
     onStart: (event) => emitRunEvent(options, { ...event, step, type: "provider-start" }),
     prompt,
     role: "fix-failure",
+    skipPermissions: context.config.dangerouslySkipPermissions,
   });
-  await writeFile(path.join(logDir, "fix-failure.md"), result.output);
+  await writePrivateFile(path.join(logDir, "fix-failure.md"), result.output);
   return result;
 }
 
@@ -289,7 +293,7 @@ async function reconcileQueue(context: ProjectContext, step: QueueStep, snapshot
     GOALS_MD: snapshot.goalsMarkdown,
     QUEUE_JSON: queueText,
   });
-  await writeFile(path.join(logDir, "reconcile.prompt.md"), prompt);
+  await writePrivateFile(path.join(logDir, "reconcile.prompt.md"), prompt);
 
   const result = await providerFor(context).run({
     agent: "build",
@@ -299,8 +303,9 @@ async function reconcileQueue(context: ProjectContext, step: QueueStep, snapshot
     onStart: (event) => emitRunEvent(options, { ...event, step, type: "provider-start" }),
     prompt,
     role: "reconcile",
+    skipPermissions: context.config.dangerouslySkipPermissions,
   });
-  await writeFile(path.join(logDir, "reconcile.md"), result.output);
+  await writePrivateFile(path.join(logDir, "reconcile.md"), result.output);
 
   if (result.code !== 0) throw new Error(`Reconciliation failed for ${step.id}.`);
 
@@ -316,8 +321,17 @@ async function reconcileQueue(context: ProjectContext, step: QueueStep, snapshot
 }
 
 function providerFor(context: ProjectContext): OpenCodeProvider {
-  if (context.config.provider !== "opencode") throw new Error(`Unsupported provider: ${context.config.provider}`);
   return new OpenCodeProvider({ model: context.config.model ?? defaultModel, variant: context.config.variant ?? defaultVariant });
+}
+
+export async function validateProvider(context: ProjectContext): Promise<string[]> {
+  if (context.config.provider !== "opencode") return [`Unsupported provider: ${context.config.provider}`];
+  return validateOpenCodeCli();
+}
+
+async function ensureProviderAvailable(context: ProjectContext): Promise<void> {
+  const errors = await validateProvider(context);
+  if (errors.length > 0) throw new Error(errors.join("\n"));
 }
 
 function queueValidationOptions(context: ProjectContext): QueueValidationOptions {
@@ -334,14 +348,31 @@ async function renderPrompt(context: ProjectContext, name: string, values: Recor
 async function createLogDir(context: ProjectContext, name: string): Promise<string> {
   const timestamp = new Date().toISOString().replaceAll(":", "-").replaceAll(".", "-");
   const logDir = path.join(context.paths.logs, `${timestamp}-${name}`);
-  await mkdir(logDir, { recursive: true });
+  await mkdir(logDir, { mode: 0o700, recursive: true });
+  await chmod(logDir, 0o700);
   return logDir;
 }
 
-async function blockStep(context: ProjectContext, queueFile: QueueFile, step: QueueStep, reason: string): Promise<void> {
-  const blockedQueue = structuredClone(queueFile);
+async function writePrivateFile(filePath: string, content: string): Promise<void> {
+  await writeFile(filePath, content, { mode: 0o600 });
+  await chmod(filePath, 0o600);
+}
+
+async function blockStep(context: ProjectContext, queueFile: QueueFile, step: QueueStep, reason: string, { useLatest = true } = {}): Promise<void> {
+  const blockedQueue = structuredClone(useLatest ? await queueForBlocking(context, queueFile, step) : queueFile);
   markBlocked(blockedQueue, step.id, reason);
   await writeQueue(blockedQueue, context);
+}
+
+async function queueForBlocking(context: ProjectContext, fallbackQueueFile: QueueFile, step: QueueStep): Promise<QueueFile> {
+  try {
+    const currentQueueFile = await readValidatedQueue(context);
+    if (currentQueueFile.queue[0]?.id === step.id) return currentQueueFile;
+  } catch {
+    return fallbackQueueFile;
+  }
+
+  return fallbackQueueFile;
 }
 
 async function acquireRunLock(context: ProjectContext): Promise<() => Promise<void>> {
@@ -365,8 +396,17 @@ async function acquireRunLock(context: ProjectContext): Promise<() => Promise<vo
     /* v8 ignore next -- release is idempotent for defensive cleanup. */
     if (released) return;
     released = true;
-    await rm(context.paths.lock, { force: true });
+    await releaseRunLock(context, lock);
   };
+}
+
+async function releaseRunLock(context: ProjectContext, lock: { pid: number; startedAt: string }): Promise<void> {
+  try {
+    const current = JSON.parse(await readFile(context.paths.lock, "utf8")) as { pid?: unknown; startedAt?: unknown };
+    if (current.pid === lock.pid && current.startedAt === lock.startedAt) await rm(context.paths.lock, { force: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") return;
+  }
 }
 
 async function removeStaleRunLock(context: ProjectContext): Promise<boolean> {
@@ -393,8 +433,8 @@ function processExists(pid: number): boolean {
 function providerEnvForDeadline(deadline: number | null | undefined): Record<string, string> {
   if (deadline === null || deadline === undefined) return {};
   const remaining = remainingDeadlineMs(deadline);
-  const configured = parseNonNegativeIntegerEnv("ROADRUNNER_PROVIDER_TIMEOUT_MS", 0);
-  return { ROADRUNNER_PROVIDER_TIMEOUT_MS: String(Math.max(1, Math.min(configured > 0 ? configured : remaining, remaining))) };
+  const configured = parseNonNegativeIntegerEnv("ROADRUNNER_PROVIDER_TIMEOUT_MS", defaultProviderTimeoutMs);
+  return { ROADRUNNER_PROVIDER_TIMEOUT_MS: String(configured === 0 ? remaining : Math.max(1, Math.min(configured, remaining))) };
 }
 
 function verificationTimeoutMs(deadline: number | null | undefined): number {
@@ -476,7 +516,7 @@ async function runShell(context: ProjectContext, command: string, logPath: strin
       await registrationDone;
       /* v8 ignore next -- spawn errors before pid registration are platform-specific. */
       if (registeredPid !== null) await unregisterProcess(registeredPid, context);
-      await writeFile(logPath, output);
+      await writePrivateFile(logPath, output);
       resolve({ code: 1, output });
     });
     child.on("close", async (code: number | null) => {
@@ -489,7 +529,7 @@ async function runShell(context: ProjectContext, command: string, logPath: strin
       await registrationDone;
       /* v8 ignore next -- successful shell commands normally have a registered pid before close. */
       if (registeredPid !== null) await unregisterProcess(registeredPid, context);
-      await writeFile(logPath, output);
+      await writePrivateFile(logPath, output);
       /* v8 ignore next -- shell registration failure is a defensive branch covered by provider tests. */
       resolve({ code: registrationFailed ? 1 : timedOut ? 124 : code, output });
     });

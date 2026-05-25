@@ -61,7 +61,7 @@ node /home/wozzp/git/roadrunner/dist/src/cli.js check
 node /home/wozzp/git/roadrunner/dist/src/cli.js status
 ```
 
-`check` validates `GOALS.md` and `.roadrunner/queue.json`. `status` shows how many steps are queued, done, blocked, and which step is currently `queue[0]`.
+`check` validates `GOALS.md`, `.roadrunner/queue.json`, and the configured provider CLI. `status` shows how many steps are queued, done, blocked, and which step is currently `queue[0]`.
 
 Run one step first if you want a safe smoke test:
 
@@ -101,6 +101,16 @@ If launching Roadrunner from inside an existing OpenCode session, enable nested 
 }
 ```
 
+OpenCode permission bypass is disabled by default. For fully unattended runs, only enable it for trusted projects, goals, roadmaps, and queues:
+
+```json
+{
+  "dangerouslySkipPermissions": true
+}
+```
+
+Roadrunner validates `.roadrunner/config.json` strictly. Boolean options must be JSON booleans, string options must be non-empty strings, and unknown config or path keys are rejected.
+
 ### `init`
 
 Creates Roadrunner state for the current project.
@@ -123,7 +133,7 @@ Existing `history` and `blocked` records are preserved. Imported steps whose IDs
 
 ### `check`
 
-Validates that `GOALS.md` exists, is not empty, and the configured queue file matches Roadrunner queue schema.
+Validates that `GOALS.md` exists, is not empty, the configured queue file matches Roadrunner queue schema, and the configured provider CLI is available.
 
 ### `status`
 
@@ -151,9 +161,15 @@ At run start, Roadrunner reads `GOALS.md` once and uses that immutable in-memory
 
 Provider runs default to `ROADRUNNER_PROVIDER_TIMEOUT_MS=1800000` and verification commands default to `ROADRUNNER_VERIFY_TIMEOUT_MS=600000`. Set either variable to `0` to disable that timeout. `--max-hours` caps provider and verification timeouts for the current step.
 
+Prompt files, provider logs, verification logs, and runner-generated markdown outputs under `.roadrunner/logs/` are written with restrictive filesystem permissions.
+
+Implementation, fix, and reconciliation provider runs use normal OpenCode permissions by default. Set `dangerouslySkipPermissions: true` in `.roadrunner/config.json` only when you intentionally want Roadrunner to pass OpenCode's `--dangerously-skip-permissions` flag.
+
 ### `cleanup`
 
 Signals only subprocesses registered by Roadrunner in the configured process registry. It does not search for arbitrary editor or agent processes.
+
+Cleanup only signals a registry record when Roadrunner can verify the recorded process identity. Records without verifiable start-time identity are treated as stale rather than signaled by PID alone.
 
 ## Roadmap Format
 
@@ -240,9 +256,12 @@ npm run ai:check
 - Planning is mandatory before execution.
 - The reconciler updates the configured queue file, defaulting to `.roadrunner/queue.json`; other file changes are not treated as Roadrunner safety violations.
 - Cleanup only targets subprocesses registered by Roadrunner itself.
+- Cleanup fails closed when a registered process identity cannot be verified.
 - Nested OpenCode is rejected by default.
 - Concurrent `run` processes are rejected by the configured lock file.
 - Provider prompts are passed through prompt files, not process argv.
+- Runtime prompt and log files are written with restrictive permissions.
+- OpenCode permission bypass is disabled by default and requires `dangerouslySkipPermissions: true`.
 
 ## Provider
 
@@ -252,3 +271,5 @@ The first provider is OpenCode using:
 model: openai/gpt-5.5
 variant: xhigh
 ```
+
+Install OpenCode separately and ensure `opencode run --help` supports `--model`, `--variant`, `--agent`, `--file`, and `--dangerously-skip-permissions`. `roadrunner check`, `plan`, and `run` validate this before launching provider work.

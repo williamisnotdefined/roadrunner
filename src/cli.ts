@@ -6,11 +6,11 @@ import { fileURLToPath } from "node:url";
 import chalk from "chalk";
 
 import { cleanupProcesses } from "./process-registry.js";
-import { formatStep, nextStep, readQueue, validateGoals, validateQueueFile } from "./queue.js";
+import { formatStep, nextStep, normalizeQueueFile, readQueue, validateGoals, validateQueueFile } from "./queue.js";
 import { initProject } from "./init.js";
 import { loadContext } from "./config.js";
 import { integerOption, optionalNumberOption, parseArgs } from "./args.js";
-import { plan, run, status, type RoadrunnerRunEvent } from "./runner.js";
+import { plan, run, status, validateProvider, type RoadrunnerRunEvent } from "./runner.js";
 import { importRoadmap } from "./roadmap.js";
 
 export interface CliIo {
@@ -53,11 +53,14 @@ export async function main(argv = process.argv.slice(2), { cwd = process.cwd(), 
     } else if (command === "next") {
       out(formatCliStep("Reading next queued step"));
       const queueFile = await readQueue(context);
-      out(formatStep(nextStep(queueFile)));
+      const errors = validateQueueFile(queueFile, { model: context.config.model, variant: context.config.variant });
+      if (errors.length > 0) throw new Error(errors.join("\n"));
+      out(formatStep(nextStep(normalizeQueueFile(queueFile))));
     } else if (command === "check") {
       out(formatCliStep("Validating Roadrunner project"));
       const queueFile = await readQueue(context);
       const errors = [...(await validateGoals(context)), ...validateQueueFile(queueFile, { model: context.config.model, variant: context.config.variant })];
+      if (errors.length === 0) errors.push(...(await validateProvider(context)));
       if (errors.length > 0) throw new Error(errors.join("\n"));
       out(formatCliSuccess("Roadrunner project is valid."));
     } else if (command === "import-roadmap") {

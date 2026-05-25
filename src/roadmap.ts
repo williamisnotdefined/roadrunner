@@ -146,7 +146,7 @@ function parseFields(lines: string[]): Map<string, string[]> {
   let current: string | null = null;
 
   for (const line of lines) {
-    const match = /^\s{0,3}([A-Za-z][A-Za-z ]+):\s*(.*)$/.exec(line);
+    const match = /^\s{0,3}([A-Za-z][A-Za-z0-9 -]*):\s*(.*)$/.exec(line);
     const alias = match ? fieldAliases.get(match[1]!.trim().toLowerCase()) : undefined;
 
     if (match && !alias) {

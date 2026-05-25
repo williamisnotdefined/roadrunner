@@ -55,7 +55,7 @@ describe("config", () => {
 
       const context = await loadContext(tempDir, { _: [] });
 
-      expect(context.config).toMatchObject({ allowNestedOpenCode: true, model: defaultModel, provider: "opencode", variant: defaultVariant });
+      expect(context.config).toMatchObject({ allowNestedOpenCode: true, dangerouslySkipPermissions: false, model: defaultModel, provider: "opencode", variant: defaultVariant });
       expect(context.paths.queue).toBe(path.join(tempDir, "state/queue.json"));
     } finally {
       await rm(tempDir, { force: true, recursive: true });
@@ -66,13 +66,40 @@ describe("config", () => {
     const tempDir = await import("node:fs/promises").then((fs) => fs.mkdtemp(path.join(os.tmpdir(), "roadrunner-config-flag-")));
     try {
       await mkdir(path.join(tempDir, "config"), { recursive: true });
-      await writeFile(path.join(tempDir, "config/roadrunner.json"), `${JSON.stringify({ allowNestedOpenCode: true, paths: { queue: "state/queue.json" } }, null, 2)}\n`);
+      await writeFile(path.join(tempDir, "config/roadrunner.json"), `${JSON.stringify({ allowNestedOpenCode: true, dangerouslySkipPermissions: true, paths: { queue: "state/queue.json" } }, null, 2)}\n`);
 
       const context = await loadContext(tempDir, { _: [], config: "config/roadrunner.json" });
 
       expect(context.paths.config).toBe(path.join(tempDir, "config/roadrunner.json"));
       expect(context.paths.queue).toBe(path.join(tempDir, "state/queue.json"));
       expect(context.config.allowNestedOpenCode).toBe(true);
+      expect(context.config.dangerouslySkipPermissions).toBe(true);
+    } finally {
+      await rm(tempDir, { force: true, recursive: true });
+    }
+  });
+
+  test("loadContext rejects invalid config values", async () => {
+    const tempDir = await import("node:fs/promises").then((fs) => fs.mkdtemp(path.join(os.tmpdir(), "roadrunner-config-invalid-")));
+    try {
+      const configPath = path.join(tempDir, ".roadrunner/config.json");
+      await mkdir(path.dirname(configPath), { recursive: true });
+
+      const cases: Array<{ match: RegExp; value: unknown }> = [
+        { value: [], match: /must be a JSON object/ },
+        { value: { allowNestedOpenCode: "true" }, match: /allowNestedOpenCode must be a boolean/ },
+        { value: { dangerouslySkipPermissions: "false" }, match: /dangerouslySkipPermissions must be a boolean/ },
+        { value: { model: 123 }, match: /model must be a non-empty string/ },
+        { value: { paths: [] }, match: /paths must be a JSON object/ },
+        { value: { paths: { queue: false } }, match: /paths\.queue must be a non-empty string/ },
+        { value: { paths: { unknown: "value" } }, match: /paths\.unknown is not a supported path key/ },
+        { value: { unknown: true }, match: /unknown is not a supported config key/ },
+      ];
+
+      for (const { value, match } of cases) {
+        await writeFile(configPath, `${JSON.stringify(value, null, 2)}\n`);
+        await expect(loadContext(tempDir, { _: [] })).rejects.toThrow(match);
+      }
     } finally {
       await rm(tempDir, { force: true, recursive: true });
     }

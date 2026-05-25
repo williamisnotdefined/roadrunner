@@ -91,12 +91,12 @@ async function writeProcesses(processes: ProcessRecord[], context: ProjectContex
 async function isSameProcess(record: ProcessRecord): Promise<boolean> {
   const info = await readProcessInfo(record.pid);
   if (!info) return false;
-  if (record.startTimeTicks === undefined) return info.startTimeTicks === undefined;
+  if (record.startTimeTicks === undefined || info.startTimeTicks === undefined) return false;
   return info.startTimeTicks === record.startTimeTicks;
 }
 
 async function readProcessInfo(pid: number): Promise<{ startTimeTicks?: string } | null> {
-  /* v8 ignore next -- non-Linux process identity degrades to pid existence at runtime. */
+  /* v8 ignore next -- non-Linux cleanup fails closed because no start-time identity is available. */
   if (process.platform !== "linux") return processExists(pid) ? {} : null;
 
   try {

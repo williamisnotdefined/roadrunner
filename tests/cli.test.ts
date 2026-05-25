@@ -75,7 +75,10 @@ describe("cli", () => {
     const directory = await tempDir("roadrunner-cli-project-");
     const output: string[] = [];
     const io = { stderr: (message: string) => output.push(`ERR:${message}`), stdout: (message: string) => output.push(message) };
+    const originalPath = process.env.PATH;
     try {
+      const binDir = await createFakeOpenCodeBin(directory);
+      process.env.PATH = withPath(binDir);
       await writeFile(path.join(directory, "ROADMAP.md"), sampleRoadmap());
 
       expect(await main(["init"], { cwd: directory, io })).toBe(0);
@@ -91,6 +94,23 @@ describe("cli", () => {
       expect(output.join("\n")).toMatch(/first-step - Build first step/);
       expect(output.join("\n")).toMatch(/No Roadrunner-owned processes/);
     } finally {
+      process.env.PATH = originalPath;
+      await removeDir(directory);
+    }
+  });
+
+  test("check reports missing provider tooling for otherwise valid projects", async () => {
+    const directory = await tempDir("roadrunner-cli-check-provider-error-");
+    const errors: string[] = [];
+    const originalPath = process.env.PATH;
+    try {
+      await createInitializedProject(directory);
+      process.env.PATH = directory;
+
+      expect(await main(["check"], { cwd: directory, io: { stderr: (message) => errors.push(message) } })).toBe(1);
+      expect(errors.join("\n")).toMatch(/opencode must be installed/);
+    } finally {
+      process.env.PATH = originalPath;
       await removeDir(directory);
     }
   });
@@ -103,6 +123,20 @@ describe("cli", () => {
       await writeFile(context.paths.queue, `${JSON.stringify({ version: 1 }, null, 2)}\n`);
 
       expect(await main(["check"], { cwd: directory, io: { stderr: (message) => errors.push(message) } })).toBe(1);
+      expect(errors.join("\n")).toMatch(/queue.version must be 2/);
+    } finally {
+      await removeDir(directory);
+    }
+  });
+
+  test("reports queue validation errors in next", async () => {
+    const directory = await tempDir("roadrunner-cli-next-error-");
+    const errors: string[] = [];
+    try {
+      const context = await createInitializedProject(directory);
+      await writeFile(context.paths.queue, `${JSON.stringify({ version: 1 }, null, 2)}\n`);
+
+      expect(await main(["next"], { cwd: directory, io: { stderr: (message) => errors.push(message) } })).toBe(1);
       expect(errors.join("\n")).toMatch(/queue.version must be 2/);
     } finally {
       await removeDir(directory);

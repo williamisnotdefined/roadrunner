@@ -260,8 +260,9 @@ describe("process registry", () => {
     }
   });
 
-  test("treats records without start time as stale on Linux", async () => {
+  test("treats records without start time as stale without signaling", async () => {
     const tempDir = await mkdtemp(path.join(os.tmpdir(), "roadrunner-process-no-start-"));
+    const kill = vi.spyOn(process, "kill");
     try {
       const context = await loadContext(tempDir, { _: [] });
       await writeJson(context.paths.processRegistry, {
@@ -269,7 +270,9 @@ describe("process registry", () => {
       });
 
       expect(await cleanupProcesses(context)).toEqual([{ pid: process.pid, role: "missing-start", status: "stale" }]);
+      expect(kill.mock.calls.filter(([, signal]) => signal !== undefined && signal !== 0)).toEqual([]);
     } finally {
+      kill.mockRestore();
       await rm(tempDir, { force: true, recursive: true });
     }
   });

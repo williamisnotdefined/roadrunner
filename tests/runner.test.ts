@@ -1,4 +1,5 @@
-import { readFile, rm, writeFile } from "node:fs/promises";
+import { rmSync, writeFileSync } from "node:fs";
+import { readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
@@ -35,6 +36,9 @@ describe("runner", () => {
       expect(result?.result.code).toBe(0);
       expect(result?.result.output).toMatch(/Plan:/);
       expect(await readFile(path.join(result!.logDir, "plan.md"), "utf8")).toMatch(/Plan:/);
+      expect(await fileMode(result!.logDir)).toBe(0o700);
+      expect(await fileMode(path.join(result!.logDir, "plan.prompt.md"))).toBe(0o600);
+      expect(await fileMode(path.join(result!.logDir, "plan.md"))).toBe(0o600);
       expect(JSON.parse(await readFile(argsFile, "utf8"))).not.toContain("--dangerously-skip-permissions");
 
       project.context.config.model = undefined as never;
@@ -97,6 +101,56 @@ describe("runner", () => {
       expect(queue.blocked).toEqual([]);
       expect(await readFile(path.join(project.directory, "marker.txt"), "utf8")).toBe("ok\n");
       expect(log.stdout).not.toMatch(/Complete Roadrunner step|Build first step/);
+      const stepLogDir = await logDirFor(project.context, "first-step");
+      expect(await fileMode(stepLogDir)).toBe(0o700);
+      expect(await fileMode(path.join(stepLogDir, "implement.prompt.md"))).toBe(0o600);
+      expect(await fileMode(path.join(stepLogDir, "verify-1.log"))).toBe(0o600);
+      expect(await fileMode(path.join(stepLogDir, "reconcile.prompt.md"))).toBe(0o600);
+      expect(await fileMode(path.join(stepLogDir, "reconcile.md"))).toBe(0o600);
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
+  test("passes dangerous OpenCode permission bypass only when configured", async () => {
+    const project = await setupRunnerProject("success");
+    try {
+      const argsFile = path.join(project.context.paths.logs, "args.json");
+      process.env.ROADRUNNER_FAKE_OPENCODE_ARGS_FILE = argsFile;
+      project.context.config.dangerouslySkipPermissions = true;
+
+      expect(await runRoadrunner(project.context, { maxSteps: 1 })).toBe(1);
+      expect(JSON.parse(await readFile(argsFile, "utf8"))).toContain("--dangerously-skip-permissions");
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
+  test("caps provider timeout with the default when maxHours is longer", async () => {
+    const project = await setupRunnerProject("success");
+    try {
+      const envFile = path.join(project.context.paths.logs, "env.json");
+      delete process.env.ROADRUNNER_PROVIDER_TIMEOUT_MS;
+      process.env.ROADRUNNER_FAKE_OPENCODE_ENV_FILE = envFile;
+
+      expect(await runRoadrunner(project.context, { maxHours: 1, maxSteps: 1 })).toBe(1);
+      expect(JSON.parse(await readFile(envFile, "utf8"))).toEqual({ ROADRUNNER_PROVIDER_TIMEOUT_MS: "1800000" });
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
+  test("uses remaining maxHours deadline when provider timeout is disabled", async () => {
+    const project = await setupRunnerProject("success");
+    try {
+      const envFile = path.join(project.context.paths.logs, "env-disabled.json");
+      process.env.ROADRUNNER_PROVIDER_TIMEOUT_MS = "0";
+      process.env.ROADRUNNER_FAKE_OPENCODE_ENV_FILE = envFile;
+
+      expect(await runRoadrunner(project.context, { maxHours: 0.001, maxSteps: 1 })).toBe(1);
+      const timeoutMs = Number(JSON.parse(await readFile(envFile, "utf8")).ROADRUNNER_PROVIDER_TIMEOUT_MS);
+      expect(timeoutMs).toBeGreaterThan(0);
+      expect(timeoutMs).toBeLessThanOrEqual(3600);
     } finally {
       await removeDir(project.directory);
     }
@@ -176,6 +230,17 @@ describe("runner", () => {
     try {
       project.context.config.model = undefined as never;
       project.context.config.variant = undefined as never;
+
+      expect((await status(project.context)).queued).toBe(1);
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
+  test("status reads queue state without requiring goals", async () => {
+    const project = await setupRunnerProject("success");
+    try {
+      await rm(project.context.paths.goals, { force: true });
 
       expect((await status(project.context)).queued).toBe(1);
     } finally {
@@ -310,6 +375,67 @@ describe("runner", () => {
     }
   });
 
+  test("does not remove a replacement run lock on release", async () => {
+    const project = await setupRunnerProject("success");
+    try {
+      const queue = await readJson<QueueFile>(project.context.paths.queue);
+      queue.queue = [];
+      await writeJson(project.context.paths.queue, queue);
+      const replacementLock = { pid: process.pid, startedAt: "replacement-lock" };
+
+      expect(
+        await runRoadrunner(project.context, {
+          onEvent: (event) => {
+            if (event.type === "validate") writeFileSync(project.context.paths.lock, `${JSON.stringify(replacementLock, null, 2)}\n`);
+          },
+        }),
+      ).toBe(0);
+      expect(await readJson(project.context.paths.lock)).toEqual(replacementLock);
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
+  test("does not remove a corrupt replacement run lock on release", async () => {
+    const project = await setupRunnerProject("success");
+    try {
+      const queue = await readJson<QueueFile>(project.context.paths.queue);
+      queue.queue = [];
+      await writeJson(project.context.paths.queue, queue);
+
+      expect(
+        await runRoadrunner(project.context, {
+          onEvent: (event) => {
+            if (event.type === "validate") writeFileSync(project.context.paths.lock, "not json\n");
+          },
+        }),
+      ).toBe(0);
+      expect(await readFile(project.context.paths.lock, "utf8")).toBe("not json\n");
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
+  test("handles a missing run lock on release", async () => {
+    const project = await setupRunnerProject("success");
+    try {
+      const queue = await readJson<QueueFile>(project.context.paths.queue);
+      queue.queue = [];
+      await writeJson(project.context.paths.queue, queue);
+
+      expect(
+        await runRoadrunner(project.context, {
+          onEvent: (event) => {
+            if (event.type === "validate") rmSync(project.context.paths.lock, { force: true });
+          },
+        }),
+      ).toBe(0);
+      expect(await pathExists(project.context.paths.lock)).toBe(false);
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
   test("allows provider changes to GOALS.md", async () => {
     const project = await setupRunnerProject("goals-dirty");
     try {
@@ -349,6 +475,44 @@ describe("runner", () => {
       const queue = await readJson<QueueFile>(project.context.paths.queue);
       expect(queue.queue).toEqual([]);
       expect(queue.blocked[0]).toMatchObject({ blockedReason: "Provider exited 7", id: "first-step" });
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
+  test("blocks failures using the latest valid queue state", async () => {
+    const project = await setupRunnerProject("provider-fail-queue-dirty");
+    try {
+      await expect(runRoadrunner(project.context)).rejects.toThrow(/Implementation failed/);
+
+      const queue = await readJson<QueueFile>(project.context.paths.queue);
+      expect(queue.blocked[0]).toMatchObject({ blockedReason: "Provider exited 7", id: "first-step", title: "Provider changed title before failing" });
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
+  test("blocks failures using the original queue when the latest queue is invalid", async () => {
+    const project = await setupRunnerProject("provider-fail-invalid-queue");
+    try {
+      await expect(runRoadrunner(project.context)).rejects.toThrow(/Implementation failed/);
+
+      const queue = await readJson<QueueFile>(project.context.paths.queue);
+      expect(queue.version).toBe(2);
+      expect(queue.blocked[0]).toMatchObject({ blockedReason: "Provider exited 7", id: "first-step" });
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
+  test("blocks failures using the original queue when the current step changed", async () => {
+    const project = await setupRunnerProject("provider-fail-other-current");
+    try {
+      await expect(runRoadrunner(project.context)).rejects.toThrow(/Implementation failed/);
+
+      const queue = await readJson<QueueFile>(project.context.paths.queue);
+      expect(queue.blocked[0]).toMatchObject({ blockedReason: "Provider exited 7", id: "first-step" });
+      expect(queue.queue).toEqual([]);
     } finally {
       await removeDir(project.directory);
     }
@@ -489,4 +653,15 @@ async function setupRunnerProject(mode: string, roadmap = sampleRoadmap()): Prom
   const context = await loadContext(directory, { _: [] });
   context.config.allowNestedOpenCode = true;
   return { context, directory };
+}
+
+async function fileMode(filePath: string): Promise<number> {
+  return (await stat(filePath)).mode & 0o777;
+}
+
+async function logDirFor(context: ProjectContext, suffix: string): Promise<string> {
+  const entries = await readdir(context.paths.logs);
+  const entry = entries.find((value) => value.endsWith(`-${suffix}`));
+  if (!entry) throw new Error(`Missing log dir for ${suffix}.`);
+  return path.join(context.paths.logs, entry);
 }

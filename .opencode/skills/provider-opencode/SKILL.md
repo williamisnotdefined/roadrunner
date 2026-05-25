@@ -49,6 +49,7 @@ Use this skill when changing the OpenCode provider adapter, model/variant behavi
 
 - Register only subprocesses created by Roadrunner.
 - Check PID start-time before signaling a process.
+- Treat unverifiable process identity as stale; do not signal by PID existence alone.
 - Clean only registered Roadrunner-owned subprocesses.
 - Prefer process groups for provider subprocesses.
 
@@ -71,4 +72,4 @@ The initial provider is OpenCode. Future providers can wrap other coding agents 
 
 Roadrunner registers subprocesses it creates in `.roadrunner/processes.json` in the target project.
 
-Cleanup only signals registered processes after checking PID start-time ticks to reduce PID-reuse risk.
+Cleanup only signals registered processes after checking PID start-time ticks to reduce PID-reuse risk. Records without verifiable process identity are treated as stale instead of being signaled by PID alone.

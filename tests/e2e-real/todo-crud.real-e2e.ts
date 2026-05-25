@@ -59,7 +59,7 @@ Verification:
 await requireOk(main(["init", "--goals", "GOALS.md", "--roadmap", "ROADMAP.md"], { cwd: outputRoot }), "roadrunner init failed");
 const configPath = path.join(outputRoot, ".roadrunner/config.json");
 const config = await readJson<Record<string, unknown>>(configPath);
-await writeJson(configPath, { ...config, allowNestedOpenCode: true });
+await writeJson(configPath, { ...config, allowNestedOpenCode: true, dangerouslySkipPermissions: true });
 
 await requireOk(main(["run", "--max-steps", "1"], { cwd: outputRoot }), "roadrunner run failed");
 

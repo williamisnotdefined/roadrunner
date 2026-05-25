@@ -85,6 +85,14 @@ const realGit = process.env.ROADRUNNER_TEST_REAL_GIT || "/usr/bin/git";
 if (process.env.ROADRUNNER_FAKE_OPENCODE_ARGS_FILE) {
   fs.writeFileSync(process.env.ROADRUNNER_FAKE_OPENCODE_ARGS_FILE, JSON.stringify(process.argv.slice(2)) + "\\n");
 }
+if (process.env.ROADRUNNER_FAKE_OPENCODE_ENV_FILE) {
+  fs.writeFileSync(process.env.ROADRUNNER_FAKE_OPENCODE_ENV_FILE, JSON.stringify({ ROADRUNNER_PROVIDER_TIMEOUT_MS: process.env.ROADRUNNER_PROVIDER_TIMEOUT_MS ?? null }) + "\\n");
+}
+
+if (process.argv.includes("--help")) {
+  console.log("--model --variant --agent --file --dangerously-skip-permissions");
+  process.exit(0);
+}
 
 function runChecked(command, args) {
   try {
@@ -92,6 +100,33 @@ function runChecked(command, args) {
   } catch (error) {
     process.exit(typeof error.status === "number" ? error.status : 1);
   }
+}
+
+if (mode === "provider-fail-queue-dirty" && prompt.includes("Roadrunner Implement Step")) {
+  const queuePath = path.join(".roadrunner", "queue.json");
+  const queue = JSON.parse(fs.readFileSync(queuePath, "utf8"));
+  queue.queue[0].title = "Provider changed title before failing";
+  fs.writeFileSync(queuePath, JSON.stringify(queue, null, 2) + "\\n");
+  console.error("implementation failed");
+  process.exit(7);
+}
+
+if (mode === "provider-fail-invalid-queue" && prompt.includes("Roadrunner Implement Step")) {
+  const queuePath = path.join(".roadrunner", "queue.json");
+  const queue = JSON.parse(fs.readFileSync(queuePath, "utf8"));
+  queue.version = 99;
+  fs.writeFileSync(queuePath, JSON.stringify(queue, null, 2) + "\\n");
+  console.error("implementation failed");
+  process.exit(7);
+}
+
+if (mode === "provider-fail-other-current" && prompt.includes("Roadrunner Implement Step")) {
+  const queuePath = path.join(".roadrunner", "queue.json");
+  const queue = JSON.parse(fs.readFileSync(queuePath, "utf8"));
+  queue.queue.unshift({ ...queue.queue[0], id: "other-step", title: "Other current step" });
+  fs.writeFileSync(queuePath, JSON.stringify(queue, null, 2) + "\\n");
+  console.error("implementation failed");
+  process.exit(7);
 }
 
 if (mode === "provider-fail" && prompt.includes("Roadrunner Implement Step")) {

@@ -4,7 +4,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { afterEach, describe, expect, test } from "vitest";
 
 import { defaultModel, defaultVariant, loadContext } from "../src/config.js";
-import { OpenCodeProvider } from "../src/providers/opencode.js";
+import { OpenCodeProvider, validateOpenCodeCli } from "../src/providers/opencode.js";
 import { createFakeOpenCodeBin, removeDir, tempDir, withPath } from "./helpers.js";
 
 const oldEnv = { ...process.env };
@@ -19,7 +19,7 @@ describe("OpenCodeProvider", () => {
     try {
       const binDir = await createFakeOpenCodeBin(directory);
       const argsFile = path.join(directory, "args.json");
-      process.env.PATH = withPath(binDir);
+      process.env.PATH = `${binDir}${path.delimiter}${oldEnv.PATH ?? ""}`;
       process.env.ROADRUNNER_FAKE_OPENCODE_ARGS_FILE = argsFile;
       const context = await loadContext(directory, { _: [] });
       context.config.allowNestedOpenCode = true;
@@ -57,7 +57,7 @@ describe("OpenCodeProvider", () => {
       const binDir = await createFakeOpenCodeBin(directory);
       const argsFile = path.join(directory, "args.json");
       const starts: unknown[] = [];
-      process.env.PATH = withPath(binDir);
+      process.env.PATH = `${binDir}${path.delimiter}${oldEnv.PATH ?? ""}`;
       process.env.ROADRUNNER_FAKE_OPENCODE_ARGS_FILE = argsFile;
       process.env.ROADRUNNER_OPENCODE_DEBUG = "1";
       const context = await loadContext(directory, { _: [] });
@@ -86,6 +86,43 @@ describe("OpenCodeProvider", () => {
           debug: true,
         }),
       ]);
+    } finally {
+      await removeDir(directory);
+    }
+  });
+
+  test("validates OpenCode run help flags", async () => {
+    const directory = await tempDir("roadrunner-provider-validate-");
+    try {
+      const binDir = await createFakeOpenCodeBin(directory);
+      process.env.PATH = withPath(binDir);
+
+      expect(await validateOpenCodeCli()).toEqual([]);
+    } finally {
+      await removeDir(directory);
+    }
+  });
+
+  test("reports missing OpenCode command and missing run flags", async () => {
+    const directory = await tempDir("roadrunner-provider-validate-error-");
+    try {
+      process.env.PATH = directory;
+      expect(await validateOpenCodeCli()).toEqual(["opencode must be installed and available in PATH."]);
+
+      const binDir = path.join(directory, "bin");
+      await mkdir(binDir, { recursive: true });
+      await writeFile(path.join(binDir, "opencode"), "#!/usr/bin/env node\nconsole.log('--model');\n", { mode: 0o755 });
+      process.env.PATH = `${binDir}${path.delimiter}${oldEnv.PATH ?? ""}`;
+
+      expect(await validateOpenCodeCli()).toEqual([
+        "opencode run --help is missing required flag --variant.",
+        "opencode run --help is missing required flag --agent.",
+        "opencode run --help is missing required flag --file.",
+        "opencode run --help is missing required flag --dangerously-skip-permissions.",
+      ]);
+
+      await writeFile(path.join(binDir, "opencode"), "#!/usr/bin/env node\nconsole.error('bad help');\nprocess.exit(2);\n", { mode: 0o755 });
+      expect((await validateOpenCodeCli())[0]).toMatch(/opencode run --help failed/);
     } finally {
       await removeDir(directory);
     }
@@ -192,7 +229,7 @@ describe("OpenCodeProvider", () => {
     }
   });
 
-  test("adds skip-permissions flag by default", async () => {
+  test("adds skip-permissions flag when requested", async () => {
     const directory = await tempDir("roadrunner-provider-skip-");
     try {
       const binDir = await createFakeOpenCodeBin(directory);
@@ -202,7 +239,7 @@ describe("OpenCodeProvider", () => {
       const context = await loadContext(directory, { _: [] });
       context.config.allowNestedOpenCode = true;
 
-      await new OpenCodeProvider().run({ agent: "build", context, logPath: path.join(directory, "log.txt"), prompt: "Roadrunner Implement Step", role: "build" });
+      await new OpenCodeProvider().run({ agent: "build", context, logPath: path.join(directory, "log.txt"), prompt: "Roadrunner Implement Step", role: "build", skipPermissions: true });
 
       expect(JSON.parse(await readFile(argsFile, "utf8"))).toContain("--dangerously-skip-permissions");
     } finally {

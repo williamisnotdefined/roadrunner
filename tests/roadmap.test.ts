@@ -47,6 +47,8 @@ Acceptance:
 Verification:
 1) npm test
 Unknown After Verification: ignored without extending verification
+Out-of-scope:
+- do not treat this as verification
 
 ### [third-step] Build third step
 
@@ -200,7 +202,7 @@ Verification:
       const roadmapPath = path.join(outside, "ROADMAP.md");
       await writeFile(roadmapPath, sampleRoadmap());
       const queueFile = await queueFileFromRoadmapFile({
-        config: { allowNestedOpenCode: false, model: defaultModel, paths: {}, provider: "opencode", variant: defaultVariant },
+        config: { allowNestedOpenCode: false, dangerouslySkipPermissions: false, model: defaultModel, paths: {}, provider: "opencode", variant: defaultVariant },
         paths: { goals: path.join(root, "GOALS.md"), roadmap: roadmapPath } as never,
         root,
       });

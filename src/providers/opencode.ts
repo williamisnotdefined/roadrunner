@@ -1,7 +1,8 @@
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { createWriteStream, type WriteStream } from "node:fs";
 import { chmod, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { promisify } from "node:util";
 
 import { defaultModel, defaultVariant, type ProjectContext } from "../config.js";
 import { registerProcess, unregisterProcess } from "../process-registry.js";
@@ -34,6 +35,8 @@ const nestedOpenCodeEnvKeys = ["OPENCODE_SESSION", "OPENCODE_SESSION_ID", "OPENC
 const defaultProviderTimeoutMs = 30 * 60 * 1000;
 const forceKillDelayMs = 1_000;
 const promptMessage = "Follow the attached Roadrunner prompt file exactly.";
+const execFileAsync = promisify(execFile);
+const requiredRunFlags = ["--model", "--variant", "--agent", "--file", "--dangerously-skip-permissions"];
 
 export class OpenCodeProvider {
   readonly model: string;
@@ -44,7 +47,7 @@ export class OpenCodeProvider {
     this.variant = variant;
   }
 
-  async run({ agent, context, env = {}, logPath, onStart, prompt, role, skipPermissions = true }: ProviderRunInput): Promise<ProviderRunResult> {
+  async run({ agent, context, env = {}, logPath, onStart, prompt, role, skipPermissions = false }: ProviderRunInput): Promise<ProviderRunResult> {
     const childEnv: NodeJS.ProcessEnv = { ...process.env, ...env, OPENCODE_MODEL: this.model, OPENCODE_VARIANT: this.variant };
     const nestedIndicator = nestedOpenCodeIndicator(childEnv);
     if (nestedIndicator && !context.config.allowNestedOpenCode) {
@@ -160,6 +163,18 @@ export class OpenCodeProvider {
       });
       child.on("close", onClose);
     });
+  }
+}
+
+export async function validateOpenCodeCli(): Promise<string[]> {
+  try {
+    const result = await execFileAsync("opencode", ["run", "--help"]);
+    const help = `${result.stdout}\n${result.stderr}`;
+    return requiredRunFlags.filter((flag) => !help.includes(flag)).map((flag) => `opencode run --help is missing required flag ${flag}.`);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") return ["opencode must be installed and available in PATH."];
+    return [`opencode run --help failed: ${(error as Error).message}`];
   }
 }
 
