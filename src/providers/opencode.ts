@@ -102,7 +102,6 @@ export class OpenCodeProvider {
           context,
         ).catch((error: Error) => {
           registeredPid = null;
-          /* v8 ignore next -- close can win the race before registration fails. */
           if (settled) return;
           registrationFailed = true;
           appendOutput(`Failed to register provider process: ${error.message}\n`);
@@ -137,7 +136,6 @@ export class OpenCodeProvider {
 
     return new Promise((resolve) => {
       const onClose = async (code: number | null) => {
-        /* v8 ignore next -- close is detached before the spawn error handler resolves. */
         if (settled) return;
         settled = true;
         clearTimeout(timeout);
@@ -152,7 +150,6 @@ export class OpenCodeProvider {
       child.on("error", async (error: Error) => {
         child.off("close", onClose);
         clearTimeout(timeout);
-        /* v8 ignore next -- spawn errors only race with forced cleanup in platform-specific failure paths. */
         if (forceKillDone) await forceKillDone;
         else clearTimeout(killTimeout);
         appendOutput(`${error.message}\n`);
@@ -194,13 +191,11 @@ function providerTimeoutMs(value: string | undefined): number {
 
 function writeProviderOutput(logStream: WriteStream, text: string, appendOutput: (text: string) => void): void {
   appendOutput(text);
-  /* v8 ignore start -- stream write failures depend on filesystem errors during provider execution. */
   try {
     if (!logStream.destroyed) logStream.write(text);
   } catch {
     /* Logging is best-effort once the provider is already running. */
   }
-  /* v8 ignore stop */
 }
 
 async function unregisterRegisteredProcess(pid: number | null, context: ProjectContext): Promise<void> {
@@ -208,11 +203,9 @@ async function unregisterRegisteredProcess(pid: number | null, context: ProjectC
 }
 
 function signalChildProcessGroup(pid: number | undefined, signal: NodeJS.Signals): void {
-  /* v8 ignore next -- timeouts only run after successful spawns expose a pid. */
   if (!pid) return;
 
   try {
-    /* v8 ignore next -- Windows process-tree signaling is covered by platform branching at runtime. */
     process.kill(process.platform === "win32" ? pid : -pid, signal);
   } catch {
     /* Best effort: timeout cleanup is also covered by the process registry cleanup command. */

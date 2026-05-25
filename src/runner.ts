@@ -393,7 +393,6 @@ async function acquireRunLock(context: ProjectContext): Promise<() => Promise<vo
 
   let released = false;
   return async () => {
-    /* v8 ignore next -- release is idempotent for defensive cleanup. */
     if (released) return;
     released = true;
     await releaseRunLock(context, lock);
@@ -416,7 +415,6 @@ async function removeStaleRunLock(context: ProjectContext): Promise<boolean> {
     await rm(context.paths.lock, { force: true });
     return true;
   } catch {
-    /* v8 ignore next -- corrupt locks are intentionally treated as active. */
     return false;
   }
 }
@@ -463,7 +461,6 @@ async function runShell(context: ProjectContext, command: string, logPath: strin
   await mkdir(path.dirname(logPath), { recursive: true });
   const child = spawn(command, [], { cwd: context.root, detached: process.platform !== "win32", env: process.env, shell: true });
   let output = "";
-  /* v8 ignore next -- successful shell spawns expose a pid before close/error handling. */
   if (!child.pid) throw new Error("Failed to start shell process.");
   let registeredPid: number | null = child.pid;
   let registrationFailed = false;
@@ -472,26 +469,22 @@ async function runShell(context: ProjectContext, command: string, logPath: strin
   let killTimeout: NodeJS.Timeout | undefined;
   let forceKillDone: Promise<void> | undefined;
   let settled = false;
-  /* v8 ignore start -- registration failures and pidless shell spawns are defensive process-management paths. */
   const registrationDone = registerProcess({ command: [command], cwd: context.root, pid: child.pid, role }, context).catch((error: Error) => {
     registeredPid = null;
     if (settled) return;
     registrationFailed = true;
     output += `Failed to register shell process: ${error.message}\n`;
     signalProcessTree(child.pid, "SIGTERM");
-    /* v8 ignore next 3 -- SIGKILL fallback only appends when a child ignores SIGTERM. */
     ({ done: forceKillDone, timeout: killTimeout } = scheduleProcessTreeKill(child.pid, (text) => {
       output += text;
     }));
   });
-  /* v8 ignore stop */
 
   if (timeoutMs > 0) {
     timeout = setTimeout(() => {
       timedOut = true;
       output += `Command timed out after ${timeoutMs} ms. Sending SIGTERM.\n`;
       signalProcessTree(child.pid, "SIGTERM");
-      /* v8 ignore next 3 -- SIGKILL fallback only appends when a child ignores SIGTERM. */
       ({ done: forceKillDone, timeout: killTimeout } = scheduleProcessTreeKill(child.pid, (text) => {
         output += text;
       }));
@@ -505,7 +498,6 @@ async function runShell(context: ProjectContext, command: string, logPath: strin
     output += chunk.toString();
   });
   return new Promise((resolve) => {
-    /* v8 ignore next 11 -- shell spawn errors are platform-specific; command failures resolve through close. */
     child.on("error", async (error: Error) => {
       if (settled) return;
       settled = true;
@@ -514,44 +506,35 @@ async function runShell(context: ProjectContext, command: string, logPath: strin
       else clearTimeout(killTimeout);
       output += `${error.message}\n`;
       await registrationDone;
-      /* v8 ignore next -- spawn errors before pid registration are platform-specific. */
       if (registeredPid !== null) await unregisterProcess(registeredPid, context);
       await writePrivateFile(logPath, output);
       resolve({ code: 1, output });
     });
     child.on("close", async (code: number | null) => {
-      /* v8 ignore next -- close cannot run twice for the same child process. */
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
       if (forceKillDone) await forceKillDone;
       else clearTimeout(killTimeout);
       await registrationDone;
-      /* v8 ignore next -- successful shell commands normally have a registered pid before close. */
       if (registeredPid !== null) await unregisterProcess(registeredPid, context);
       await writePrivateFile(logPath, output);
-      /* v8 ignore next -- shell registration failure is a defensive branch covered by provider tests. */
       resolve({ code: registrationFailed ? 1 : timedOut ? 124 : code, output });
     });
   });
 }
 
 function signalProcessTree(pid: number | undefined, signal: NodeJS.Signals): void {
-  /* v8 ignore next -- callers only signal after successful spawns expose a pid. */
   if (!pid) return;
-  /* v8 ignore start -- signaling failures are best-effort cleanup paths. */
   try {
-    /* v8 ignore next -- Windows process-tree signaling is covered by platform branching at runtime. */
     process.kill(process.platform === "win32" ? pid : -pid, signal);
   } catch {
     /* Cleanup is best-effort after timeout or registration failure. */
   }
-  /* v8 ignore stop */
 }
 
 function scheduleProcessTreeKill(pid: number | undefined, appendOutput: (text: string) => void): { done: Promise<void>; timeout: NodeJS.Timeout } {
   let timeout: NodeJS.Timeout;
-  /* v8 ignore next 8 -- SIGKILL fallback only runs when a child ignores SIGTERM. */
   const done = new Promise<void>((resolve) => {
     timeout = setTimeout(() => {
       appendOutput("Process did not exit after SIGTERM. Sending SIGKILL.\n");

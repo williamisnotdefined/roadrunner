@@ -208,7 +208,7 @@ npm run coverage
 npm run check
 ```
 
-`npm test` runs the Vitest unit/integration suite plus the deterministic fake-provider e2e. `npm run lint` runs Biome linting plus the AI route check. `npm run format` syncs AI routes and formats supported files with Biome. `npm run coverage` enforces 100% coverage for authored `src/**/*.ts`. `npm run e2e:real` is opt-in through `scripts/e2e-real.ts` and runs OpenCode for real with `ROADRUNNER_E2E_REAL_OPENCODE=1`; it is intentionally excluded from `test`, `coverage`, and `check`.
+`npm test` runs the Vitest unit/integration suite plus the deterministic fake-provider e2e. `npm run lint` runs Biome linting plus the AI route check. `npm run format` syncs AI routes and formats supported files with Biome. `npm run coverage` enforces a 95% coverage guardrail for authored `src/**/*.ts`; behavior, failure modes, and regression value matter more than reaching a higher number. `npm run e2e:real` is opt-in through `scripts/e2e-real.ts` and runs OpenCode for real with `ROADRUNNER_E2E_REAL_OPENCODE=1`; it is intentionally excluded from `test`, `coverage`, and `check`.
 
 For real-provider debugging, run `ROADRUNNER_OPENCODE_DEBUG=1 npm run e2e:real`. Roadrunner streams provider output to each `*.opencode.log` while the process is running and prints the provider PID plus log path when each OpenCode subprocess starts. `npm run e2e:real` defaults `ROADRUNNER_PROVIDER_TIMEOUT_MS` to `300000`; override it to fail faster or allow longer provider runs.
 

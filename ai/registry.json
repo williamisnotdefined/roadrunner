@@ -76,6 +76,21 @@
       }
     },
     {
+      "name": "test-quality",
+      "description": "Use when changing tests, test helpers, Vitest configuration, coverage thresholds, or verification strategy.",
+      "canonicalPath": "ai/skills/test-quality.md",
+      "references": ["ai/rules/testing-rules.md", "ai/rules/test-quality-rules.md"],
+      "routes": {
+        "opencode": ".opencode/skills/test-quality/SKILL.md",
+        "cursor": ".cursor/rules/test-quality.mdc",
+        "github": ".github/instructions/test-quality.instructions.md"
+      },
+      "toolConfig": {
+        "cursor": { "globs": "tests/**/*.ts,vitest.config.ts,src/**/*.ts", "alwaysApply": false },
+        "github": { "applyTo": "tests/**/*.ts,vitest.config.ts,src/**/*.ts" }
+      }
+    },
+    {
       "name": "ai-knowledge-maintainer",
       "description": "Use when changing Roadrunner AI registry, skills, rules, architecture docs, or generated AI routes.",
       "canonicalPath": "ai/skills/ai-knowledge-maintainer.md",

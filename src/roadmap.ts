@@ -34,7 +34,6 @@ export async function importRoadmap(context: ProjectContext): Promise<QueueFile>
 
   const queueFile = mergeQueueState(parsed, existing);
   const errors = validateQueueFile(queueFile, { model: context.config.model, variant: context.config.variant });
-  /* v8 ignore next -- parsed and existing queue state are both validated before merging. */
   if (errors.length > 0) throw new Error(errors.join("\n"));
 
   await writeQueue(queueFile, context);
@@ -73,7 +72,6 @@ export function queueFileFromRoadmap(markdown: string, options: RoadmapOptions):
   };
 
   const validationErrors = validateQueueFile(queueFile, { model: queueFile.model, variant: queueFile.variant });
-  /* v8 ignore next -- step parsing validates fields before this defensive schema check. */
   if (validationErrors.length > 0) throw new Error(validationErrors.join("\n"));
 
   return queueFile;

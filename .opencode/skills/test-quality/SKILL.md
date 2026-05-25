@@ -1,0 +1,89 @@
+---
+name: test-quality
+description: "Use when changing tests, test helpers, Vitest configuration, coverage thresholds, or verification strategy."
+---
+
+Generated from `ai/registry.json`. Do not edit manually.
+
+# test-quality
+
+# Test Quality
+
+Use this skill when changing tests, test helpers, Vitest configuration, coverage thresholds, or verification strategy.
+
+## Read First
+
+- `ai/rules/testing-rules.md`
+- `ai/rules/test-quality-rules.md`
+
+## Workflow
+
+- Start from the behavior or failure mode that must be protected.
+- Prefer public APIs, CLI commands, files, logs, and queue state over private implementation details.
+- Cover realistic success and failure paths before chasing uncovered lines.
+- Keep tests deterministic with temporary directories and fake providers.
+- Use coverage as a 95% guardrail; do not write branch-only tests for metric gaming.
+- Keep `v8 ignore` rare and justified by entrypoint, platform, or nondeterministic process behavior.
+
+# Referenced Context
+
+## ai/rules/testing-rules.md
+
+# Testing Rules
+
+## Always
+
+- Add Node tests for pure queue, config, parsing, and process-registry behavior.
+- Test with temporary directories when commands create files.
+- Keep tests deterministic and dependency-light.
+- Prioritize behavior, failure modes, and regression value over coverage percentage.
+- Keep coverage thresholds at 95% as a guardrail.
+
+## Verification
+
+- `npm run typecheck`
+- `npm test`
+- `npm run coverage`
+- `npm run ai:check`
+
+## E2E
+
+- Keep deterministic e2e tests in the normal Vitest suite with fake providers.
+- Keep real provider e2e tests behind explicit opt-in scripts such as `npm run e2e:real`.
+- Write e2e target projects under `test-output/`.
+
+## Coverage
+
+- Use `v8 ignore` only for entrypoints, platform-specific branches, or nondeterministic defensive process paths.
+- Do not add tests solely to satisfy a coverage metric.
+
+## ai/rules/test-quality-rules.md
+
+# Test Quality Rules
+
+## Purpose
+
+- Treat coverage as a guardrail, not the definition of quality.
+- Prefer tests that prove behavior, failure handling, and regression protection.
+- Keep the coverage threshold at 95% unless there is an explicit product reason to change it.
+
+## Always
+
+- Test observable behavior through public functions, CLI commands, or documented file outputs.
+- Include meaningful failure cases for critical flows such as provider exits, timeouts, invalid queues, lock handling, and cleanup.
+- Use deterministic fake providers and temporary directories for autonomous-run scenarios.
+- Assert final state and important side effects, not just that a branch executed.
+- When coverage exposes a gap, first decide whether the gap is a real risk before adding a test.
+
+## Never
+
+- Do not write tests whose only purpose is to satisfy a coverage counter.
+- Do not add brittle tests for platform races, impossible process states, or implementation details that do not affect behavior.
+- Do not add `v8 ignore` just to preserve an arbitrary metric.
+- Do not weaken assertions to make a flaky test pass.
+
+## Coverage
+
+- `npm run coverage` enforces 95% statements, branches, functions, and lines for authored `src/**/*.ts`.
+- Falling below 95% should trigger useful behavioral tests or a focused explanation of why the code should be excluded.
+- `v8 ignore` is acceptable only for entrypoints, platform-specific branches, or defensive paths that cannot be exercised deterministically.

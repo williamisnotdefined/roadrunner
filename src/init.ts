@@ -72,7 +72,6 @@ async function ensureRuntimeGitignore(context: ProjectContext): Promise<void> {
 
   const outsideConfigDir = runtimePaths.some((runtimePath) => !isInside(configDir, runtimePath.path));
   if (outsideConfigDir) {
-    /* v8 ignore next -- branch accounting varies with platform path normalization. */
     const rootEntries = runtimePaths.flatMap((runtimePath) => gitignoreEntry(context.root, runtimePath.path, runtimePath.directory) ?? []);
     await upsertGitignoreBlock(path.join(context.root, ".gitignore"), rootEntries);
   }
@@ -107,6 +106,5 @@ function escapeRegExp(value: string): string {
 }
 
 function relativeToRoot(context: ProjectContext, filePath: string): string {
-  /* v8 ignore next -- init destinations are file paths, not the project root itself. */
   return path.relative(context.root, filePath) || ".";
 }
