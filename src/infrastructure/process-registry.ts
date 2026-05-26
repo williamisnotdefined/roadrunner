@@ -184,11 +184,40 @@ async function removeStaleProcessRegistryLock(lockPath: string): Promise<boolean
     const status = await processIdentityStatus({ pid: value.pid, startTimeTicks: typeof value.startTimeTicks === "string" ? value.startTimeTicks : undefined });
     if (status !== "missing" && status !== "different") return false;
 
-    await rm(lockPath, { force: true });
-    return true;
+    return removeLockFileIfUnchanged(lockPath, value);
   } catch {
     return false;
   }
+}
+
+async function removeLockFileIfUnchanged(lockPath: string, expected: Partial<ProcessRegistryLock>): Promise<boolean> {
+  const stalePath = `${lockPath}.stale.${process.pid}.${Date.now()}`;
+  try {
+    const current = JSON.parse(await readFile(lockPath, "utf8")) as Partial<ProcessRegistryLock>;
+    if (!sameProcessRegistryLock(current, expected)) return false;
+    await rename(lockPath, stalePath);
+    const moved = JSON.parse(await readFile(stalePath, "utf8")) as Partial<ProcessRegistryLock>;
+    if (sameProcessRegistryLock(moved, expected)) {
+      await rm(stalePath, { force: true });
+      return true;
+    }
+    await restoreQuarantinedLock(stalePath, lockPath);
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+async function restoreQuarantinedLock(stalePath: string, lockPath: string): Promise<void> {
+  try {
+    await rename(stalePath, lockPath);
+  } catch {
+    await rm(stalePath, { force: true });
+  }
+}
+
+function sameProcessRegistryLock(left: Partial<ProcessRegistryLock>, right: Partial<ProcessRegistryLock>): boolean {
+  return left.pid === right.pid && left.startedAt === right.startedAt && left.startTimeTicks === right.startTimeTicks;
 }
 
 function registryLockPath(context: ProjectContext): string {

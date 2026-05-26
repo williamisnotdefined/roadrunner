@@ -44,6 +44,7 @@ describe("runner startup refresh", () => {
     const events: RoadrunnerRunEvent[] = [];
     try {
       await writeFile(project.context.paths.roadmap, `# Strategic Roadmap\n\nBuild the smallest useful marker-backed feature without operational fields.\n`);
+      project.context.config.allowedVerificationCommands = [`node -e "require('node:fs').readFileSync('marker.txt', 'utf8').includes('ok') || process.exit(1)"`];
 
       expect(await runRoadrunner(project.context, { maxSteps: 1, onEvent: (event) => events.push(event) })).toBe(1);
       const queue = latestQueueSnapshot(events);
@@ -53,13 +54,11 @@ describe("runner startup refresh", () => {
     }
   });
 
-  test("does not use git or file mutation fingerprints during startup refresh", async () => {
+  test("rejects file mutations during startup refresh", async () => {
     const project = await setupRunnerProject("startup-refresh-extra");
-    const events: RoadrunnerRunEvent[] = [];
     try {
-      expect(await runRoadrunner(project.context, { maxSteps: 1, onEvent: (event) => events.push(event) })).toBe(1);
+      await expect(runRoadrunner(project.context, { maxSteps: 1 })).rejects.toThrow(/Read-only provider role startup-refresh modified workspace files/);
       expect(await readFile(path.join(project.directory, "unexpected-startup.txt"), "utf8")).toBe("nope\n");
-      expect(latestQueueSnapshot(events).history.map((step) => step.id)).toEqual(["first-step"]);
     } finally {
       await removeDir(project.directory);
     }
@@ -69,6 +68,17 @@ describe("runner startup refresh", () => {
     const project = await setupRunnerProject("startup-refresh-invalid");
     try {
       await expect(runRoadrunner(project.context, { maxSteps: 1 })).rejects.toThrow(/queue.version must be 2/);
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
+  test("rejects new provider-generated verification commands unless allowed", async () => {
+    const project = await setupRunnerProject("startup-refresh-from-strategic");
+    try {
+      await writeFile(project.context.paths.roadmap, `# Strategic Roadmap\n\nBuild the smallest useful marker-backed feature without operational fields.\n`);
+
+      await expect(runRoadrunner(project.context, { maxSteps: 1 })).rejects.toThrow(/verification\[0\] is not trusted/);
     } finally {
       await removeDir(project.directory);
     }

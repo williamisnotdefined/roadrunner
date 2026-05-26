@@ -4,6 +4,7 @@ import type { ProjectContext } from "../infrastructure/config.js";
 import { normalizeQueueFile, validateQueueFile, type QueueFile, type QueueStep } from "../domain/queue.js";
 import type { ProviderStartEvent } from "../infrastructure/providers/index.js";
 import type { RunSnapshot } from "./run-snapshot.js";
+import { trustedVerificationCommands, validateVerificationPolicy } from "../domain/verification-policy.js";
 import { renderPrompt, writePrivateFile } from "../infrastructure/run-artifacts.js";
 import { appendQueueProposalContract, queueProposalFromOutput } from "./queue-proposal.js";
 import { runProviderRole } from "./provider-runner.js";
@@ -48,6 +49,7 @@ export async function reconcileQueue(context: ProjectContext, queueBeforeReconci
   const errors = [
     ...validateReconcileQueueScope(queueBeforeReconcile, normalizedQueueFile),
     ...validateQueueFile(normalizedQueueFile, { model: context.config.model, variant: context.config.variant }),
+    ...validateVerificationPolicy({ allowedCommands: context.config.allowedVerificationCommands, proposed: normalizedQueueFile, trustedCommands: trustedVerificationCommands(queueBeforeReconcile) }),
   ];
   if (errors.length > 0) throw new Error(errors.join("\n"));
 

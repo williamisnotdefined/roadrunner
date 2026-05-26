@@ -1,4 +1,4 @@
-import { mkdir, open, readFile, rm } from "node:fs/promises";
+import { mkdir, open, readFile, rename, rm } from "node:fs/promises";
 import path from "node:path";
 
 import type { ProjectContext } from "./config.js";
@@ -59,9 +59,38 @@ async function removeStaleProjectLock(context: ProjectContext): Promise<boolean>
     const status = await processIdentityStatus({ pid: value.pid, startTimeTicks: typeof value.startTimeTicks === "string" ? value.startTimeTicks : undefined });
     if (status !== "missing" && status !== "different") return false;
 
-    await rm(context.paths.lock, { force: true });
-    return true;
+    return removeLockFileIfUnchanged(context.paths.lock, value);
   } catch {
     return false;
   }
+}
+
+async function removeLockFileIfUnchanged(lockPath: string, expected: Partial<RoadrunnerLock>): Promise<boolean> {
+  const stalePath = `${lockPath}.stale.${process.pid}.${Date.now()}`;
+  try {
+    const current = JSON.parse(await readFile(lockPath, "utf8")) as Partial<RoadrunnerLock>;
+    if (!sameLock(current, expected)) return false;
+    await rename(lockPath, stalePath);
+    const moved = JSON.parse(await readFile(stalePath, "utf8")) as Partial<RoadrunnerLock>;
+    if (sameLock(moved, expected)) {
+      await rm(stalePath, { force: true });
+      return true;
+    }
+    await restoreQuarantinedLock(stalePath, lockPath);
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+async function restoreQuarantinedLock(stalePath: string, lockPath: string): Promise<void> {
+  try {
+    await rename(stalePath, lockPath);
+  } catch {
+    await rm(stalePath, { force: true });
+  }
+}
+
+function sameLock(left: Partial<RoadrunnerLock>, right: Partial<RoadrunnerLock>): boolean {
+  return left.pid === right.pid && left.startedAt === right.startedAt && left.startTimeTicks === right.startTimeTicks;
 }

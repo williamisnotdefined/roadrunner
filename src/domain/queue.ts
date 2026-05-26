@@ -56,7 +56,7 @@ export function validateQueueFile(queueFile: unknown, { model = defaultModel, va
     if (!Array.isArray(records)) continue;
     for (const [index, step] of records.entries()) {
       const field = `${collection}[${index}]`;
-      validateStep(step, field, errors);
+      validateStep(step, field, errors, collection);
       if (typeof step?.id !== "string" || step.id.length === 0) continue;
 
       const firstField = seen.get(step.id);
@@ -124,7 +124,7 @@ export function markBlocked(queueFile: QueueFile, stepId: string, reason: string
   queueFile.blocked.push({ ...blocked!, blockedAt: new Date().toISOString(), blockedReason: reason });
 }
 
-function validateStep(step: QueueStep, field: string, errors: string[]): void {
+function validateStep(step: QueueStep, field: string, errors: string[], collection: string): void {
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(step?.id ?? "")) errors.push(`${field}.id must be kebab-case.`);
   for (const key of ["phase", "title", "prompt"] as const) {
     if (typeof step?.[key] !== "string" || step[key].length === 0) errors.push(`${field}.${key} must be a non-empty string.`);
@@ -139,6 +139,18 @@ function validateStep(step: QueueStep, field: string, errors: string[]): void {
       if (typeof item !== "string" || item.length === 0) errors.push(`${field}.${key}[${index}] must be a non-empty string.`);
     }
   }
+  validateOptionalString(step?.completedAt, `${field}.completedAt`, errors);
+  validateOptionalString(step?.blockedAt, `${field}.blockedAt`, errors);
+  validateOptionalString(step?.blockedReason, `${field}.blockedReason`, errors);
+  if (collection === "history" && step?.completedAt === undefined) errors.push(`${field}.completedAt must be a non-empty string.`);
+  if (collection === "blocked") {
+    if (step?.blockedAt === undefined) errors.push(`${field}.blockedAt must be a non-empty string.`);
+    if (step?.blockedReason === undefined) errors.push(`${field}.blockedReason must be a non-empty string.`);
+  }
+}
+
+function validateOptionalString(value: unknown, field: string, errors: string[]): void {
+  if (value !== undefined && (typeof value !== "string" || value.length === 0)) errors.push(`${field} must be a non-empty string.`);
 }
 
 function normalizeStep(step: QueueStep): QueueStep {

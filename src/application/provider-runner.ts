@@ -1,6 +1,7 @@
 import type { ProjectContext } from "../infrastructure/config.js";
 import { providerFor, type ProviderRunResult, type ProviderStartEvent } from "../infrastructure/providers/index.js";
 import { providerEnvForDeadline } from "../domain/timeouts.js";
+import { workspaceFingerprint, workspaceFingerprintChanges } from "../infrastructure/workspace-fingerprint.js";
 
 interface ProviderRoleRunInput {
   agent: string;
@@ -17,7 +18,8 @@ interface ProviderRoleRunInput {
 }
 
 export async function runProviderRole(context: ProjectContext, input: ProviderRoleRunInput): Promise<ProviderRunResult> {
-  return providerFor(context).run({
+  const before = input.workspaceAccess === "read-only" ? await workspaceFingerprint(context) : null;
+  const result = await providerFor(context).run({
     agent: input.agent,
     bypassProviderPermissions: input.bypassProviderPermissions,
     context,
@@ -31,4 +33,9 @@ export async function runProviderRole(context: ProjectContext, input: ProviderRo
     streamOutput: input.streamProviderOutput,
     workspaceAccess: input.workspaceAccess,
   });
+  if (before) {
+    const changes = workspaceFingerprintChanges(before, await workspaceFingerprint(context));
+    if (changes.length > 0) throw new Error(`Read-only provider role ${input.role} modified workspace files: ${changes.join(", ")}`);
+  }
+  return result;
 }

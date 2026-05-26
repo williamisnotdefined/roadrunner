@@ -4,6 +4,8 @@ import path from "node:path";
 
 import { packageRoot, pathExists, type ProjectContext } from "./config.js";
 
+let logDirCounter = 0;
+
 export async function renderPrompt(context: ProjectContext, name: string, values: Record<string, string>): Promise<string> {
   const promptPath = await promptTemplatePath(context, name);
   let template = await readFile(promptPath, "utf8");
@@ -19,8 +21,10 @@ async function promptTemplatePath(context: ProjectContext, name: string): Promis
 
 export async function createLogDir(context: ProjectContext, name: string): Promise<string> {
   const timestamp = new Date().toISOString().replaceAll(":", "-").replaceAll(".", "-");
-  const logDir = path.join(context.paths.logs, `${timestamp}-${name}`);
-  await mkdir(logDir, { mode: 0o700, recursive: true });
+  logDirCounter = (logDirCounter + 1) % Number.MAX_SAFE_INTEGER;
+  const logDir = path.join(context.paths.logs, `${timestamp}-r${process.pid}-${logDirCounter}-${name}`);
+  await mkdir(context.paths.logs, { mode: 0o700, recursive: true });
+  await mkdir(logDir, { mode: 0o700 });
   await chmod(logDir, 0o700);
   return logDir;
 }

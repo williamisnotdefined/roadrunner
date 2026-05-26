@@ -5,6 +5,7 @@ import path from "node:path";
 import type { QueueFile } from "../domain/queue.js";
 import type { ProjectContext } from "../infrastructure/config.js";
 import { cleanupProcesses } from "../infrastructure/process-registry.js";
+import { acquireProjectLock } from "../infrastructure/lock.js";
 import { writePrivateFile } from "../infrastructure/run-artifacts.js";
 import { reconcileProjectQueue } from "../application/global-reconciliation.js";
 import { isAutomaticRestartLimitExceeded } from "../application/run-errors.js";
@@ -18,6 +19,7 @@ type RunTuiRunner = (context: ProjectContext, options: RunOptions) => Promise<nu
 interface RunTuiSessionState {
   operatorDirective: string | null;
   queueFile: QueueFile | null;
+  queueOverride: QueueFile | null;
 }
 
 export interface RunTuiOptions {
@@ -53,12 +55,14 @@ export async function runWithTui(context: ProjectContext, options: RunTuiOptions
     session.event("run-start", `run started root=${context.root}`, { root: context.root });
     let lastCompleted = 0;
     let lastError: unknown;
-    const state: RunTuiSessionState = { operatorDirective: null, queueFile: null };
+    const state: RunTuiSessionState = { operatorDirective: null, queueFile: null, queueOverride: null };
     while (true) {
       stopRequested = false;
       lastError = undefined;
       try {
-        lastCompleted = await runOnce(context, app, options, state.operatorDirective, (value) => {
+        const initialQueueFile = state.queueOverride;
+        state.queueOverride = null;
+        lastCompleted = await runOnce(context, app, options, state.operatorDirective, initialQueueFile, (value) => {
           stopRequested = value;
         }, (queueFile) => {
           state.queueFile = queueFile;
@@ -91,10 +95,12 @@ async function runOnce(
   app: Awaited<ReturnType<RunTuiAppFactory>>,
   options: RunTuiOptions,
   operatorDirective: string | null,
+  initialQueueFile: QueueFile | null,
   setStopRequested: (value: boolean) => void,
   setQueueFile: (queueFile: QueueFile) => void,
 ): Promise<number> {
   return (options.runner ?? run)(context, {
+    initialQueueFile,
     maxHours: options.maxHours,
     maxSteps: options.maxSteps,
     onActivity: app.onActivity,
@@ -143,7 +149,9 @@ async function handleGlobalReconcile(app: Awaited<ReturnType<RunTuiAppFactory>>,
     app.setStatus("No queue is loaded yet. Press p/Space to start or load Roadrunner state first.");
     return;
   }
+  let releaseLock: (() => Promise<void>) | null = null;
   try {
+    releaseLock = await acquireProjectLock(context, "Roadrunner global reconcile");
     app.setStatus("Reconciling queue with current goals, roadmap, repository state, and operator directive.");
     const result = await reconcileProjectQueue(context, state.queueFile, await readRunSnapshot(context, { operatorDirective: state.operatorDirective }), {
       deadline: null,
@@ -152,11 +160,14 @@ async function handleGlobalReconcile(app: Awaited<ReturnType<RunTuiAppFactory>>,
       streamProviderOutput: false,
     });
     state.queueFile = result.queueFile;
+    state.queueOverride = result.queueFile;
     app.onEvent({ queueFile: result.queueFile, type: "queue-updated" });
     app.setStatus(`Reconciled queue. Log: ${result.logDir}`);
   } catch (error) {
     app.showFailure({ details: [], message: (error as Error).message, recoverable: true, title: "Global reconcile failed" });
     session.event("error", `global reconcile failed: ${(error as Error).message}`, { message: (error as Error).message, stack: (error as Error).stack });
+  } finally {
+    await releaseLock?.();
   }
 }
 

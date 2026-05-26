@@ -14,4 +14,4 @@ cd ~/git/roadrunner && npm install && npm run build && npm link
 cd ~/git/rubiks-cube-solver && npm link roadrunner && npm run roadmap:run:long
 
 
-cd ~/git/roadrunner && npm install && npm run build && npm link && cd ~/git/rubiks-cube-solver && npm link roadrunner && npm run roadmap:run:long
+cd ~/git/roadrunner && npm install && npm run build && npm link && cd ~/git/rubiks-cube-solver && npm link roadrunner && npm run roadmap:run:long 

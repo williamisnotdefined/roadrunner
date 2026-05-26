@@ -18,7 +18,7 @@ import { bindRunTuiKeys } from "./run-tui-keymap.js";
 import { nextFocus, previousFocus, type FocusPanel } from "./run-tui-navigation.js";
 import { eventMessage, eventPayload } from "./run-tui-events.js";
 import { actionText, createDisplayState, currentDisplayState as viewDisplayState, detailsText, failureActionText, headerText, logViewerText, renderFailureModal, type RunDisplayState, type RunDisplayStatus } from "./run-tui-view.js";
-import type { RoadrunnerRunActivityEvent, RoadrunnerRunControl, RoadrunnerRunEvent } from "../application/runner.js";
+import type { RoadrunnerRunControl } from "../application/runner.js";
 const require = createRequire(import.meta.url);
 const blessed = require("blessed") as typeof import("blessed");
 /* v8 ignore start -- blessed full-screen rendering requires an interactive TTY; pure state, log, and session helpers are covered separately. */

@@ -48,6 +48,28 @@ describe("queue", () => {
     expect(validateQueueFile(queueFile)).toEqual(["queue[0].verification[0] must be a non-empty string."]);
   });
 
+  test("rejects invalid optional closure fields", () => {
+    const queueFile = sampleQueue();
+    queueFile.history.push({ ...queueFile.queue[0]!, completedAt: 123 as unknown as string, id: "done-step" });
+    queueFile.blocked.push({ ...queueFile.queue[0]!, blockedAt: "", blockedReason: 123 as unknown as string, id: "blocked-step" });
+
+    expect(validateQueueFile(queueFile)).toEqual([
+      "history[0].completedAt must be a non-empty string.",
+      "blocked[0].blockedAt must be a non-empty string.",
+      "blocked[0].blockedReason must be a non-empty string.",
+    ]);
+  });
+
+  test("requires closure metadata on closed records", () => {
+    const queueFile = sampleQueue();
+    queueFile.history.push({ ...queueFile.queue[0]!, id: "done-step" });
+    queueFile.blocked.push({ ...queueFile.queue[0]!, id: "blocked-step" });
+
+    expect(validateQueueFile(queueFile)).toContain("history[0].completedAt must be a non-empty string.");
+    expect(validateQueueFile(queueFile)).toContain("blocked[0].blockedAt must be a non-empty string.");
+    expect(validateQueueFile(queueFile)).toContain("blocked[0].blockedReason must be a non-empty string.");
+  });
+
   test("moves blocked queue item to blocked list", () => {
     const queueFile = sampleQueue();
 

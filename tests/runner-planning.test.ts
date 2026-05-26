@@ -14,35 +14,35 @@ afterEach(() => {
 });
 
 describe("runner planning", () => {
-  test("does not use file fingerprints to police planning agents", async () => {
+  test("rejects file mutations from planning agents", async () => {
     const project = await setupRunnerProject("plan-dirty");
     try {
-      expect(await runRoadrunner(project.context)).toBe(1);
+      await expect(runRoadrunner(project.context)).rejects.toThrow(/Read-only provider role plan modified workspace files/);
       expect(await readFile(path.join(project.directory, "plan-dirty.txt"), "utf8")).toBe("nope\n");
     } finally {
       await removeDir(project.directory);
     }
   });
 
-  test("does not use git state to police planning agents", async () => {
+  test("rejects tracked file deletion from planning agents", async () => {
     const project = await setupRunnerProject("plan-delete");
     try {
       await writeFile(path.join(project.directory, "delete-me.txt"), "remove me\n");
       await commitAll(project.directory, "Add file deleted by planning");
 
-      expect(await runRoadrunner(project.context)).toBe(1);
+      await expect(runRoadrunner(project.context)).rejects.toThrow(/Read-only provider role plan modified workspace files/);
     } finally {
       await removeDir(project.directory);
     }
   });
 
-  test("does not inspect git-ignored files during planning", async () => {
+  test("rejects git-ignored file mutations during planning", async () => {
     const project = await setupRunnerProject("plan-ignored-dirty");
     try {
       await writeFile(path.join(project.directory, ".gitignore"), ".env\n");
       await commitAll(project.directory, "Ignore local env files");
 
-      expect(await runRoadrunner(project.context)).toBe(1);
+      await expect(runRoadrunner(project.context)).rejects.toThrow(/Read-only provider role plan modified workspace files/);
       expect(await readFile(path.join(project.directory, ".env"), "utf8")).toBe("SECRET=changed\n");
     } finally {
       await removeDir(project.directory);
@@ -96,7 +96,7 @@ describe("runner planning", () => {
     }
   });
 
-  test("does not fingerprint planning outside git repositories", async () => {
+  test("rejects planning mutations outside git repositories", async () => {
     const directory = await tempDir("roadrunner-runner-no-git-plan-dirty-");
     try {
       const binDir = await createFakeOpenCodeBin(directory);
@@ -104,7 +104,7 @@ describe("runner planning", () => {
       process.env.ROADRUNNER_FAKE_OPENCODE_MODE = "plan-dirty";
       const context = await createInitializedProject(directory);
 
-      expect(await runRoadrunner(context)).toBe(1);
+      await expect(runRoadrunner(context)).rejects.toThrow(/Read-only provider role plan modified workspace files/);
     } finally {
       await removeDir(directory);
     }

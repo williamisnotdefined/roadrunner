@@ -61,8 +61,12 @@ export function relativeLogLabel(context: ProjectContext, filePath: string): str
 
 function isTaskLogDir(entry: string, taskId: string): boolean {
   const match = /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z-(.+)$/.exec(entry);
-  const name = match?.[1];
+  const name = normalizeLogDirName(match?.[1]);
   return name === taskId || name === `${taskId}-plan`;
+}
+
+function normalizeLogDirName(name: string | undefined): string | undefined {
+  return name?.replace(/^r\d+-\d+-/, "");
 }
 
 function trimLeadingUtf8ContinuationBytes(buffer: Buffer): Buffer {

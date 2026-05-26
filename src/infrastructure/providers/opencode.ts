@@ -8,6 +8,7 @@ import type { ProjectContext } from "../config.js";
 import { registerProcess, unregisterProcessIfProcessGroupExited } from "../process-registry.js";
 import { processTreeExists, signalProcessTree } from "../process-tree.js";
 import { createPrivateWriteStream, writePrivateFile } from "../run-artifacts.js";
+import { providerChildEnv } from "../child-env.js";
 import { defaultModel, defaultVariant } from "../../domain/provider-defaults.js";
 import { openCodeCheckTimeoutMs, providerTimeoutMs } from "../../domain/timeouts.js";
 import type { Provider, ProviderRunInput, ProviderRunResult } from "./provider.js";
@@ -153,7 +154,8 @@ export async function validateOpenCodeCli(): Promise<string[]> {
     const timeoutMs = openCodeCheckTimeoutMs(process.env.ROADRUNNER_OPENCODE_CHECK_TIMEOUT_MS);
     const result = await execFileAsync("opencode", ["run", "--help"], { killSignal: "SIGKILL", timeout: timeoutMs });
     const help = `${result.stdout}\n${result.stderr}`;
-    return requiredRunFlags.filter((flag) => !help.includes(flag)).map((flag) => `opencode run --help is missing required flag ${flag}.`);
+    const flags = new Set(help.match(/--[A-Za-z0-9][A-Za-z0-9-]*/g) ?? []);
+    return requiredRunFlags.filter((flag) => !flags.has(flag)).map((flag) => `opencode run --help is missing required flag ${flag}.`);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).message.includes("ROADRUNNER_OPENCODE_CHECK_TIMEOUT_MS")) return [(error as Error).message];
     const code = (error as NodeJS.ErrnoException).code;
@@ -181,7 +183,7 @@ function writeProviderOutput(logStream: WriteStream, text: string, appendOutput:
 }
 
 function openCodeRunEnv({ bypassProviderPermissions, context, env, model, variant, workspaceAccess }: Pick<ProviderRunInput, "bypassProviderPermissions" | "context" | "env" | "workspaceAccess"> & { model: string; variant: string }): NodeJS.ProcessEnv {
-  const childEnv: NodeJS.ProcessEnv = { ...process.env, ...(env ?? {}), OPENCODE_MODEL: model, OPENCODE_VARIANT: variant };
+  const childEnv: NodeJS.ProcessEnv = providerChildEnv(process.env, { ...(env ?? {}), OPENCODE_MODEL: model, OPENCODE_VARIANT: variant });
   const nestedIndicator = nestedOpenCodeIndicator(childEnv);
   if (nestedIndicator && !context.config.allowNestedOpenCode) {
     throw new Error(`Refusing to launch nested OpenCode session (${nestedIndicator} is set). Set allowNestedOpenCode: true to override.`);

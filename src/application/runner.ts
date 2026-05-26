@@ -21,6 +21,7 @@ export interface RoadrunnerStatus {
 }
 
 export interface RunOptions {
+  initialQueueFile?: QueueFile | null;
   maxHours?: number;
   maxSteps?: number;
   onActivity?: (event: RoadrunnerRunActivityEvent) => void;
@@ -105,7 +106,7 @@ export async function run(context: ProjectContext, options: RunOptions = {}): Pr
 
   try {
     emitRunEvent(options, { type: "validate" });
-    const snapshot = await readRunSnapshot(context);
+    const snapshot = await readRunSnapshot(context, { operatorDirective: options.operatorDirective });
     const deadline = maxHours === undefined ? null : Date.now() + maxHours * 60 * 60 * 1000;
     let completed = 0;
     let completedResult: number | undefined;
@@ -120,16 +121,20 @@ export async function run(context: ProjectContext, options: RunOptions = {}): Pr
         await cleanupProcesses(context, { force: true });
         emitRunEvent(options, { type: "startup-refresh" });
         await ensureProviderAvailable(context);
-        const startup = await runAbortableOperation(controlState, (signal) =>
-          refreshQueueAtRunStart(context, snapshot, {
-            deadline,
-            onOutput: () => emitRunActivity(options, { phase: "startup-refresh" }),
-            onProviderStart: (event) => emitRunEvent(options, { ...event, type: "provider-start" }),
-            signal,
-            streamProviderOutput,
-          }),
-        );
-        queueFile = startup.queueFile;
+        if (options.initialQueueFile) {
+          queueFile = options.initialQueueFile;
+        } else {
+          const startup = await runAbortableOperation(controlState, (signal) =>
+            refreshQueueAtRunStart(context, snapshot, {
+              deadline,
+              onOutput: () => emitRunActivity(options, { phase: "startup-refresh" }),
+              onProviderStart: (event) => emitRunEvent(options, { ...event, type: "provider-start" }),
+              signal,
+              streamProviderOutput,
+            }),
+          );
+          queueFile = startup.queueFile;
+        }
         emitRunEvent(options, { queueFile, type: "queue-updated" });
       }
 

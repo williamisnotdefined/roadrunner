@@ -1,10 +1,6 @@
 import { normalizeQueueFile, type QueueFile, validateQueueFile } from "../domain/queue.js";
 import { defaultModel, defaultVariant, type ProjectContext } from "../infrastructure/config.js";
-
-interface FencedBlock {
-  content: string;
-  info: string;
-}
+import { fencedBlocks } from "./markdown-fences.js";
 
 const queueProposalContract = [
   "## Required Queue Proposal Output",
@@ -38,6 +34,9 @@ export function parseQueueProposalJson(output: string): unknown {
 
   if (namedBlocks.length === 0) throw new Error("Provider output must include a fenced JSON block tagged roadrunner-queue.");
   if (namedBlocks.length > 1) throw new Error("Provider output must include exactly one Roadrunner queue JSON proposal.");
+  if (blocks.some((block) => block !== namedBlocks[0] && block.info.split(/\s+/).includes("json") && looksLikeQueueJson(block.content))) {
+    throw new Error("Provider output must not include additional queue-shaped JSON blocks.");
+  }
 
   try {
     return JSON.parse(namedBlocks[0]!.content);
@@ -46,13 +45,11 @@ export function parseQueueProposalJson(output: string): unknown {
   }
 }
 
-function fencedBlocks(output: string): FencedBlock[] {
-  const blocks: FencedBlock[] = [];
-  const pattern = /```([^\n`]*)\n([\s\S]*?)\n```/g;
-  let match = pattern.exec(output);
-  while (match !== null) {
-    blocks.push({ info: match[1]!.trim(), content: match[2]! });
-    match = pattern.exec(output);
+function looksLikeQueueJson(content: string): boolean {
+  try {
+    const value = JSON.parse(content) as Partial<QueueFile> | null;
+    return Boolean(value && typeof value === "object" && "version" in value && "queue" in value && "history" in value && "blocked" in value);
+  } catch {
+    return false;
   }
-  return blocks;
 }

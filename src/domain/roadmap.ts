@@ -69,9 +69,18 @@ export function queueFileFromRoadmap(markdown: string, options: RoadmapOptions):
 function roadmapSections(markdown: string): RoadmapSection[] {
   const sections: RoadmapSection[] = [];
   let current: RoadmapSection | null = null;
+  let fence: { length: number; marker: "`" | "~" } | null = null;
   const lines = markdown.replaceAll("\r\n", "\n").split("\n");
 
   for (const [index, line] of lines.entries()) {
+    if (fence) {
+      if (isFenceCloser(line, fence.marker, fence.length)) fence = null;
+      if (current) current.body.push(line);
+      continue;
+    }
+    const opener = fenceOpener(line);
+    if (opener) fence = opener;
+
     const heading = /^#{2,6}\s+(.+?)\s*$/.exec(line);
     const stepHeading = heading ? parseStepHeading(heading[1]!) : null;
 
@@ -86,6 +95,18 @@ function roadmapSections(markdown: string): RoadmapSection[] {
 
   if (current) sections.push(current);
   return sections;
+}
+
+function fenceOpener(line: string): { length: number; marker: "`" | "~" } | null {
+  const match = /^(?: {0,3})(`{3,}|~{3,})/.exec(line);
+  if (!match) return null;
+  const fence = match[1]!;
+  return { length: fence.length, marker: fence[0] as "`" | "~" };
+}
+
+function isFenceCloser(line: string, marker: "`" | "~", openerLength: number): boolean {
+  const match = /^(?: {0,3})(`{3,}|~{3,})[ \t]*$/.exec(line);
+  return Boolean(match && match[1]!.startsWith(marker) && match[1]!.length >= openerLength);
 }
 
 function parseStepHeading(value: string): { id: string; title: string } | null {
@@ -116,8 +137,21 @@ function stepFromSection(section: RoadmapSection, errors: string[]): QueueStep {
 function parseFields(lines: string[]): Map<string, string[]> {
   const fields = new Map<string, string[]>();
   let current: string | null = null;
+  let fence: { length: number; marker: "`" | "~" } | null = null;
 
   for (const line of lines) {
+    if (fence) {
+      if (current === "prompt") fields.get(current)?.push(line);
+      if (isFenceCloser(line, fence.marker, fence.length)) fence = null;
+      continue;
+    }
+    const opener = fenceOpener(line);
+    if (opener) {
+      fence = opener;
+      if (current === "prompt") fields.get(current)?.push(line);
+      continue;
+    }
+
     const match = /^\s{0,3}([A-Za-z][A-Za-z0-9 -]*):\s*(.*)$/.exec(line);
     const alias = match ? fieldAliases.get(match[1]!.trim().toLowerCase()) : undefined;
 

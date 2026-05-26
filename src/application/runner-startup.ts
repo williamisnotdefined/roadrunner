@@ -5,6 +5,7 @@ import { pathExists, type ProjectContext } from "../infrastructure/config.js";
 import type { ProviderStartEvent } from "../infrastructure/providers/index.js";
 import type { QueueFile } from "../domain/queue.js";
 import { queueFileFromRoadmap } from "../domain/roadmap.js";
+import { trustedVerificationCommands, validateVerificationPolicy } from "../domain/verification-policy.js";
 import type { RunSnapshot } from "./run-snapshot.js";
 import { createLogDir, renderPrompt, writePrivateFile } from "../infrastructure/run-artifacts.js";
 import { appendQueueProposalContract, queueProposalFromOutput } from "./queue-proposal.js";
@@ -57,7 +58,15 @@ export async function refreshQueueAtRunStart(context: ProjectContext, snapshot: 
 
   if (result.code !== 0) throw new Error(`Startup refresh failed (exit ${String(result.code)}).`);
 
-  return { logDir, queueFile: queueProposalFromOutput(result.output, context) };
+  const queueFile = queueProposalFromOutput(result.output, context);
+  const verificationErrors = validateVerificationPolicy({
+    allowedCommands: context.config.allowedVerificationCommands,
+    proposed: queueFile,
+    trustedCommands: trustedVerificationCommands(seed.queueFile),
+  });
+  if (verificationErrors.length > 0) throw new Error(verificationErrors.join("\n"));
+
+  return { logDir, queueFile };
 }
 
 async function readRoadmapMarkdown(context: ProjectContext): Promise<string> {

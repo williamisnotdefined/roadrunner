@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { normalizeQueueFile, validateQueueFile, type QueueFile } from "../domain/queue.js";
+import { trustedVerificationCommands, validateVerificationPolicy } from "../domain/verification-policy.js";
 import type { ProjectContext } from "../infrastructure/config.js";
 import { pathExists } from "../infrastructure/config.js";
 import type { ProviderStartEvent } from "../infrastructure/providers/index.js";
@@ -50,7 +51,10 @@ export async function reconcileProjectQueue(context: ProjectContext, queueFile: 
 
   const proposedQueueFile = queueProposalFromOutput(result.output, context);
   const normalizedQueueFile = preserveClosedRecords(queueFile, proposedQueueFile);
-  const errors = validateQueueFile(normalizedQueueFile, { model: context.config.model, variant: context.config.variant });
+  const errors = [
+    ...validateQueueFile(normalizedQueueFile, { model: context.config.model, variant: context.config.variant }),
+    ...validateVerificationPolicy({ allowedCommands: context.config.allowedVerificationCommands, proposed: normalizedQueueFile, trustedCommands: trustedVerificationCommands(queueFile) }),
+  ];
   if (errors.length > 0) throw new Error(errors.join("\n"));
   return { logDir, queueFile: normalizedQueueFile };
 }

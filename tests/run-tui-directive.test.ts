@@ -164,6 +164,31 @@ describe("run TUI directives", () => {
     }
   });
 
+  test("uses a globally reconciled queue on the next play", async () => {
+    const project = await setupRunnerProject("reconcile-queue");
+    const seenTitles: Array<string | undefined> = [];
+    const actions: RunTuiAction[] = [{ type: "reconcile" }, { type: "play" }, { type: "exit" }];
+    try {
+      const queueFile = queueFileFromRoadmap(sampleRoadmap(), project.context.config);
+      await runWithTui(project.context, {
+        appFactory: async () => fakeApp(actions, []),
+        input: new PassThrough(),
+        isInteractive: true,
+        output: new PassThrough(),
+        runner: async (_context, options) => {
+          seenTitles.push(options.initialQueueFile?.queue[0]?.title);
+          options.onEvent?.({ queueFile, type: "queue-updated" });
+          return 0;
+        },
+        settleMs: 0,
+      });
+
+      expect(seenTitles).toEqual([undefined, "Reconciled first step"]);
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
   test("reports global reconcile failures without exiting the cockpit", async () => {
     const project = await setupRunnerProject("reconcile-invalid");
     const failures: string[] = [];

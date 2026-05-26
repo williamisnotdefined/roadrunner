@@ -58,6 +58,22 @@ describe("run log discovery", () => {
     }
   });
 
+  test("matches task log directories with unique Roadrunner prefixes", async () => {
+    const directory = await tempDir("roadrunner-log-discovery-unique-");
+    try {
+      const context = await loadContext(directory, { _: [] });
+      const runDir = path.join(context.paths.logs, "2026-01-01T00-01-00-000Z-r123-4-first-step");
+      await mkdir(runDir, { recursive: true });
+      await writeFile(path.join(runDir, "implement.opencode.log"), "implemented\n");
+
+      const logs = await discoverTaskLogs(context, "first-step");
+
+      expect(logs.map((log) => log.relativePath)).toEqual(["2026-01-01T00-01-00-000Z-r123-4-first-step/implement.opencode.log"]);
+    } finally {
+      await removeDir(directory);
+    }
+  });
+
   test("handles missing log directories", async () => {
     const directory = await tempDir("roadrunner-log-discovery-missing-");
     try {

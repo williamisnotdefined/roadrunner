@@ -40,6 +40,7 @@ export interface ProjectPaths {
 
 export interface RoadrunnerConfig {
   allowNestedOpenCode?: boolean;
+  allowedVerificationCommands?: string[];
   autoRestartIdleMs?: number;
   dangerouslySkipPermissions?: boolean;
   maxAutoRestartsPerStep?: number;
@@ -54,6 +55,7 @@ type LoadContextOverrides = PathOverrides & { _?: unknown };
 export interface ProjectContext {
   config: Required<Pick<RoadrunnerConfig, "provider" | "model" | "variant">> & {
     allowNestedOpenCode: boolean;
+    allowedVerificationCommands: string[];
     autoRestartIdleMs: number;
     dangerouslySkipPermissions: boolean;
     maxAutoRestartsPerStep: number;
@@ -67,6 +69,7 @@ type Validator = (value: unknown, path: string) => string[];
 
 const configValidators = {
   allowNestedOpenCode: booleanValidator,
+  allowedVerificationCommands: stringArrayValidator,
   autoRestartIdleMs: nonNegativeIntegerValidator,
   dangerouslySkipPermissions: booleanValidator,
   maxAutoRestartsPerStep: nonNegativeIntegerValidator,
@@ -109,6 +112,7 @@ export async function loadContext(projectRoot = process.cwd(), overrides: LoadCo
   return {
     config: {
       allowNestedOpenCode: fileConfig.allowNestedOpenCode ?? false,
+      allowedVerificationCommands: fileConfig.allowedVerificationCommands ?? [],
       autoRestartIdleMs: fileConfig.autoRestartIdleMs ?? defaultAutoRestartIdleMs,
       dangerouslySkipPermissions: fileConfig.dangerouslySkipPermissions ?? false,
       maxAutoRestartsPerStep: fileConfig.maxAutoRestartsPerStep ?? defaultMaxAutoRestartsPerStep,
@@ -177,6 +181,15 @@ function nonEmptyStringValidator(value: unknown, pathLabel: string): string[] {
 
 function nonNegativeIntegerValidator(value: unknown, pathLabel: string): string[] {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? [] : [`${pathLabel} must be a non-negative integer.`];
+}
+
+function stringArrayValidator(value: unknown, pathLabel: string): string[] {
+  if (!Array.isArray(value)) return [`${pathLabel} must be an array of non-empty strings.`];
+  const errors: string[] = [];
+  for (const [index, item] of value.entries()) {
+    if (typeof item !== "string" || item.length === 0) errors.push(`${pathLabel}[${index}] must be a non-empty string.`);
+  }
+  return errors;
 }
 
 function pathsValidator(value: unknown, pathLabel: string): string[] {

@@ -115,6 +115,8 @@ describe("config", () => {
       const cases: Array<{ match: RegExp; value: unknown }> = [
         { value: [], match: /must be a JSON object/ },
         { value: { allowNestedOpenCode: "true" }, match: /allowNestedOpenCode must be a boolean/ },
+        { value: { allowedVerificationCommands: ["npm test", ""] }, match: /allowedVerificationCommands\[1\] must be a non-empty string/ },
+        { value: { allowedVerificationCommands: "npm test" }, match: /allowedVerificationCommands must be an array/ },
         { value: { dangerouslySkipPermissions: "false" }, match: /dangerouslySkipPermissions must be a boolean/ },
         { value: { autoRestartIdleMs: -1 }, match: /autoRestartIdleMs must be a non-negative integer/ },
         { value: { maxAutoRestartsPerStep: 1.5 }, match: /maxAutoRestartsPerStep must be a non-negative integer/ },

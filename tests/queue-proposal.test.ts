@@ -32,6 +32,7 @@ describe("queue proposals", () => {
       expect(() => parseQueueProposalJson("```json\n{}\n```")).toThrow(/tagged roadrunner-queue/);
       expect(() => parseQueueProposalJson("```roadrunner-queue\n{}\n```")).toThrow(/fenced JSON block/);
       expect(() => parseQueueProposalJson("```json roadrunner-queue\n{}\n```\n```json roadrunner-queue\n{}\n```")).toThrow(/exactly one/);
+      expect(() => parseQueueProposalJson(`\`\`\`json roadrunner-queue\n${JSON.stringify(sampleQueue())}\n\`\`\`\n\`\`\`json\n${JSON.stringify(sampleQueue())}\n\`\`\``)).toThrow(/additional queue-shaped/);
       expect(() => queueProposalFromOutput("```json roadrunner-queue\nnot json\n```", context)).toThrow(/invalid/);
       expect(() => queueProposalFromOutput("```json roadrunner-queue\n{}\n```", context)).toThrow(/queue.version/);
     } finally {

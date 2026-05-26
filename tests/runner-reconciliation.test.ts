@@ -13,11 +13,11 @@ afterEach(() => {
 });
 
 describe("runner reconciliation", () => {
-  test("does not fingerprint files during reconciliation", async () => {
+  test("rejects file mutations during reconciliation", async () => {
     const project = await setupRunnerProject("reconcile-extra");
     const events: RoadrunnerRunEvent[] = [];
     try {
-      expect(await runRoadrunner(project.context, { onEvent: (event) => events.push(event) })).toBe(1);
+      await expect(runRoadrunner(project.context, { onEvent: (event) => events.push(event) })).rejects.toThrow(/Read-only provider role reconcile modified workspace files/);
       expect(await readFile(path.join(project.directory, "unexpected.txt"), "utf8")).toBe("nope\n");
       const queue = latestQueueSnapshot(events);
       expect(queue.history[0]).toMatchObject({ id: "first-step" });
@@ -27,11 +27,11 @@ describe("runner reconciliation", () => {
     }
   });
 
-  test("does not treat reconciliation commits as queue-control state", async () => {
+  test("rejects reconciliation commits that modify workspace files", async () => {
     const project = await setupRunnerProject("reconcile-commit-bypass");
     const events: RoadrunnerRunEvent[] = [];
     try {
-      expect(await runRoadrunner(project.context, { onEvent: (event) => events.push(event) })).toBe(1);
+      await expect(runRoadrunner(project.context, { onEvent: (event) => events.push(event) })).rejects.toThrow(/Read-only provider role reconcile modified workspace files/);
       expect((await run("git", ["log", "--oneline", "--grep", "Agent reconcile commit"], project.directory)).stdout).toMatch(/Agent reconcile commit/);
       const queue = latestQueueSnapshot(events);
       expect(queue.history[0]).toMatchObject({ id: "first-step" });
@@ -41,14 +41,14 @@ describe("runner reconciliation", () => {
     }
   });
 
-  test("does not inspect git-ignored files during reconciliation", async () => {
+  test("rejects git-ignored file mutations during reconciliation", async () => {
     const project = await setupRunnerProject("reconcile-ignored-dirty");
     const events: RoadrunnerRunEvent[] = [];
     try {
       await writeFile(path.join(project.directory, ".gitignore"), ".env\n");
       await commitAll(project.directory, "Ignore local env files");
 
-      expect(await runRoadrunner(project.context, { onEvent: (event) => events.push(event) })).toBe(1);
+      await expect(runRoadrunner(project.context, { onEvent: (event) => events.push(event) })).rejects.toThrow(/Read-only provider role reconcile modified workspace files/);
       expect(await readFile(path.join(project.directory, ".env"), "utf8")).toBe("SECRET=changed\n");
       const queue = latestQueueSnapshot(events);
       expect(queue.history[0]).toMatchObject({ id: "first-step", title: "Build first step" });
@@ -147,7 +147,7 @@ describe("runner reconciliation", () => {
     const project = await setupRunnerProject("reconcile-fail-dirty");
     const events: RoadrunnerRunEvent[] = [];
     try {
-      await expect(runRoadrunner(project.context, { onEvent: (event) => events.push(event) })).rejects.toThrow(/Reconciliation failed/);
+      await expect(runRoadrunner(project.context, { onEvent: (event) => events.push(event) })).rejects.toThrow(/Read-only provider role reconcile modified workspace files/);
       expect(await readFile(path.join(project.directory, "unexpected.txt"), "utf8")).toBe("nope\n");
       const queue = latestQueueSnapshot(events);
       expect(queue.history[0]).toMatchObject({ id: "first-step" });

@@ -6,6 +6,7 @@ import type { ProjectContext } from "./config.js";
 import { registerProcess, unregisterProcessIfProcessGroupExited } from "./process-registry.js";
 import { processTreeExists, signalProcessTree as signalRegisteredProcessTree } from "./process-tree.js";
 import { writePrivateFile } from "./run-artifacts.js";
+import { verificationChildEnv } from "./child-env.js";
 
 const forceKillDelayMs = 1_000;
 
@@ -23,7 +24,7 @@ export async function runShell(
   { onOutput, signal, timeoutMs = 0 }: RunShellOptions = {},
 ): Promise<{ code: number | null; output: string }> {
   await mkdir(path.dirname(logPath), { recursive: true });
-  const child = spawn(command, [], { cwd: context.root, detached: process.platform !== "win32", env: process.env, shell: true });
+  const child = spawn(command, [], { cwd: context.root, detached: process.platform !== "win32", env: verificationChildEnv(), shell: true });
   let output = "";
   if (!child.pid) throw new Error("Failed to start shell process.");
   let registeredPid: number | null = child.pid;

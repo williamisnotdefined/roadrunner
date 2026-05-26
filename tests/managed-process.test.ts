@@ -67,6 +67,22 @@ describe("managed process", () => {
     }
   });
 
+  test("does not inherit arbitrary parent environment variables", async () => {
+    const directory = await tempDir("roadrunner-managed-process-env-");
+    const previous = process.env.ROADRUNNER_SHOULD_NOT_LEAK;
+    try {
+      process.env.ROADRUNNER_SHOULD_NOT_LEAK = "secret";
+      const context = await loadContext(directory, { _: [] });
+      const result = await runShell(context, `${JSON.stringify(process.execPath)} -e "process.stdout.write(process.env.ROADRUNNER_SHOULD_NOT_LEAK || 'missing')"`, path.join(directory, "env.log"), "verify-1");
+
+      expect(result.output).toBe("missing");
+    } finally {
+      if (previous === undefined) delete process.env.ROADRUNNER_SHOULD_NOT_LEAK;
+      else process.env.ROADRUNNER_SHOULD_NOT_LEAK = previous;
+      await removeDir(directory);
+    }
+  });
+
   test("keeps process registry records for background descendants", async () => {
     const directory = await tempDir("roadrunner-managed-process-child-");
     let childPid: number | null = null;

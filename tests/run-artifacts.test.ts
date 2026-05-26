@@ -4,12 +4,28 @@ import path from "node:path";
 import { describe, expect, test } from "vitest";
 
 import { loadContext } from "../src/infrastructure/config.js";
-import { createPrivateWriteStream, renderPrompt, writePrivateFile } from "../src/infrastructure/run-artifacts.js";
+import { createLogDir, createPrivateWriteStream, renderPrompt, writePrivateFile } from "../src/infrastructure/run-artifacts.js";
 import { removeDir, tempDir } from "./helpers.js";
 
 const testSymlink = process.platform === "win32" ? test.skip : test;
 
 describe("run artifacts", () => {
+  test("creates unique log directories with the task suffix", async () => {
+    const directory = await tempDir("roadrunner-artifacts-log-dir-");
+    try {
+      const context = await loadContext(directory, { _: [] });
+
+      const first = await createLogDir(context, "first-step");
+      const second = await createLogDir(context, "first-step");
+
+      expect(first).not.toBe(second);
+      expect(path.basename(first)).toMatch(/-first-step$/);
+      expect(path.basename(second)).toMatch(/-first-step$/);
+    } finally {
+      await removeDir(directory);
+    }
+  });
+
   test("creates private streams with restrictive permissions on existing files", async () => {
     const directory = await tempDir("roadrunner-artifacts-stream-");
     try {

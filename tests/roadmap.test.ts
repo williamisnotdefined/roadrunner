@@ -92,6 +92,59 @@ Verification:
     expect(queueFile.queue[0]?.prompt).toContain("Example: Keep this too");
   });
 
+  test("ignores step-like headings inside fenced code blocks", () => {
+    const queueFile = queueFileFromRoadmap(
+      `${sampleRoadmap()}
+
+\`\`\`md
+## fake-step: This is only documentation
+
+Phase: Docs
+Scope: README.md
+Prompt: Do not parse this.
+Acceptance:
+- ignored
+Verification:
+- ignored
+\`\`\`
+`,
+      {},
+    );
+
+    expect(queueFile.queue.map((step) => step.id)).toEqual(["first-step"]);
+    expect(queueFile.queue[0]?.phase).toBe("Bootstrap");
+    expect(queueFile.queue[0]?.scope).toEqual(["README.md", "src/feature.ts"]);
+  });
+
+  test("keeps fenced code inside prompt fields without parsing labels inside it", () => {
+    const queueFile = queueFileFromRoadmap(
+      `# Roadmap
+
+## first-step: Build first step
+
+Phase: Bootstrap
+Scope: README.md
+Prompt: Use this example:
+
+\`\`\`md
+Phase: Not a real phase
+Acceptance:
+- not a real acceptance item
+\`\`\`
+
+Acceptance:
+- works
+Verification:
+- npm test
+`,
+      {},
+    );
+
+    expect(queueFile.queue[0]?.phase).toBe("Bootstrap");
+    expect(queueFile.queue[0]?.prompt).toContain("Phase: Not a real phase");
+    expect(queueFile.queue[0]?.acceptance).toEqual(["works"]);
+  });
+
   test("rejects roadmap steps with missing required fields", () => {
     expect(() => queueFileFromRoadmap("## first-step: Build first step\n\nPhase: Bootstrap\n", {})).toThrow(/missing scope field/);
   });
@@ -124,7 +177,7 @@ Verification:
       const roadmapPath = path.join(outside, "ROADMAP.md");
       await writeFile(roadmapPath, sampleRoadmap());
       const queueFile = await queueFileFromRoadmapFile({
-        config: { allowNestedOpenCode: false, autoRestartIdleMs: 600000, dangerouslySkipPermissions: false, maxAutoRestartsPerStep: 3, model: defaultModel, paths: {}, provider: "opencode", variant: defaultVariant },
+        config: { allowNestedOpenCode: false, allowedVerificationCommands: [], autoRestartIdleMs: 600000, dangerouslySkipPermissions: false, maxAutoRestartsPerStep: 3, model: defaultModel, paths: {}, provider: "opencode", variant: defaultVariant },
         paths: { goals: path.join(root, "GOALS.md"), roadmap: roadmapPath } as never,
         root,
       });
