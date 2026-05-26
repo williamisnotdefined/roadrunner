@@ -347,6 +347,11 @@ if (prompt.includes("Roadrunner Reconcile Queue") || prompt.includes("Roadrunner
     queue.history = [];
     queue.blocked = [];
   }
+  if (mode === "reconcile-requeues-history") {
+    const historyStep = queue.history[0];
+    queue.history = [];
+    if (historyStep) queue.queue.push(historyStep);
+  }
   if (mode === "reconcile-queue") {
     queue.queue[0].title = "Reconciled first step";
   }

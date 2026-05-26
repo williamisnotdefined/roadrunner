@@ -1,7 +1,7 @@
 import path from "node:path";
 
 import type { ProjectContext } from "../infrastructure/config.js";
-import type { QueueFile, QueueStep } from "../domain/queue.js";
+import { normalizeQueueFile, validateQueueFile, type QueueFile, type QueueStep } from "../domain/queue.js";
 import type { ProviderStartEvent } from "../infrastructure/providers/index.js";
 import type { RunSnapshot } from "./run-snapshot.js";
 import { renderPrompt, writePrivateFile } from "../infrastructure/run-artifacts.js";
@@ -42,11 +42,19 @@ export async function reconcileQueue(context: ProjectContext, queueBeforeReconci
 
   if (result.code !== 0) throw new Error(`Reconciliation failed for ${step.id}.`);
 
-  const normalizedQueueFile = queueProposalFromOutput(result.output, context);
-  const preserveErrors = validateReconcileQueueScope(queueBeforeReconcile, normalizedQueueFile);
-  if (preserveErrors.length > 0) throw new Error(preserveErrors.join("\n"));
+  const proposedQueueFile = queueProposalFromOutput(result.output, context);
+  const normalizedQueueFile = preserveClosedRecords(queueBeforeReconcile, proposedQueueFile);
+  const errors = [
+    ...validateReconcileQueueScope(queueBeforeReconcile, normalizedQueueFile),
+    ...validateQueueFile(normalizedQueueFile, { model: context.config.model, variant: context.config.variant }),
+  ];
+  if (errors.length > 0) throw new Error(errors.join("\n"));
 
   return normalizedQueueFile;
+}
+
+function preserveClosedRecords(before: QueueFile, proposed: QueueFile): QueueFile {
+  return normalizeQueueFile({ ...proposed, history: before.history, blocked: before.blocked });
 }
 
 function validateReconcileQueueScope(before: QueueFile, after: QueueFile): string[] {

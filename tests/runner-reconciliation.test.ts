@@ -117,11 +117,24 @@ describe("runner reconciliation", () => {
     }
   });
 
-  test("rejects reconciliation that rewrites closed queue records", async () => {
+  test("ignores reconciliation rewrites to closed queue records", async () => {
     const project = await setupRunnerProject("reconcile-closed");
     const events: RoadrunnerRunEvent[] = [];
     try {
-      await expect(runRoadrunner(project.context, { onEvent: (event) => events.push(event) })).rejects.toThrow(/preserve history records/);
+      expect(await runRoadrunner(project.context, { onEvent: (event) => events.push(event) })).toBe(1);
+      const nextQueue = latestQueueSnapshot(events);
+      expect(nextQueue.history.map((step) => step.id)).toEqual(["first-step"]);
+      expect(nextQueue.blocked).toEqual([]);
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
+  test("rejects reconciliation queue items that collide with preserved history", async () => {
+    const project = await setupRunnerProject("reconcile-requeues-history");
+    const events: RoadrunnerRunEvent[] = [];
+    try {
+      await expect(runRoadrunner(project.context, { onEvent: (event) => events.push(event) })).rejects.toThrow(/history\[0\]\.id duplicates queue\[0\]\.id/);
       const nextQueue = latestQueueSnapshot(events);
       expect(nextQueue.history.map((step) => step.id)).toEqual(["first-step"]);
       expect(nextQueue.blocked).toEqual([]);
