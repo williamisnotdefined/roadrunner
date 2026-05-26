@@ -64,8 +64,9 @@ export async function fixFailure(
     prompt,
     role: "fix-failure",
     signal: options.signal,
-    skipPermissions: context.config.dangerouslySkipPermissions,
     streamOutput: options.streamProviderOutput,
+    workspaceAccess: "write",
+    bypassProviderPermissions: context.config.dangerouslySkipPermissions,
   });
   await writePrivateFile(path.join(logDir, "fix-failure.md"), result.output);
   return result;

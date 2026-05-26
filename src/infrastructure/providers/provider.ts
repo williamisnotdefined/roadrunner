@@ -1,7 +1,10 @@
 import type { ProjectContext } from "../config.js";
 
+export type WorkspaceAccess = "read-only" | "write";
+
 export interface ProviderRunInput {
   agent: string;
+  bypassProviderPermissions?: boolean;
   context: ProjectContext;
   env?: Record<string, string>;
   logPath: string;
@@ -10,8 +13,8 @@ export interface ProviderRunInput {
   prompt: string;
   role: string;
   signal?: AbortSignal;
-  skipPermissions?: boolean;
   streamOutput?: boolean;
+  workspaceAccess: WorkspaceAccess;
 }
 
 export interface ProviderStartEvent {

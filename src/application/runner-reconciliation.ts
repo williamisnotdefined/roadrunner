@@ -6,7 +6,7 @@ import { providerFor, type ProviderStartEvent } from "../infrastructure/provider
 import type { RunSnapshot } from "./run-snapshot.js";
 import { renderPrompt, writePrivateFile } from "../infrastructure/run-artifacts.js";
 import { providerEnvForDeadline } from "../domain/timeouts.js";
-import { queueProposalFromOutput } from "./queue-proposal.js";
+import { appendQueueProposalContract, queueProposalFromOutput } from "./queue-proposal.js";
 
 interface ReconcileOptions {
   deadline: number | null;
@@ -19,11 +19,11 @@ interface ReconcileOptions {
 export async function reconcileQueue(context: ProjectContext, queueBeforeReconcile: QueueFile, step: QueueStep, snapshot: RunSnapshot, logDir: string, options: ReconcileOptions): Promise<QueueFile> {
   const queueText = `${JSON.stringify(queueBeforeReconcile, null, 2)}\n`;
 
-  const prompt = await renderPrompt(context, "reconcile-roadmap.md", {
+  const prompt = appendQueueProposalContract(await renderPrompt(context, "reconcile-roadmap.md", {
     GOALS_MD: snapshot.goalsMarkdown,
     QUEUE_JSON: queueText,
     STEP_JSON: JSON.stringify(step, null, 2),
-  });
+  }));
   await writePrivateFile(path.join(logDir, "reconcile.prompt.md"), prompt);
 
   const result = await providerFor(context).run({
@@ -36,8 +36,8 @@ export async function reconcileQueue(context: ProjectContext, queueBeforeReconci
     prompt,
     role: "reconcile",
     signal: options.signal,
-    skipPermissions: false,
     streamOutput: options.streamProviderOutput,
+    workspaceAccess: "read-only",
   });
   await writePrivateFile(path.join(logDir, "reconcile.md"), result.output);
 

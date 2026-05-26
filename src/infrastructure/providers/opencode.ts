@@ -26,12 +26,13 @@ export class OpenCodeProvider implements Provider {
     this.variant = variant;
   }
 
-  async run({ agent, context, env = {}, logPath, onOutput, onStart, prompt, role, signal, skipPermissions = false, streamOutput = true }: ProviderRunInput): Promise<ProviderRunResult> {
+  async run({ agent, bypassProviderPermissions = false, context, env = {}, logPath, onOutput, onStart, prompt, role, signal, streamOutput = true, workspaceAccess }: ProviderRunInput): Promise<ProviderRunResult> {
     const childEnv: NodeJS.ProcessEnv = { ...process.env, ...env, OPENCODE_MODEL: this.model, OPENCODE_VARIANT: this.variant };
     const nestedIndicator = nestedOpenCodeIndicator(childEnv);
     if (nestedIndicator && !context.config.allowNestedOpenCode) {
       throw new Error(`Refusing to launch nested OpenCode session (${nestedIndicator} is set). Set allowNestedOpenCode: true to override.`);
     }
+    if (workspaceAccess === "read-only" && bypassProviderPermissions) throw new Error("Read-only provider runs cannot bypass provider permissions.");
 
     for (const key of nestedOpenCodeEnvKeys) delete childEnv[key];
 
@@ -45,7 +46,7 @@ export class OpenCodeProvider implements Provider {
 
     if (debug) args.push("--print-logs", "--log-level", "DEBUG");
 
-    if (skipPermissions) args.push("--dangerously-skip-permissions");
+    if (workspaceAccess === "write" && bypassProviderPermissions) args.push("--dangerously-skip-permissions");
 
     const child = spawn("opencode", args, {
       cwd: context.root,

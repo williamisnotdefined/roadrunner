@@ -8,7 +8,7 @@ import { queueFileFromRoadmap } from "../domain/roadmap.js";
 import type { RunSnapshot } from "./run-snapshot.js";
 import { createLogDir, renderPrompt, writePrivateFile } from "../infrastructure/run-artifacts.js";
 import { providerEnvForDeadline } from "../domain/timeouts.js";
-import { queueProposalFromOutput } from "./queue-proposal.js";
+import { appendQueueProposalContract, queueProposalFromOutput } from "./queue-proposal.js";
 
 export interface StartupRefreshOptions {
   deadline: number | null;
@@ -32,12 +32,12 @@ export async function refreshQueueAtRunStart(context: ProjectContext, snapshot: 
   const seed = seedQueueFromRoadmap(context, roadmapMarkdown);
 
   const logDir = await createLogDir(context, "startup-refresh");
-  const prompt = await renderPrompt(context, "startup-refresh.md", {
+  const prompt = appendQueueProposalContract(await renderPrompt(context, "startup-refresh.md", {
     GOALS_MD: snapshot.goalsMarkdown,
     QUEUE_JSON: JSON.stringify(seed.queueFile, null, 2),
     ROADMAP_MD: roadmapMarkdown,
     ROADMAP_PARSE_STATUS: seed.parseStatus,
-  });
+  }));
   await writePrivateFile(path.join(logDir, "startup-refresh.prompt.md"), prompt);
 
   const result = await providerFor(context).run({
@@ -50,8 +50,8 @@ export async function refreshQueueAtRunStart(context: ProjectContext, snapshot: 
     prompt,
     role: "startup-refresh",
     signal: options.signal,
-    skipPermissions: false,
     streamOutput: options.streamProviderOutput,
+    workspaceAccess: "read-only",
   });
   await writePrivateFile(path.join(logDir, "startup-refresh.md"), result.output);
 

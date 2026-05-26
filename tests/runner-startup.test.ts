@@ -4,7 +4,7 @@ import { afterEach, describe, expect, test } from "vitest";
 
 import { run as runRoadrunner, type RoadrunnerRunEvent } from "../src/application/runner.js";
 import { removeDir } from "./helpers.js";
-import { latestQueueSnapshot, setupRunnerProject } from "./runner-helpers.js";
+import { latestQueueSnapshot, logDirFor, setupRunnerProject } from "./runner-helpers.js";
 
 const originalEnv = { ...process.env };
 
@@ -69,6 +69,23 @@ describe("runner startup refresh", () => {
     const project = await setupRunnerProject("startup-refresh-invalid");
     try {
       await expect(runRoadrunner(project.context, { maxSteps: 1 })).rejects.toThrow(/queue.version must be 2/);
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
+  test("appends the queue proposal contract to local startup prompts", async () => {
+    const project = await setupRunnerProject("startup-refresh-inferred-done");
+    try {
+      await writeFile(
+        path.join(project.context.paths.prompts, "startup-refresh.md"),
+        "# Roadrunner Startup Queue Refresh\n\n## Seed Queue\n\n```json\n{{QUEUE_JSON}}\n```\n",
+      );
+
+      expect(await runRoadrunner(project.context, { maxSteps: 1 })).toBe(0);
+      const prompt = await readFile(path.join(await logDirFor(project.context, "startup-refresh"), "startup-refresh.prompt.md"), "utf8");
+      expect(prompt).toContain("Required Queue Proposal Output");
+      expect(prompt).toContain("roadrunner-queue");
     } finally {
       await removeDir(project.directory);
     }

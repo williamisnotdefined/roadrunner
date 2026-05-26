@@ -40,8 +40,8 @@ export async function planStep(context: ProjectContext, step: QueueStep, snapsho
     prompt,
     role: "plan",
     signal: options.signal,
-    skipPermissions: false,
     streamOutput: options.streamProviderOutput,
+    workspaceAccess: "read-only",
   });
 
   await writePrivateFile(path.join(logDir, "plan.md"), result.output);

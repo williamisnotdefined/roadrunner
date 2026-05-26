@@ -6,11 +6,23 @@ interface FencedBlock {
   info: string;
 }
 
+const queueProposalContract = [
+  "## Required Queue Proposal Output",
+  "",
+  "Your final response must include exactly one fenced JSON block whose info string includes both `json` and `roadrunner-queue`.",
+  "The block content must be a complete valid Roadrunner queue JSON object with `version`, `model`, `variant`, `queue`, `history`, and `blocked`.",
+  "If no queue changes are needed, return the current queue unchanged in that tagged block. Do not return only prose.",
+].join("\n");
+
 export function queueProposalFromOutput(output: string, context: ProjectContext): QueueFile {
   const value = parseQueueProposalJson(output);
   const errors = validateQueueFile(value, { model: context.config.model ?? defaultModel, variant: context.config.variant ?? defaultVariant });
   if (errors.length > 0) throw new Error(errors.join("\n"));
   return normalizeQueueFile(value as QueueFile);
+}
+
+export function appendQueueProposalContract(prompt: string): string {
+  return `${prompt.trimEnd()}\n\n${queueProposalContract}\n`;
 }
 
 export function parseQueueProposalJson(output: string): unknown {

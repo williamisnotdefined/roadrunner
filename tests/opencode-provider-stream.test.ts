@@ -32,6 +32,7 @@ describe("OpenCodeProvider output streaming", () => {
         prompt: "Roadrunner Plan Step",
         role: "plan",
         streamOutput: false,
+        workspaceAccess: "read-only",
       });
 
       expect(result.output).toMatch(/Plan:/);

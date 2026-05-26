@@ -34,7 +34,7 @@ describe("OpenCodeProvider", () => {
         onStart: (event) => starts.push(event),
         prompt: "Roadrunner Plan Step",
         role: "plan",
-        skipPermissions: false,
+        workspaceAccess: "read-only",
       });
 
       expect(result).toMatchObject({ code: 0 });
@@ -101,7 +101,7 @@ describe("OpenCodeProvider", () => {
         onStart: (event) => starts.push(event),
         prompt: "Roadrunner Plan Step",
         role: "plan",
-        skipPermissions: false,
+        workspaceAccess: "read-only",
       });
 
       expect(JSON.parse(await readFile(argsFile, "utf8"))).toEqual([
@@ -203,7 +203,7 @@ describe("OpenCodeProvider", () => {
         logPath: path.join(directory, "isolated.log"),
         prompt: "Roadrunner Plan Step",
         role: "plan",
-        skipPermissions: false,
+        workspaceAccess: "read-only",
       });
 
       expect(result.code).toBe(0);
@@ -229,7 +229,7 @@ describe("OpenCodeProvider", () => {
         logPath,
         prompt: "Roadrunner Plan Step",
         role: "plan",
-        skipPermissions: false,
+        workspaceAccess: "read-only",
       });
 
       expect(result.code).toBe(124);
@@ -259,7 +259,7 @@ describe("OpenCodeProvider", () => {
         logPath: path.join(directory, "timeout-child.log"),
         prompt: "Roadrunner Plan Step",
         role: "plan",
-        skipPermissions: false,
+        workspaceAccess: "read-only",
       });
       childPid = Number(await readFile(childPidFile, "utf8"));
       await sleep(50);
@@ -288,7 +288,7 @@ describe("OpenCodeProvider", () => {
           logPath: path.join(directory, "timeout-invalid.log"),
           prompt: "Roadrunner Plan Step",
           role: "plan",
-          skipPermissions: false,
+          workspaceAccess: "read-only",
         }),
       ).rejects.toThrow(/ROADRUNNER_PROVIDER_TIMEOUT_MS/);
     } finally {
@@ -296,7 +296,7 @@ describe("OpenCodeProvider", () => {
     }
   });
 
-  test("adds skip-permissions flag when requested", async () => {
+  test("adds dangerous permission bypass only for write workspace access", async () => {
     const directory = await tempDir("roadrunner-provider-skip-");
     try {
       const binDir = await createFakeOpenCodeBin(directory);
@@ -312,7 +312,8 @@ describe("OpenCodeProvider", () => {
         logPath: path.join(directory, "log.txt"),
         prompt: "Roadrunner Implement Step",
         role: "build",
-        skipPermissions: true,
+        workspaceAccess: "write",
+        bypassProviderPermissions: true,
       });
 
       expect(JSON.parse(await readFile(argsFile, "utf8"))).toContain("--dangerously-skip-permissions");
@@ -336,6 +337,7 @@ describe("OpenCodeProvider", () => {
         onStart: (event) => starts.push(event),
         prompt: "prompt",
         role: "plan",
+        workspaceAccess: "read-only",
       });
 
       expect(result.code).toBe(1);
@@ -363,7 +365,7 @@ describe("OpenCodeProvider", () => {
         logPath: path.join(directory, "register.log"),
         prompt: "Roadrunner Plan Step",
         role: "plan",
-        skipPermissions: false,
+        workspaceAccess: "read-only",
       });
 
       expect(result.code).toBe(1);

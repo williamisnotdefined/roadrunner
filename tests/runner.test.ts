@@ -109,6 +109,10 @@ describe("runner", () => {
       expect(await runRoadrunner(project.context, { maxSteps: 1, onEvent: (event) => events.push(event) })).toBe(1);
       const implementStart = events.find((event): event is Extract<RoadrunnerRunEvent, { type: "provider-start" }> => event.type === "provider-start" && event.role === "implement");
       expect(implementStart?.command).toContain("--dangerously-skip-permissions");
+      for (const role of ["startup-refresh", "plan", "reconcile"]) {
+        const event = events.find((item): item is Extract<RoadrunnerRunEvent, { type: "provider-start" }> => item.type === "provider-start" && item.role === role);
+        expect(event?.command).not.toContain("--dangerously-skip-permissions");
+      }
     } finally {
       await removeDir(project.directory);
     }

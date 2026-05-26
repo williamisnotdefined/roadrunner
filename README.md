@@ -101,7 +101,7 @@ If launching Roadrunner from inside an existing OpenCode session, enable nested 
 }
 ```
 
-OpenCode permission bypass is disabled by default. For fully unattended runs, only enable it for trusted projects, goals, roadmaps, and queues:
+OpenCode permission bypass is disabled by default. For fully unattended runs, only enable it for trusted projects, goals, and roadmaps:
 
 ```json
 {
@@ -110,6 +110,16 @@ OpenCode permission bypass is disabled by default. For fully unattended runs, on
 ```
 
 Roadrunner validates `.roadrunner/config.json` strictly. Boolean options must be JSON booleans, string options must be non-empty strings, and unknown config or path keys are rejected.
+
+Provider workspace access is explicit:
+
+| Phase | OpenCode agent | Workspace access | Dangerous bypass |
+|---|---|---|---|
+| startup refresh | `plan` | `read-only` | never |
+| plan | `plan` | `read-only` | never |
+| reconcile | `plan` | `read-only` | never |
+| implement | `build` | `write` | only when configured |
+| fix | `build` | `write` | only when configured |
 
 ### `init`
 
@@ -138,7 +148,7 @@ Prints only the current `queue[0]` step from the roadmap seed queue before provi
 
 ### `plan`
 
-Validates the project, loads `GOALS.md` into memory, asks startup refresh for an in-memory queue proposal, runs the planning agent for the current step, and writes plan logs under `.roadrunner/logs/`. Planning is run without skipped permissions.
+Validates the project, loads `GOALS.md` into memory, asks startup refresh for an in-memory queue proposal, runs the planning agent for the current step, and writes plan logs under `.roadrunner/logs/`. Planning runs with read-only workspace access and never bypasses provider permissions.
 
 ### `run`
 
@@ -162,7 +172,7 @@ Each run also writes a debug session directory under `.roadrunner/logs/` with `s
 
 Prompt files, provider logs, verification logs, and runner-generated markdown outputs under `.roadrunner/logs/` are written with restrictive filesystem permissions.
 
-Implementation and fix provider runs use normal OpenCode permissions by default. Startup refresh, planning, and reconciliation run in planning mode without skipped permissions. Set `dangerouslySkipPermissions: true` in `.roadrunner/config.json` only when you intentionally want Roadrunner to pass OpenCode's `--dangerously-skip-permissions` flag to implementation and fix attempts.
+Implementation and fix provider runs use write workspace access and normal OpenCode permissions by default. Startup refresh, planning, and reconciliation use read-only workspace access and never bypass provider permissions. Set `dangerouslySkipPermissions: true` in `.roadrunner/config.json` only when you intentionally want Roadrunner to pass OpenCode's `--dangerously-skip-permissions` flag to implementation and fix attempts.
 
 ### `cleanup`
 

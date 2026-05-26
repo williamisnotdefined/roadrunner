@@ -124,7 +124,7 @@ function writeRogueQueueFile(value) {
   fs.writeFileSync(queuePath, JSON.stringify(value, null, 2) + "\\n");
 }
 
-if (prompt.includes("Roadrunner Startup Queue Refresh")) {
+if (prompt.includes("Roadrunner Startup Queue Refresh") || prompt.includes("## Seed Queue")) {
   if (mode === "startup-refresh-extra") fs.writeFileSync("unexpected-startup.txt", "nope\\n");
   const queue = queueFromPrompt("Seed Queue");
   if (mode === "startup-refresh-invalid") queue.version = 99;
@@ -322,7 +322,7 @@ if (prompt.includes("Roadrunner Fix Failure")) {
   process.exit(0);
 }
 
-if (prompt.includes("Roadrunner Reconcile Queue") || prompt.includes("Roadrunner Reconcile And Optimize Queue")) {
+if (prompt.includes("Roadrunner Reconcile Queue") || prompt.includes("Roadrunner Reconcile And Optimize Queue") || prompt.includes("Roadrunner Reconciliation")) {
   if (mode === "reconcile-fail-dirty") {
     fs.writeFileSync("unexpected.txt", "nope\\n");
     console.error("reconcile failed");
@@ -339,7 +339,7 @@ if (prompt.includes("Roadrunner Reconcile Queue") || prompt.includes("Roadrunner
     runChecked(realGit, ["add", "unexpected.txt"]);
     runChecked(realGit, ["commit", "-m", "Agent reconcile commit"]);
   }
-  const queue = queueFromPrompt("Queue");
+  const queue = prompt.includes("## Current Queue File") ? queueFromPrompt("Current Queue File") : queueFromPrompt("Queue");
   if (mode === "reconcile-invalid") {
     queue.version = 99;
   }

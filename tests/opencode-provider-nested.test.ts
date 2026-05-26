@@ -20,13 +20,13 @@ describe("OpenCodeProvider nested sessions", () => {
       const context = await loadContext(directory, { _: [] });
       process.env.OPENCODE_SESSION = "nested";
 
-      await expect(new OpenCodeProvider().run({ agent: "plan", context, logPath: path.join(directory, "log.txt"), prompt: "prompt", role: "plan" })).rejects.toThrow(
+      await expect(new OpenCodeProvider().run({ agent: "plan", context, logPath: path.join(directory, "log.txt"), prompt: "prompt", role: "plan", workspaceAccess: "read-only" })).rejects.toThrow(
         /Refusing to launch nested OpenCode/,
       );
 
       context.config.allowNestedOpenCode = true;
       process.env.PATH = directory;
-      const result = await new OpenCodeProvider().run({ agent: "plan", context, logPath: path.join(directory, "allowed.log"), prompt: "prompt", role: "plan" });
+      const result = await new OpenCodeProvider().run({ agent: "plan", context, logPath: path.join(directory, "allowed.log"), prompt: "prompt", role: "plan", workspaceAccess: "read-only" });
       expect(result.code).toBe(1);
     } finally {
       await rm(directory, { force: true, recursive: true });
@@ -45,10 +45,24 @@ describe("OpenCodeProvider nested sessions", () => {
       const context = await loadContext(directory, { _: [] });
       context.config.allowNestedOpenCode = true;
 
-      const result = await new OpenCodeProvider().run({ agent: "plan", context, logPath: path.join(directory, "nested-env.log"), prompt: "Roadrunner Plan Step", role: "plan" });
+      const result = await new OpenCodeProvider().run({ agent: "plan", context, logPath: path.join(directory, "nested-env.log"), prompt: "Roadrunner Plan Step", role: "plan", workspaceAccess: "read-only" });
 
       expect(result.code).toBe(0);
       expect(JSON.parse(await readFile(envFile, "utf8"))).toEqual({ OPENCODE_SESSION: null, OPENCODE_SERVER: null });
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  test("rejects dangerous permission bypass for read-only workspace access", async () => {
+    const directory = await tempDir("roadrunner-provider-readonly-bypass-");
+    try {
+      const context = await loadContext(directory, { _: [] });
+      context.config.allowNestedOpenCode = true;
+
+      await expect(new OpenCodeProvider().run({ agent: "plan", bypassProviderPermissions: true, context, logPath: path.join(directory, "log.txt"), prompt: "Roadrunner Plan Step", role: "plan", workspaceAccess: "read-only" })).rejects.toThrow(
+        /Read-only provider runs cannot bypass provider permissions/,
+      );
     } finally {
       await rm(directory, { force: true, recursive: true });
     }
