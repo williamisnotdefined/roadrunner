@@ -60,7 +60,7 @@ describe("cli", () => {
     ].join("\n");
 
     expect(output).toMatch(/Validating project/);
-    expect(output).toMatch(/Refreshed queue from roadmap and repository state/);
+    expect(output).toMatch(/Refreshing queue from roadmap and repository state/);
     expect(output).toMatch(/Selected step sample-step: Ship Sample/);
     expect(output).toMatch(/OpenCode plan started pid=123 log=\/tmp\/plan\.log debug=on/);
     expect(output).toMatch(/OpenCode plan started pid=n\/a log=\/tmp\/missing\.log/);
@@ -332,7 +332,7 @@ describe("cli", () => {
     try {
       await writeFile(path.join(directory, "CUSTOM.md"), sampleRoadmap());
       expect(await main(["init", "--roadmap", "CUSTOM.md"], { cwd: directory })).toBe(0);
-      expect(await readFile(path.join(directory, ".roadrunner/queue.json"), "utf8")).toMatch(/first-step/);
+      expect(await readFile(path.join(directory, ".roadrunner/state/queue.json"), "utf8")).toMatch(/first-step/);
     } finally {
       await removeDir(directory);
     }

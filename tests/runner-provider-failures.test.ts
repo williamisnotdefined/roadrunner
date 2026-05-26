@@ -48,7 +48,7 @@ describe("runner provider failures", () => {
   });
 
   test("blocks verification commands that mutate queue state", async () => {
-    const verification = `node -e "const fs = require('node:fs'); const q = JSON.parse(fs.readFileSync('.roadrunner/queue.json', 'utf8')); q.queue[0].title = 'Verification touched queue'; fs.writeFileSync('.roadrunner/queue.json', JSON.stringify(q, null, 2) + '\\n');"`;
+    const verification = `node -e "const fs = require('node:fs'); const queuePath = '.roadrunner/state/queue.json'; const q = JSON.parse(fs.readFileSync(queuePath, 'utf8')); q.queue[0].title = 'Verification touched queue'; fs.writeFileSync(queuePath, JSON.stringify(q, null, 2) + '\\n');"`;
     const project = await setupRunnerProject("success", sampleRoadmap({ verification }));
     try {
       await expect(runRoadrunner(project.context)).rejects.toThrow(/Verification may not update/);

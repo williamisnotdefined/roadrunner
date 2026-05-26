@@ -4,8 +4,12 @@ import path from "node:path";
 import type { ProjectContext } from "../infrastructure/config.js";
 
 export interface TaskLogFile {
+  active: boolean;
   label: string;
   path: string;
+  relativePath: string;
+  role: string;
+  time: string | null;
 }
 
 const defaultTailBytes = 120_000;
@@ -21,14 +25,14 @@ export async function discoverTaskLogs(context: ProjectContext, taskId: string, 
 
   for (const entry of entries.sort()) {
     if (!isTaskLogDir(entry, taskId)) continue;
-    logs.push(...(await logsFromDirectory(context, entry)));
+    logs.push(...(await logsFromDirectory(context, entry, activeLogPath)));
   }
 
   if (activeLogPath && !logs.some((log) => path.resolve(log.path) === path.resolve(activeLogPath))) {
-    logs.push({ label: relativeLogLabel(context, activeLogPath), path: activeLogPath });
+    logs.push(logFile(context, activeLogPath, activeLogPath));
   }
 
-  return logs;
+  return logs.sort((left, right) => Number(right.active) - Number(left.active) || right.path.localeCompare(left.path));
 }
 
 export async function readLogTail(filePath: string, maxBytes = defaultTailBytes): Promise<string> {
@@ -54,12 +58,38 @@ function isTaskLogDir(entry: string, taskId: string): boolean {
   return entry.endsWith(`-${taskId}`) || entry.endsWith(`-${taskId}-plan`);
 }
 
-async function logsFromDirectory(context: ProjectContext, entry: string): Promise<TaskLogFile[]> {
+async function logsFromDirectory(context: ProjectContext, entry: string, activeLogPath?: string | null): Promise<TaskLogFile[]> {
   const directory = path.join(context.paths.logs, entry);
   const files = await readdir(directory, { withFileTypes: true });
   return files
-    .filter((file) => file.isFile())
+    .filter((file) => file.isFile() && file.name.endsWith(".log"))
     .map((file) => path.join(directory, file.name))
     .sort()
-    .map((filePath) => ({ label: relativeLogLabel(context, filePath), path: filePath }));
+    .map((filePath) => logFile(context, filePath, activeLogPath));
+}
+
+function logFile(context: ProjectContext, filePath: string, activeLogPath?: string | null): TaskLogFile {
+  const active = Boolean(activeLogPath && path.resolve(filePath) === path.resolve(activeLogPath));
+  const role = logRole(filePath);
+  const time = logTime(filePath);
+  return {
+    active,
+    label: `${active ? "ACTIVE " : ""}${role}${time ? ` · ${time}` : ""}`,
+    path: filePath,
+    relativePath: relativeLogLabel(context, filePath),
+    role,
+    time,
+  };
+}
+
+function logRole(filePath: string): string {
+  const name = path.basename(filePath);
+  const role = name.endsWith(".opencode.log") ? name.slice(0, -".opencode.log".length) : name.endsWith(".log") ? name.slice(0, -".log".length) : name;
+  return role.replaceAll("-", " ");
+}
+
+function logTime(filePath: string): string | null {
+  const directory = path.basename(path.dirname(filePath));
+  const match = /T(\d{2})-(\d{2})-(\d{2})-\d{3}Z/.exec(directory);
+  return match ? `${match[1]}:${match[2]}:${match[3]}` : null;
 }

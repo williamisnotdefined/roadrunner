@@ -22,6 +22,8 @@ describe("init", () => {
       expect(await pathExists(path.join(paths.prompts, "plan-step.md"))).toBe(true);
       expect(await readFile(paths.goals, "utf8")).toMatch(/Plan -> Execute -> Verify -> Reconcile/);
       expect((await readJson<QueueFile>(paths.queue)).queue).toEqual([]);
+      expect(paths.queue).toBe(path.join(tempDir, ".roadrunner/state/queue.json"));
+      expect(await readFile(path.join(path.dirname(paths.config), ".gitignore"), "utf8")).toMatch(/state\//);
     } finally {
       await rm(tempDir, { force: true, recursive: true });
     }
@@ -54,6 +56,7 @@ describe("init", () => {
       expect(gitignore).toMatch(/custom-logs\//);
       expect(gitignore).toMatch(/state\/processes\.json/);
       expect(gitignore).toMatch(/state\/road\.lock/);
+      expect(gitignore).toMatch(/\.roadrunner\/state\/queue\.json|\.roadrunner\/state\//);
     } finally {
       await rm(tempDir, { force: true, recursive: true });
     }

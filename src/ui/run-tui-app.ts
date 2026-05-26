@@ -12,7 +12,7 @@ import { discoverTaskLogs, readLogTail, type TaskLogFile } from "./run-log-disco
 import { updateProgressForActivity, updateProgressForEvent, type RunProgressState } from "./run-progress.js";
 import type { RunSessionLogger } from "./run-session-log.js";
 import { nextFocus, previousFocus, type FocusPanel } from "./run-tui-navigation.js";
-import { actionText, detailsText, headerText, type CurrentTaskObservation } from "./run-tui-view.js";
+import { actionText, detailsText, displayStateFromProgress, headerText, type RunDisplayState, type RunDisplayStatus } from "./run-tui-view.js";
 import type { RoadrunnerRunActivityEvent, RoadrunnerRunControl, RoadrunnerRunEvent } from "../application/runner.js";
 
 export interface RunTuiApp {
@@ -31,7 +31,6 @@ const blessed = require("blessed") as typeof import("blessed");
 /* v8 ignore start -- blessed full-screen rendering requires an interactive TTY; pure state, log, and session helpers are covered separately. */
 export async function createTuiApp(context: ProjectContext, session: RunSessionLogger, options: { input: Readable; now: () => number; output: Writable }): Promise<RunTuiApp> {
   let control: RoadrunnerRunControl | null = null;
-  let currentTaskObservation: CurrentTaskObservation | null = null;
   let focus: FocusPanel = "tasks";
   let logFiles: TaskLogFile[] = [];
   let logText = "Select a task log and press Enter.";
@@ -41,6 +40,7 @@ export async function createTuiApp(context: ProjectContext, session: RunSessionL
   let selectedLogIndex = 0;
   let selectedLogPath: string | null = null;
   let selectedTaskId: string | null = null;
+  let baseDisplay: RunDisplayState = displayState("STARTING", "Loading Roadrunner state.");
   let stats: TaskStats = { blocked: 0, current: 0, done: 0, next: 0 };
   let status = `Session log: ${session.sessionLogPath}`;
   let stopping = false;
@@ -80,6 +80,7 @@ export async function createTuiApp(context: ProjectContext, session: RunSessionL
   return {
     onActivity(event) {
       progress = updateProgressForActivity(progress, event, options.now());
+      if (!progress) baseDisplay = { ...baseDisplay, lastActivityAt: options.now() };
       render();
     },
     onControl(nextControl) {
@@ -90,7 +91,12 @@ export async function createTuiApp(context: ProjectContext, session: RunSessionL
       progress = updateProgressForEvent(progress, event, options.now());
       if (event.type === "step") selectedTaskId = event.step.id;
       if (event.type === "provider-start") selectedLogPath = event.logPath;
-      if (event.type === "run-stop-requested") status = "Stopping run and cleaning Roadrunner-owned processes.";
+      if (event.type === "validate") baseDisplay = displayState("VALIDATING", "Checking project and provider configuration.");
+      if (event.type === "startup-refresh") baseDisplay = displayState("REFRESHING QUEUE", "Refreshing queue from roadmap and repository state.");
+      if (event.type === "run-stop-requested") {
+        baseDisplay = displayState("STOPPING", "Stopping run and cleaning Roadrunner-owned processes.");
+        status = "Stopping run and cleaning Roadrunner-owned processes.";
+      }
       if (event.type === "task-restart-requested") status = `Restart requested for ${event.step.id}.`;
       if (event.type === "task-auto-restart-requested") status = `Auto restart ${event.restart}/${event.maxRestarts} for ${event.step.id}.`;
       if (event.type === "task-auto-restart-limit-exceeded") status = `Auto restart limit exceeded for ${event.step.id}.`;
@@ -100,6 +106,7 @@ export async function createTuiApp(context: ProjectContext, session: RunSessionL
     },
     setStatus(nextStatus) {
       status = nextStatus;
+      baseDisplay = displayState(nextStatus.startsWith("Run failed:") ? "FAILED" : nextStatus.startsWith("Completed") || nextStatus.startsWith("Stopped") ? "DONE" : baseDisplay.status, nextStatus);
       render();
     },
     stop() {
@@ -113,7 +120,6 @@ export async function createTuiApp(context: ProjectContext, session: RunSessionL
       const queueFile: QueueFile = await readValidatedQueue(context);
       rows = taskRowsFromQueue(queueFile);
       stats = taskStats(queueFile);
-      updateCurrentTaskObservation();
       const index = selectedTaskIndex(rows, selectedTaskId);
       selectedTaskId = index >= 0 ? rows[index]!.id : null;
       await refreshLogs();
@@ -125,13 +131,14 @@ export async function createTuiApp(context: ProjectContext, session: RunSessionL
 
   async function refreshLogs(): Promise<void> {
     const row = selectedRow();
-    if (!row) {
+    const activeLogPath = progress?.logPath ?? selectedLogPath;
+    if (!row && !activeLogPath) {
       logFiles = [];
       selectedLogPath = null;
       logText = "No task selected.";
       return;
     }
-    logFiles = await discoverTaskLogs(context, row.id, row.id === progress?.stepId ? progress.logPath : null);
+    logFiles = await discoverTaskLogs(context, row?.id ?? "", activeLogPath);
     const index = selectedLogPath ? logFiles.findIndex((file) => file.path === selectedLogPath) : -1;
     selectedLogIndex = index >= 0 ? index : Math.max(0, logFiles.findIndex((file) => file.path === progress?.logPath));
     selectedLogPath = logFiles[selectedLogIndex]?.path ?? null;
@@ -148,15 +155,19 @@ export async function createTuiApp(context: ProjectContext, session: RunSessionL
   }
 
   function render(): void {
-    header.setContent(headerText(stats, progress, currentTaskObservation, options.now()));
-    table.setData(taskTableData(rows, selectedTaskId));
+    const display = currentDisplayState();
+    const selectedLogFile = logFiles[selectedLogIndex] ?? null;
+    const activeLogLabel = logFiles.find((file) => file.active)?.label ?? selectedLogFile?.label ?? null;
+    const restartableProgress = progress?.stepId ? progress : null;
+    header.setContent(headerText(display, options.now()));
+    table.setData(taskTableData(rows, selectedTaskId, stats));
     const taskIndex = selectedTaskIndex(rows, selectedTaskId);
     if (taskIndex >= 0) table.select(taskIndex + 1);
-    details.setContent(detailsText(selectedRow(), progress, currentTaskObservation, options.now(), session));
+    details.setContent(detailsText(selectedRow(), display, stats, options.now(), session, activeLogLabel));
     logs.setItems(logFiles.map((file, index) => `${index === selectedLogIndex ? "›" : " "} ${escapeBlessedMarkup(file.label)}`));
     if (logFiles.length > 0) logs.select(selectedLogIndex);
-    log.setContent(escapeBlessedMarkup(logText || "Log is empty."));
-    actions.setContent(actionText(progress, pendingRestart, stopping));
+    log.setContent(escapeBlessedMarkup(logViewerText(selectedLogFile)));
+    actions.setContent(actionText(restartableProgress, pendingRestart, stopping));
     footer.setContent(` ${escapeBlessedMarkup(status)}`);
     setBorders();
     screen.render();
@@ -186,13 +197,13 @@ export async function createTuiApp(context: ProjectContext, session: RunSessionL
   }
 
   function requestRestart(): void {
-    if (!progress || !control) {
+    if (!progress?.stepId || !control) {
       status = "No active task attempt to restart.";
       render();
       return;
     }
     pendingRestart = true;
-    status = `Restart ${progress.stepId}? Press y to confirm or n to cancel.`;
+    status = `Restart ${progress.stepId ?? "current task"}? Press y to confirm or n to cancel.`;
     session.event("restart-requested", `restart requested for ${progress.stepId}`, { source: "tui", stepId: progress.stepId });
     render();
   }
@@ -218,6 +229,7 @@ export async function createTuiApp(context: ProjectContext, session: RunSessionL
     pendingRestart = false;
     const ok = control?.stopRun() ?? false;
     status = ok ? "Stopping run and cleaning Roadrunner-owned processes." : "Stop requested before runner control was ready.";
+    baseDisplay = displayState("STOPPING", status);
     session.event("stop-requested", status, { source: "tui" });
     render();
   }
@@ -237,30 +249,40 @@ export async function createTuiApp(context: ProjectContext, session: RunSessionL
     return index >= 0 ? rows[index]! : null;
   }
 
-  function updateCurrentTaskObservation(): void {
-    const currentRow = rows.find((row) => row.status === "current");
-    if (!currentRow) {
-      currentTaskObservation = null;
-      return;
-    }
-    if (currentTaskObservation?.stepId !== currentRow.id) currentTaskObservation = { observedAt: options.now(), stepId: currentRow.id };
-  }
-
   function setBorders(): void {
     table.style.border = { fg: focus === "tasks" ? "cyan" : "gray" };
     logs.style.border = { fg: focus === "logs" ? "cyan" : "gray" };
     log.style.border = { fg: focus === "log" ? "cyan" : "gray" };
   }
+
+  function currentDisplayState(): RunDisplayState {
+    if (baseDisplay.status === "DONE" || baseDisplay.status === "FAILED") return baseDisplay;
+    if (stopping) return baseDisplay.status === "STOPPING" ? baseDisplay : displayState("STOPPING", status);
+    const row = selectedRow();
+    if (progress) return displayStateFromProgress(progress, row);
+    return { ...baseDisplay, stepId: baseDisplay.stepId ?? row?.id ?? null, title: baseDisplay.title ?? row?.title ?? null };
+  }
+
+  function displayState(nextStatus: RunDisplayStatus, message: string | null): RunDisplayState {
+    const now = options.now();
+    return { attempt: null, lastActivityAt: now, logPath: null, message, pid: null, startedAt: now, status: nextStatus, stepId: selectedRow()?.id ?? null, title: selectedRow()?.title ?? null };
+  }
+
+  function logViewerText(file: TaskLogFile | null): string {
+    if (!file) return logText || "Select a task log and press Enter.";
+    const content = logText.length > 0 ? logText : "Waiting for provider output...";
+    return `Viewing: ${file.label}\nPath: ${file.relativePath}\n\n${content}`;
+  }
 }
 
 function eventMessage(event: RoadrunnerRunEvent): string {
   if (event.type === "provider-start") return `provider started role=${event.role} pid=${event.pid ?? "n/a"} log=${event.logPath}`;
-  if ("step" in event) return `${event.type} ${event.step.id}`;
+  if ("step" in event && event.step) return `${event.type} ${event.step.id}`;
   return event.type;
 }
 
 function eventPayload(event: RoadrunnerRunEvent): Record<string, unknown> {
-  if ("step" in event) return { stepId: event.step.id };
+  if ("step" in event && event.step) return { stepId: event.step.id };
   return {};
 }
 /* v8 ignore stop */

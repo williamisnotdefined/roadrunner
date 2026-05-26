@@ -30,11 +30,11 @@ export interface RunOptions {
   streamProviderOutput?: boolean;
 }
 
-export type RoadrunnerRunPhase = "plan" | "implement" | "verify" | "fix" | "verify-fixed" | "reconcile";
+export type RoadrunnerRunPhase = "startup-refresh" | "plan" | "implement" | "verify" | "fix" | "verify-fixed" | "reconcile";
 
 export interface RoadrunnerRunActivityEvent {
   phase: RoadrunnerRunPhase;
-  step: QueueStep;
+  step?: QueueStep;
 }
 
 export interface RoadrunnerRunControl {
@@ -47,7 +47,7 @@ export type RoadrunnerRunEvent =
   | { step: QueueStep; type: "fix" }
   | { step: QueueStep; type: "implement" }
   | { step: QueueStep; type: "plan" }
-  | ({ step: QueueStep; type: "provider-start" } & ProviderStartEvent)
+  | ({ step?: QueueStep; type: "provider-start" } & ProviderStartEvent)
   | { step: QueueStep; type: "reconcile" }
   | { step: QueueStep; type: "step" }
   | { step: QueueStep; type: "step-complete" }
@@ -109,9 +109,17 @@ export async function run(context: ProjectContext, options: RunOptions = {}): Pr
         completedResult = 0;
       } else {
         await cleanupProcesses(context, { force: true });
-        await ensureProviderAvailable(context);
-        await runAbortableOperation(controlState, (signal) => refreshQueueAtRunStart(context, snapshot, { deadline, signal, streamProviderOutput }));
         emitRunEvent(options, { type: "startup-refresh" });
+        await ensureProviderAvailable(context);
+        await runAbortableOperation(controlState, (signal) =>
+          refreshQueueAtRunStart(context, snapshot, {
+            deadline,
+            onOutput: () => emitRunActivity(options, { phase: "startup-refresh" }),
+            onProviderStart: (event) => emitRunEvent(options, { ...event, type: "provider-start" }),
+            signal,
+            streamProviderOutput,
+          }),
+        );
       }
 
       while (completed < maxSteps && !controlState.stopRequested) {

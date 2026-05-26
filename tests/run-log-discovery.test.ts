@@ -18,7 +18,7 @@ describe("run log discovery", () => {
       await mkdir(planDir, { recursive: true });
       await mkdir(runDir, { recursive: true });
       await mkdir(otherDir, { recursive: true });
-      await writeFile(path.join(planDir, "plan.md"), "plan\n");
+      await writeFile(path.join(planDir, "plan.opencode.log"), "plan\n");
       await writeFile(path.join(runDir, "implement.opencode.log"), "implemented\n");
       await writeFile(path.join(otherDir, "other.log"), "other\n");
       const active = path.join(directory, "external-active.log");
@@ -27,10 +27,11 @@ describe("run log discovery", () => {
       const logs = await discoverTaskLogs(context, "first-step", active);
 
       expect(logs.map((log) => log.label)).toEqual([
-        "2026-01-01T00-00-00-000Z-first-step-plan/plan.md",
-        "2026-01-01T00-01-00-000Z-first-step/implement.opencode.log",
-        active,
+        "ACTIVE external active",
+        "implement · 00:01:00",
+        "plan · 00:00:00",
       ]);
+      expect(logs[1]).toMatchObject({ active: false, relativePath: "2026-01-01T00-01-00-000Z-first-step/implement.opencode.log", role: "implement", time: "00:01:00" });
       expect(relativeLogLabel(context, path.join(runDir, "implement.opencode.log"))).toBe("2026-01-01T00-01-00-000Z-first-step/implement.opencode.log");
       await expect(discoverTaskLogs(context, "missing-step", null)).resolves.toEqual([]);
     } finally {

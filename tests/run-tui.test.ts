@@ -8,7 +8,7 @@ import type { QueueStep } from "../src/domain/queue.js";
 import { runWithTui } from "../src/ui/run-tui.js";
 import { createTuiApp } from "../src/ui/run-tui-app.js";
 import { nextFocus, previousFocus } from "../src/ui/run-tui-navigation.js";
-import { actionText, detailsText, headerText } from "../src/ui/run-tui-view.js";
+import { actionText, detailsText, displayStateFromProgress, headerText, type RunDisplayState } from "../src/ui/run-tui-view.js";
 import type { RoadrunnerRunControl, RunOptions } from "../src/application/runner.js";
 import { createInitializedProject, removeDir, tempDir } from "./helpers.js";
 
@@ -157,12 +157,25 @@ describe("run TUI", () => {
     }
   });
 
-  test("formats current task duration without runner progress", () => {
-    const currentTask = { observedAt: 1_000, stepId: "sample-step" };
+  test("formats clean run state header and details", () => {
     const row = taskRow("current");
+    const display: RunDisplayState = {
+      attempt: null,
+      lastActivityAt: 1_000,
+      logPath: null,
+      message: "Refreshing queue from roadmap and repository state.",
+      pid: null,
+      startedAt: 1_000,
+      status: "REFRESHING QUEUE",
+      stepId: "sample-step",
+      title: "Ship Sample",
+    };
 
-    expect(headerText({ blocked: 0, current: 1, done: 2, next: 3 }, null, currentTask, 61_000)).toContain("current sample-step for=1m00s");
-    expect(detailsText(row, null, currentTask, 61_000, fakeLogger([]))).toContain("current for: 1m00s");
+    expect(headerText(display, 61_000)).toContain("REFRESHING QUEUE");
+    expect(headerText(display, 61_000)).not.toContain("done");
+    expect(detailsText(row, display, { blocked: 0, current: 1, done: 2, next: 3 }, 61_000, fakeLogger([]), "ACTIVE startup refresh · 00:00:01")).toContain(
+      "Queue: 2 done · 1 active · 3 waiting · 0 blocked",
+    );
   });
 
   test("formats TUI details and actions for progress states", () => {
@@ -178,16 +191,33 @@ describe("run TUI", () => {
     };
     const blockedRow = taskRow("blocked", { blockedReason: "needs attention" });
 
-    expect(headerText({ blocked: 0, current: 0, done: 0, next: 0 }, progress, null, 70_000)).toContain("implement sample-step attempt=2");
-    expect(headerText({ blocked: 0, current: 0, done: 0, next: 0 }, null, null, 70_000)).not.toContain("for=");
-    expect(detailsText(null, null, null, 70_000, fakeLogger([]))).toBe("No tasks.");
-    expect(detailsText(taskRow("current"), progress, null, 70_000, fakeLogger([]))).toContain("possibly stalled");
-    expect(detailsText(blockedRow, null, null, 70_000, fakeLogger([]))).toContain("blocked: needs attention");
+    const display = displayStateFromProgress(progress, taskRow("current"));
+    const blockedDisplay = { ...display, status: "FAILED" as const };
+    const pidDisplay = { ...display, logPath: "/tmp/implement.log", pid: 123 };
+
+    expect(headerText(display, 10_000)).toContain("IMPLEMENTING");
+    expect(headerText(display, 10_000)).toContain("attempt 2");
+    expect(headerText(pidDisplay, 70_000)).toContain("pid 123");
+    expect(detailsText(null, display, { blocked: 0, current: 0, done: 0, next: 0 }, 70_000, fakeLogger([]), null)).toContain("State: IMPLEMENTING");
+    expect(detailsText(taskRow("current"), pidDisplay, { blocked: 0, current: 1, done: 0, next: 0 }, 10_000, fakeLogger([]), "ACTIVE implement · 00:00:01")).toContain(
+      "PID: 123",
+    );
+    expect(headerText({ ...display, status: "DONE" }, 70_000)).toContain("DONE");
+    expect(detailsText(taskRow("current"), display, { blocked: 0, current: 1, done: 0, next: 0 }, 70_000, fakeLogger([]), null)).toContain("possibly stalled");
+    expect(detailsText(blockedRow, blockedDisplay, { blocked: 1, current: 0, done: 0, next: 0 }, 70_000, fakeLogger([]), null)).toContain("Blocked: needs attention");
     expect(actionText(progress, false, false)).toContain("Restart Task");
     expect(actionText(null, true, false)).toContain("Restart current task? y/N");
     expect(actionText(null, false, true)).toContain("Stopping run and cleaning");
     expect(actionText(null, false, false)).toContain("Restart unavailable");
     expect(actionText(null, false, false)).toContain("Tab/Shift+Tab");
+
+    expect(headerText(displayStateFromProgress({ ...progress, phase: "plan" }, taskRow("current")), 10_000)).toContain("PLANNING");
+    expect(headerText(displayStateFromProgress({ ...progress, phase: "verify" }, taskRow("current")), 10_000)).toContain("VERIFYING");
+    expect(headerText(displayStateFromProgress({ ...progress, phase: "verify-fixed" }, taskRow("current")), 10_000)).toContain("VERIFYING");
+    expect(headerText(displayStateFromProgress({ ...progress, phase: "fix" }, taskRow("current")), 10_000)).toContain("FIXING");
+    expect(headerText(displayStateFromProgress({ ...progress, phase: "reconcile" }, taskRow("current")), 10_000)).toContain("RECONCILING");
+    expect(headerText(displayStateFromProgress({ ...progress, phase: "startup-refresh", stepId: null }, null), 10_000)).toContain("REFRESHING QUEUE");
+    expect(headerText(displayStateFromProgress({ ...progress, phase: "startup-refresh", stepId: null }, taskRow("current")), 10_000)).toContain("sample-step");
   });
 
   test("cycles focus forward and backward", () => {

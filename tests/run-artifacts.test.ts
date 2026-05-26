@@ -51,7 +51,7 @@ describe("run artifacts", () => {
       const prompt = await renderPrompt(context, "startup-refresh.md", {
         GOALS_MD: "# Goals",
         QUEUE_JSON: "{}",
-        QUEUE_PATH: ".roadrunner/queue.json",
+        QUEUE_PATH: ".roadrunner/state/queue.json",
         ROADMAP_MD: "# Roadmap",
         ROADMAP_PARSE_STATUS: "parsed",
       });

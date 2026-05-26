@@ -13,8 +13,25 @@ describe("config", () => {
     expect(paths.goals).toBe("/tmp/goals.md");
     expect(paths.roadmap).toBe(path.join(root, "docs/ROADMAP.md"));
     expect(paths.config).toBe(path.join(root, ".roadrunner/config.json"));
+    expect(paths.queue).toBe(path.join(root, ".roadrunner/state/queue.json"));
     expect(packageRootFromSourceRoot(path.join(root, "dist"))).toBe(root);
     expect(packageRootFromSourceRoot(path.join(root, "src"))).toBe(path.join(root, "src"));
+  });
+
+  test("loadContext remaps the generated legacy queue path", async () => {
+    const tempDir = await import("node:fs/promises").then((fs) => fs.mkdtemp(path.join(os.tmpdir(), "roadrunner-config-legacy-")));
+    try {
+      await mkdir(path.join(tempDir, ".roadrunner"), { recursive: true });
+      await writeFile(path.join(tempDir, ".roadrunner/config.json"), `${JSON.stringify({ paths: { queue: ".roadrunner/queue.json" } }, null, 2)}\n`);
+
+      const context = await loadContext(tempDir, { _: [] });
+      const explicit = await loadContext(tempDir, { _: [], queue: ".roadrunner/queue.json" });
+
+      expect(context.paths.queue).toBe(path.join(tempDir, ".roadrunner/state/queue.json"));
+      expect(explicit.paths.queue).toBe(path.join(tempDir, ".roadrunner/queue.json"));
+    } finally {
+      await rm(tempDir, { force: true, recursive: true });
+    }
   });
 
   test("extracts path overrides from args", () => {

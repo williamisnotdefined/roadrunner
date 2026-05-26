@@ -71,7 +71,7 @@ await requireOk(
   "roadrunner run failed",
 );
 
-const queue = await readJson<QueueFile>(path.join(outputRoot, ".roadrunner/queue.json"));
+const queue = await readJson<QueueFile>(path.join(outputRoot, ".roadrunner/state/queue.json"));
 assert(queue.queue.length === 0, "Expected queue to be empty.");
 assert(queue.history.map((step) => step.id).includes("todo-crud"), "Expected todo-crud in history.");
 assert(queue.blocked.length === 0, "Expected blocked queue to be empty.");

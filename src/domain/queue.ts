@@ -1,7 +1,8 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-import { defaultModel, defaultVariant, type ProjectContext, readJson, writeJson } from "../infrastructure/config.js";
+import { defaultModel, defaultQueuePath, defaultVariant, legacyDefaultQueuePath, pathExists, type ProjectContext, readJson, writeJson } from "../infrastructure/config.js";
+import { upsertRoadrunnerGitignore } from "../infrastructure/gitignore.js";
 
 export interface QueueStep {
   acceptance: string[];
@@ -81,10 +82,12 @@ export function validateGoalsContent(context: ProjectContext, content: string): 
 }
 
 export async function readQueue(context: ProjectContext): Promise<QueueFile> {
+  if (isDefaultQueue(context) && !(await pathExists(context.paths.queue)) && (await pathExists(legacyQueuePath(context)))) return readJson<QueueFile>(legacyQueuePath(context));
   return readJson<QueueFile>(context.paths.queue);
 }
 
 export async function writeQueue(queueFile: QueueFile, context: ProjectContext): Promise<void> {
+  await ensureDefaultQueueIgnored(context);
   await writeJson(context.paths.queue, normalizeQueueFile(queueFile));
 }
 
@@ -158,6 +161,19 @@ function normalizeStep(step: QueueStep): QueueStep {
   if (step.blockedAt !== undefined) normalized.blockedAt = step.blockedAt;
   if (step.blockedReason !== undefined) normalized.blockedReason = step.blockedReason;
   return normalized;
+}
+
+async function ensureDefaultQueueIgnored(context: ProjectContext): Promise<void> {
+  if (!isDefaultQueue(context)) return;
+  await upsertRoadrunnerGitignore(path.join(context.root, ".roadrunner/.gitignore"), ["state/"]);
+}
+
+function isDefaultQueue(context: ProjectContext): boolean {
+  return path.resolve(context.paths.queue) === path.resolve(context.root, defaultQueuePath);
+}
+
+function legacyQueuePath(context: ProjectContext): string {
+  return path.resolve(context.root, legacyDefaultQueuePath);
 }
 
 export function goalsPathLabel(context: ProjectContext): string {

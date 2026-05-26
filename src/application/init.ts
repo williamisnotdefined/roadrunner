@@ -2,6 +2,7 @@ import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { defaultModel, defaultVariant, packageRoot, pathExists, type ProjectContext, writeJson } from "../infrastructure/config.js";
+import { upsertRoadrunnerGitignore } from "../infrastructure/gitignore.js";
 import { writeQueue, type QueueFile } from "../domain/queue.js";
 import { queueFileFromRoadmapFile } from "../domain/roadmap.js";
 
@@ -68,28 +69,21 @@ async function ensureRuntimeGitignore(context: ProjectContext): Promise<void> {
     { directory: true, path: context.paths.logs },
     { directory: false, path: context.paths.processRegistry },
     { directory: false, path: context.paths.lock },
+    queueRuntimePath(context),
   ];
   const configEntries = runtimePaths.flatMap((runtimePath) => gitignoreEntry(configDir, runtimePath.path, runtimePath.directory) ?? []);
-  await upsertGitignoreBlock(path.join(configDir, ".gitignore"), configEntries);
+  await upsertRoadrunnerGitignore(path.join(configDir, ".gitignore"), configEntries);
 
   const outsideConfigDir = runtimePaths.some((runtimePath) => !isInside(configDir, runtimePath.path));
   if (outsideConfigDir) {
     const rootEntries = runtimePaths.flatMap((runtimePath) => gitignoreEntry(context.root, runtimePath.path, runtimePath.directory) ?? []);
-    await upsertGitignoreBlock(path.join(context.root, ".gitignore"), rootEntries);
+    await upsertRoadrunnerGitignore(path.join(context.root, ".gitignore"), rootEntries);
   }
 }
 
-async function upsertGitignoreBlock(filePath: string, entries: string[]): Promise<void> {
-  if (entries.length === 0) return;
-  const blockStart = "# Roadrunner runtime";
-  const blockEnd = "# End Roadrunner runtime";
-  const block = `${blockStart}\n${[...new Set(entries)].join("\n")}\n${blockEnd}\n`;
-  const current = (await pathExists(filePath)) ? await readFile(filePath, "utf8") : "";
-  const pattern = new RegExp(`${escapeRegExp(blockStart)}\\n[\\s\\S]*?${escapeRegExp(blockEnd)}\\n?`);
-  const next = pattern.test(current)
-    ? current.replace(pattern, block)
-    : `${current}${current.length > 0 && !current.endsWith("\n") ? "\n" : ""}${current.length > 0 ? "\n" : ""}${block}`;
-  await writeFile(filePath, next);
+function queueRuntimePath(context: ProjectContext): { directory: boolean; path: string } {
+  const defaultStateQueue = path.join(context.root, ".roadrunner/state/queue.json");
+  return path.resolve(context.paths.queue) === path.resolve(defaultStateQueue) ? { directory: true, path: path.dirname(context.paths.queue) } : { directory: false, path: context.paths.queue };
 }
 
 function gitignoreEntry(baseDir: string, filePath: string, directory: boolean): string | null {
@@ -101,10 +95,6 @@ function gitignoreEntry(baseDir: string, filePath: string, directory: boolean): 
 function isInside(parent: string, child: string): boolean {
   const relative = path.relative(parent, child);
   return relative.length > 0 && !relative.startsWith("..") && !path.isAbsolute(relative);
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function relativeToRoot(context: ProjectContext, filePath: string): string {

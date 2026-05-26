@@ -69,7 +69,7 @@ Verification:
       }),
     ).toBe(0);
 
-    const queue = await readJson<QueueFile>(path.join(outputRoot, ".roadrunner/queue.json"));
+    const queue = await readJson<QueueFile>(path.join(outputRoot, ".roadrunner/state/queue.json"));
     const testResult = await run("npm", ["test"], outputRoot);
     const gitStatus = await run("git", ["status", "--short"], outputRoot);
 

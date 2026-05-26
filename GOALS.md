@@ -4,7 +4,7 @@ Build a reusable CLI that runs a goal-directed autonomous software engineering l
 
 The CLI must:
 
-- initialize projects with `GOALS.md` and `.roadrunner/queue.json`;
+- initialize projects with `GOALS.md` and `.roadrunner/state/queue.json` runtime state;
 - run `Plan -> Execute -> Verify -> Reconcile/Optimize` cycles;
 - use provider adapters, starting with OpenCode;
 - default to `openai/gpt-5.5` and variant `xhigh` for OpenCode;

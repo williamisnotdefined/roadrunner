@@ -25,8 +25,8 @@ describe("mutation fingerprint", () => {
   test("can ignore allowed mutation paths outside git repositories", async () => {
     const directory = await import("node:fs/promises").then((fs) => fs.mkdtemp(path.join(os.tmpdir(), "roadrunner-fingerprint-ignore-")));
     try {
-      await mkdir(path.join(directory, ".roadrunner"), { recursive: true });
       const context = await loadContext(directory, { _: [] });
+      await mkdir(path.dirname(context.paths.queue), { recursive: true });
       await writeFile(context.paths.queue, "before\n");
       const before = await projectMutationFingerprint(context, { ignoredPaths: [context.paths.queue] });
 

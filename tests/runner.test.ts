@@ -167,6 +167,7 @@ describe("runner", () => {
       expect(events).toEqual([
         "validate",
         "startup-refresh",
+        "provider-start",
         "step",
         "plan",
         "provider-start",

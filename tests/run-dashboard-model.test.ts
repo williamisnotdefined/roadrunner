@@ -17,15 +17,15 @@ describe("run dashboard model", () => {
     const rows = taskRowsFromQueue(queueFile);
 
     expect(rows.map((row) => [row.status, row.id])).toEqual([
-      ["done", "done-step"],
       ["current", "current-step"],
       ["next", "next-step"],
       ["blocked", "blocked-step"],
     ]);
     expect(taskStats(queueFile)).toEqual({ blocked: 1, current: 1, done: 1, next: 1 });
-    expect(selectedTaskIndex(rows, null)).toBe(1);
-    expect(selectedTaskIndex(rows, "next-step")).toBe(2);
-    expect(taskTableData(rows, "current-step")[2]).toEqual(["› ▶ Now", "current-step", "Bootstrap", "Current Step"]);
+    expect(selectedTaskIndex(rows, null)).toBe(0);
+    expect(selectedTaskIndex(rows, "next-step")).toBe(1);
+    expect(taskTableData(rows, "current-step", taskStats(queueFile))[1]).toEqual(["› ▶ Active", "current-step", "Bootstrap", "Current Step"]);
+    expect(taskTableData(rows, "current-step", taskStats(queueFile)).at(-1)).toEqual(["", "", "", "1 completed hidden"]);
   });
 
   test("escapes blessed markup in task table fields", () => {
@@ -40,7 +40,7 @@ describe("run dashboard model", () => {
 
     const rows = taskRowsFromQueue(queueFile);
 
-    expect(taskTableData(rows, "{current,step}")[1]).toEqual(["› ▶ Now", "{open}current,step{close}", "{open}phase,tag{close}", "{open}title,tag{close}"]);
+    expect(taskTableData(rows, "{current,step}")[1]).toEqual(["› ▶ Active", "{open}current,step{close}", "{open}phase,tag{close}", "{open}title,tag{close}"]);
   });
 
   test("handles empty queues and queues without a current task", () => {
@@ -51,7 +51,10 @@ describe("run dashboard model", () => {
 
     const closedOnly: QueueFile = { ...empty, history: [step("done-step")] };
     const rows = taskRowsFromQueue(closedOnly);
-    expect(selectedTaskIndex(rows, "missing-step")).toBe(0);
+    expect(selectedTaskIndex(rows, "missing-step")).toBe(-1);
+
+    const blockedOnly = taskRowsFromQueue({ ...empty, blocked: [step("blocked-step")] });
+    expect(selectedTaskIndex(blockedOnly, "missing-step")).toBe(0);
   });
 });
 

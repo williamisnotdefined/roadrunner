@@ -1,9 +1,9 @@
 import { describe, expect, test } from "vitest";
 
-import { defaultModel, defaultVariant } from "../src/infrastructure/config.js";
-import { formatStep, markBlocked, markDone, nextStep, validateGoals, validateQueueFile, type QueueFile } from "../src/domain/queue.js";
+import { defaultModel, defaultVariant, loadContext, pathExists } from "../src/infrastructure/config.js";
+import { formatStep, markBlocked, markDone, nextStep, readQueue, validateGoals, validateQueueFile, writeQueue, type QueueFile } from "../src/domain/queue.js";
 import { tempDir, removeDir } from "./helpers.js";
-import { writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 describe("queue", () => {
@@ -119,6 +119,25 @@ describe("queue", () => {
       expect(await validateGoals(context)).toEqual(["GOALS.md must not be empty."]);
       await writeFile(context.paths.goals, "# Goals\n");
       expect(await validateGoals(context)).toEqual([]);
+    } finally {
+      await removeDir(directory);
+    }
+  });
+
+  test("reads legacy default queue and writes runtime state queue", async () => {
+    const directory = await tempDir("roadrunner-queue-legacy-");
+    try {
+      const context = await loadContext(directory, { _: [] });
+      const legacyPath = path.join(directory, ".roadrunner/queue.json");
+      await mkdir(path.dirname(legacyPath), { recursive: true });
+      await writeFile(legacyPath, `${JSON.stringify(sampleQueue(), null, 2)}\n`);
+
+      expect((await readQueue(context)).queue[0]?.id).toBe("first-step");
+
+      await writeQueue(sampleQueue(), context);
+
+      expect(await pathExists(context.paths.queue)).toBe(true);
+      expect(await readFile(path.join(directory, ".roadrunner/.gitignore"), "utf8")).toMatch(/state\//);
     } finally {
       await removeDir(directory);
     }

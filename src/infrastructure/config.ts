@@ -7,6 +7,8 @@ import { defaultAutoRestartIdleMs, defaultMaxAutoRestartsPerStep } from "../doma
 
 export const defaultModel = "openai/gpt-5.5";
 export const defaultVariant = "xhigh";
+export const defaultQueuePath = ".roadrunner/state/queue.json";
+export const legacyDefaultQueuePath = ".roadrunner/queue.json";
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 const sourceRoot = path.resolve(moduleDir, "../..");
@@ -70,7 +72,7 @@ export function projectPaths(projectRoot = process.cwd(), overrides: PathOverrid
     logs: resolveProjectPath(projectRoot, overrides.logs ?? ".roadrunner/logs"),
     processRegistry: resolveProjectPath(projectRoot, overrides.processes ?? ".roadrunner/processes.json"),
     prompts: resolveProjectPath(projectRoot, overrides.prompts ?? ".roadrunner/prompts"),
-    queue: resolveProjectPath(projectRoot, overrides.queue ?? ".roadrunner/queue.json"),
+    queue: resolveProjectPath(projectRoot, overrides.queue ?? defaultQueuePath),
     roadmap: resolveProjectPath(projectRoot, overrides.roadmap ?? "ROADMAP.md"),
   };
 }
@@ -79,7 +81,9 @@ export async function loadContext(projectRoot = process.cwd(), args: CliArgs = {
   const flagOverrides = pathOverridesFromArgs(args);
   const configPath = flagOverrides.config ? resolveProjectPath(projectRoot, flagOverrides.config) : await defaultConfigPath(projectRoot);
   const fileConfig = (await pathExists(configPath)) ? await readConfig(configPath) : {};
-  const paths = projectPaths(projectRoot, { ...fileConfig.paths, ...flagOverrides, config: configPath });
+  const configOverrides = { ...fileConfig.paths };
+  if (flagOverrides.queue === undefined && configOverrides.queue === legacyDefaultQueuePath) configOverrides.queue = defaultQueuePath;
+  const paths = projectPaths(projectRoot, { ...configOverrides, ...flagOverrides, config: configPath });
 
   return {
     config: {

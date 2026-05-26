@@ -19,6 +19,7 @@ describe("run progress", () => {
     progress = updateProgressForActivity(progress, { phase: "implement", step }, 3_000);
     expect(progress?.lastActivityAt).toBe(3_000);
     expect(formatRunProgress(progress!, 4_000)).toContain("implement sample-step attempt=1 elapsed=4s phase=3s idle=1s pid=123 log=/tmp/implement.log");
+    expect(formatRunProgress({ ...progress!, logPath: null, pid: null }, 4_000)).not.toContain("log=");
   });
 
   test("handles verify variants, restarts, cleanup, and unrelated events", () => {
@@ -43,6 +44,19 @@ describe("run progress", () => {
     progress = updateProgressForEvent(progress, { step, type: "step-complete" }, 7_000);
     expect(progress).toBeNull();
     expect(updateProgressForEvent(updateProgressForEvent(null, { step, type: "step" }, 0), { type: "cleanup" }, 1_000)).toBeNull();
+  });
+
+  test("tracks startup refresh without a task step", () => {
+    let progress: RunProgressState | null = updateProgressForEvent(null, { type: "startup-refresh" }, 0);
+
+    expect(progress).toMatchObject({ phase: "startup-refresh", stepId: null });
+    progress = updateProgressForActivity(progress, { phase: "startup-refresh" }, 1_000);
+    expect(progress?.lastActivityAt).toBe(1_000);
+    progress = updateProgressForEvent(progress, { command: ["opencode"], debug: false, logPath: "/tmp/startup.log", pid: null, role: "startup-refresh", type: "provider-start" }, 2_000);
+    expect(formatRunProgress(progress!, 3_000)).toContain("startup-refresh attempt=1 elapsed=3s phase=3s idle=1s log=/tmp/startup.log");
+
+    expect(updateProgressForActivity(null, { phase: "startup-refresh" }, 4_000)).toBeNull();
+    expect(updateProgressForActivity(progress, { phase: "implement", step }, 5_000)?.lastActivityAt).toBe(2_000);
   });
 });
 

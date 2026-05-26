@@ -122,9 +122,9 @@ Roadrunner executes a queue of deliverable tasks. Each run starts by hard-resett
 Startup Queue Refresh -> Plan -> Execute -> Verify -> Mark Done -> Reconcile/Optimize
 ```
 
-The queue lives in the configured queue file, defaulting to `.roadrunner/queue.json` in the target project. It contains `version`, `model`, `variant`, `queue`, `history`, and `blocked`. The first queued item is the only current task during implementation attempts.
+The queue lives in the configured runtime queue file, defaulting to `.roadrunner/state/queue.json` in the target project. It contains `version`, `model`, `variant`, `queue`, `history`, and `blocked`. The first queued item is the only current task during implementation attempts.
 
-`GOALS.md` is loaded once at the start of a run and used as an immutable in-memory goal snapshot for all prompts in that run. The configured roadmap file is also read at run start. `.roadrunner/queue.json` is treated as a generated operational artifact for the current run, not as durable source of truth.
+`GOALS.md` is loaded once at the start of a run and used as an immutable in-memory goal snapshot for all prompts in that run. The configured roadmap file is also read at run start. `.roadrunner/state/queue.json` is treated as a generated operational artifact for the current run, not as durable source of truth.
 
 Startup queue refresh overwrites stale or missing queue state, seeds from operational roadmap Markdown when possible, and then asks the provider to audit the current repository state. It may move already satisfied roadmap work to `history`, keep relevant work in `queue`, put still-relevant blockers in `blocked`, and drop obsolete or superseded work. It may only mutate the configured queue file.
 

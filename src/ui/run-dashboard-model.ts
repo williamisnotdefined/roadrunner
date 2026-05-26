@@ -22,14 +22,13 @@ export interface TaskStats {
 
 const labels: Record<TaskRowStatus, { icon: string; label: string }> = {
   blocked: { icon: "!", label: "Blocked" },
-  current: { icon: "▶", label: "Now" },
+  current: { icon: "▶", label: "Active" },
   done: { icon: "✓", label: "Done" },
-  next: { icon: "·", label: "Next" },
+  next: { icon: "·", label: "Waiting" },
 };
 
 export function taskRowsFromQueue(queueFile: QueueFile): TaskRow[] {
   return [
-    ...queueFile.history.map((step) => taskRow(step, "done")),
     ...queueFile.queue.slice(0, 1).map((step) => taskRow(step, "current")),
     ...queueFile.queue.slice(1).map((step) => taskRow(step, "next")),
     ...queueFile.blocked.map((step) => taskRow(step, "blocked")),
@@ -53,8 +52,8 @@ export function selectedTaskIndex(rows: TaskRow[], selectedTaskId: string | null
   return current >= 0 ? current : 0;
 }
 
-export function taskTableData(rows: TaskRow[], selectedTaskId: string | null): string[][] {
-  return [
+export function taskTableData(rows: TaskRow[], selectedTaskId: string | null, stats?: TaskStats): string[][] {
+  const data = [
     ["Status", "ID", "Phase", "Title"],
     ...rows.map((row) => {
       const marker = row.id === selectedTaskId ? "›" : " ";
@@ -66,6 +65,8 @@ export function taskTableData(rows: TaskRow[], selectedTaskId: string | null): s
       ];
     }),
   ];
+  if (stats && stats.done > 0) data.push(["", "", "", `${stats.done} completed hidden`]);
+  return data;
 }
 
 function taskRow(step: QueueStep, status: TaskRowStatus): TaskRow {

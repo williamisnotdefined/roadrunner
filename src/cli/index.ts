@@ -133,7 +133,7 @@ export function formatRunEvent(event: RoadrunnerRunEvent): string {
     case "step-complete":
       return formatCliSuccess(`Completed ${event.step.id}`);
     case "startup-refresh":
-      return formatCliStep("Refreshed queue from roadmap and repository state");
+      return formatCliStep("Refreshing queue from roadmap and repository state");
     case "task-auto-restart-limit-exceeded": {
       const phase = event.phase ? ` during ${event.phase}` : "";
       return formatCliError(`Auto-restart limit exceeded for ${event.step.id}${phase} after idle=${formatDuration(event.idleMs)} max=${event.maxRestarts}`);
