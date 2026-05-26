@@ -1,7 +1,9 @@
 import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 
+import type { QueueFile } from "../src/domain/queue.js";
 import { loadContext, type ProjectContext } from "../src/infrastructure/config.js";
+import type { RoadrunnerRunEvent } from "../src/application/runner.js";
 import { commitAll, createFakeOpenCodeBin, createInitializedProject, initGit, sampleRoadmap, tempDir, withPath } from "./helpers.js";
 
 export async function setupRunnerProject(mode: string, roadmap = sampleRoadmap()): Promise<{ context: ProjectContext; directory: string }> {
@@ -48,4 +50,15 @@ export async function logDirFor(context: ProjectContext, suffix: string): Promis
   const entry = entries.find((value) => value.endsWith(`-${suffix}`));
   if (!entry) throw new Error(`Missing log dir for ${suffix}.`);
   return path.join(context.paths.logs, entry);
+}
+
+export function queueSnapshots(events: RoadrunnerRunEvent[]): QueueFile[] {
+  return events.filter((event): event is Extract<RoadrunnerRunEvent, { type: "queue-updated" }> => event.type === "queue-updated").map((event) => event.queueFile);
+}
+
+export function latestQueueSnapshot(events: RoadrunnerRunEvent[]): QueueFile {
+  const snapshots = queueSnapshots(events);
+  const latest = snapshots.at(-1);
+  if (!latest) throw new Error("Expected at least one queue-updated event.");
+  return latest;
 }

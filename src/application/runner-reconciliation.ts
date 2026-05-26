@@ -1,13 +1,12 @@
 import path from "node:path";
 
 import type { ProjectContext } from "../infrastructure/config.js";
-import { projectMutationFingerprint } from "../infrastructure/mutation-fingerprint.js";
-import { type QueueFile, type QueueStep, writeQueue } from "../domain/queue.js";
-import { readValidatedQueue } from "./queue-service.js";
+import type { QueueFile, QueueStep } from "../domain/queue.js";
 import { providerFor, type ProviderStartEvent } from "../infrastructure/providers/index.js";
 import type { RunSnapshot } from "./run-snapshot.js";
 import { renderPrompt, writePrivateFile } from "../infrastructure/run-artifacts.js";
 import { providerEnvForDeadline } from "../domain/timeouts.js";
+import { queueProposalFromOutput } from "./queue-proposal.js";
 
 interface ReconcileOptions {
   deadline: number | null;
@@ -17,10 +16,8 @@ interface ReconcileOptions {
   streamProviderOutput?: boolean;
 }
 
-export async function reconcileQueue(context: ProjectContext, step: QueueStep, snapshot: RunSnapshot, logDir: string, options: ReconcileOptions): Promise<QueueFile> {
-  const queueBeforeReconcile = await readValidatedQueue(context);
+export async function reconcileQueue(context: ProjectContext, queueBeforeReconcile: QueueFile, step: QueueStep, snapshot: RunSnapshot, logDir: string, options: ReconcileOptions): Promise<QueueFile> {
   const queueText = `${JSON.stringify(queueBeforeReconcile, null, 2)}\n`;
-  const beforeMutationFingerprint = await projectMutationFingerprint(context, { ignoredPaths: [context.paths.queue], includeIgnoredFiles: true });
 
   const prompt = await renderPrompt(context, "reconcile-roadmap.md", {
     GOALS_MD: snapshot.goalsMarkdown,
@@ -30,7 +27,7 @@ export async function reconcileQueue(context: ProjectContext, step: QueueStep, s
   await writePrivateFile(path.join(logDir, "reconcile.prompt.md"), prompt);
 
   const result = await providerFor(context).run({
-    agent: "build",
+    agent: "plan",
     context,
     env: providerEnvForDeadline(options.deadline),
     logPath: path.join(logDir, "reconcile.opencode.log"),
@@ -39,41 +36,25 @@ export async function reconcileQueue(context: ProjectContext, step: QueueStep, s
     prompt,
     role: "reconcile",
     signal: options.signal,
-    skipPermissions: context.config.dangerouslySkipPermissions,
+    skipPermissions: false,
     streamOutput: options.streamProviderOutput,
   });
   await writePrivateFile(path.join(logDir, "reconcile.md"), result.output);
 
-  const afterMutationFingerprint = await projectMutationFingerprint(context, { ignoredPaths: [context.paths.queue], includeIgnoredFiles: true });
-  if (beforeMutationFingerprint !== null && afterMutationFingerprint !== null && beforeMutationFingerprint !== afterMutationFingerprint) {
-    await writeQueue(queueBeforeReconcile, context);
-    throw new Error("Reconciliation may only update the Roadrunner queue file.");
-  }
+  if (result.code !== 0) throw new Error(`Reconciliation failed for ${step.id}.`);
 
-  if (result.code !== 0) {
-    await writeQueue(queueBeforeReconcile, context);
-    throw new Error(`Reconciliation failed for ${step.id}.`);
-  }
-
-  let normalizedQueueFile: QueueFile;
-  try {
-    normalizedQueueFile = await readValidatedQueue(context);
-  } catch (error) {
-    await writeQueue(queueBeforeReconcile, context);
-    throw error;
-  }
-
+  const normalizedQueueFile = queueProposalFromOutput(result.output, context);
   const preserveErrors = validateReconcileQueueScope(queueBeforeReconcile, normalizedQueueFile);
-  if (preserveErrors.length > 0) {
-    await writeQueue(queueBeforeReconcile, context);
-    throw new Error(preserveErrors.join("\n"));
-  }
+  if (preserveErrors.length > 0) throw new Error(preserveErrors.join("\n"));
 
   return normalizedQueueFile;
 }
 
 function validateReconcileQueueScope(before: QueueFile, after: QueueFile): string[] {
   const errors: string[] = [];
+  if (after.version !== before.version) errors.push("Reconciliation must preserve queue version.");
+  if (after.model !== before.model) errors.push("Reconciliation must preserve queue model.");
+  if (after.variant !== before.variant) errors.push("Reconciliation must preserve queue variant.");
   if (JSON.stringify(after.history) !== JSON.stringify(before.history)) errors.push("Reconciliation must preserve history records.");
   if (JSON.stringify(after.blocked) !== JSON.stringify(before.blocked)) errors.push("Reconciliation must preserve blocked records.");
   return errors;

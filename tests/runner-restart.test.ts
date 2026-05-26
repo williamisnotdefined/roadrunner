@@ -1,11 +1,10 @@
 import { afterEach, describe, expect, test } from "vitest";
 
-import { readJson } from "../src/infrastructure/config.js";
-import type { QueueFile, QueueStep } from "../src/domain/queue.js";
+import type { QueueStep } from "../src/domain/queue.js";
 import { createRunControl, type CurrentAttemptState, type RunControlState } from "../src/application/runner-control.js";
 import { run as runRoadrunner, type RoadrunnerRunControl, type RoadrunnerRunEvent } from "../src/application/runner.js";
 import { removeDir } from "./helpers.js";
-import { setupRunnerProject } from "./runner-helpers.js";
+import { latestQueueSnapshot, setupRunnerProject } from "./runner-helpers.js";
 
 const sampleStep: QueueStep = {
   acceptance: ["works"],
@@ -77,6 +76,7 @@ describe("runner restart control", () => {
   test("stops the current task without blocking it", async () => {
     const project = await setupRunnerProject("hang-once-plan");
     const events: string[] = [];
+    const runEvents: RoadrunnerRunEvent[] = [];
     let control: RoadrunnerRunControl | null = null;
     process.env.ROADRUNNER_PROVIDER_TIMEOUT_MS = "0";
 
@@ -87,11 +87,12 @@ describe("runner restart control", () => {
           control = nextControl;
         },
         onEvent: (event) => {
+          runEvents.push(event);
           events.push(event.type);
           if (event.type === "provider-start" && event.role === "plan") control?.stopRun();
         },
       });
-      const queue = await readJson<QueueFile>(project.context.paths.queue);
+      const queue = latestQueueSnapshot(runEvents);
 
       expect(completed).toBe(0);
       expect(events).toContain("run-stop-requested");
@@ -118,12 +119,10 @@ describe("runner restart control", () => {
           events.push(event.type);
         },
       });
-      const queue = await readJson<QueueFile>(project.context.paths.queue);
 
       expect(completed).toBe(0);
       expect(events).toContain("run-stop-requested");
       expect(events).toContain("cleanup");
-      expect(queue.blocked).toEqual([]);
     } finally {
       await removeDir(project.directory);
     }
@@ -132,6 +131,7 @@ describe("runner restart control", () => {
   test("stops post-step reconciliation without blocking the completed step", async () => {
     const project = await setupRunnerProject("success");
     const events: string[] = [];
+    const runEvents: RoadrunnerRunEvent[] = [];
     let control: RoadrunnerRunControl | null = null;
 
     try {
@@ -141,11 +141,12 @@ describe("runner restart control", () => {
           control = nextControl;
         },
         onEvent: (event) => {
+          runEvents.push(event);
           events.push(event.type);
           if (event.type === "provider-start" && event.role === "reconcile") control?.stopRun();
         },
       });
-      const queue = await readJson<QueueFile>(project.context.paths.queue);
+      const queue = latestQueueSnapshot(runEvents);
 
       expect(completed).toBe(1);
       expect(events).toContain("run-stop-requested");
@@ -160,6 +161,7 @@ describe("runner restart control", () => {
   test("does not restart a completed task during post-step reconciliation", async () => {
     const project = await setupRunnerProject("success");
     const events: string[] = [];
+    const runEvents: RoadrunnerRunEvent[] = [];
     let control: RoadrunnerRunControl | null = null;
     let restartRequested = false;
 
@@ -171,6 +173,7 @@ describe("runner restart control", () => {
           control = nextControl;
         },
         onEvent: (event) => {
+          runEvents.push(event);
           events.push(event.type);
           if (event.type === "provider-start" && event.role === "reconcile" && !restartRequested) {
             restartRequested = true;
@@ -178,7 +181,7 @@ describe("runner restart control", () => {
           }
         },
       });
-      const queue = await readJson<QueueFile>(project.context.paths.queue);
+      const queue = latestQueueSnapshot(runEvents);
 
       expect(completed).toBe(1);
       expect(restartRequested).toBe(true);
@@ -199,7 +202,7 @@ describe("runner restart control", () => {
 
     try {
       const completed = await runRoadrunner(project.context, { maxSteps: 1, onEvent: (event) => events.push(event) });
-      const queue = await readJson<QueueFile>(project.context.paths.queue);
+      const queue = latestQueueSnapshot(events);
 
       expect(completed).toBe(1);
       expect(events).toContainEqual(expect.objectContaining({ restart: 1, step: expect.objectContaining({ id: "first-step" }), type: "task-auto-restart-requested" }));
@@ -211,17 +214,18 @@ describe("runner restart control", () => {
     }
   });
 
-  test("blocks instead of retrying with stale queue after a restarted attempt mutates queue", async () => {
+  test("retries from in-memory queue after stale runtime queue writes", async () => {
     const project = await setupRunnerProject("queue-dirty-hang");
+    const events: RoadrunnerRunEvent[] = [];
     process.env.ROADRUNNER_AUTO_RESTART_IDLE_MS = "500";
     process.env.ROADRUNNER_MAX_AUTO_RESTARTS_PER_STEP = "2";
     process.env.ROADRUNNER_PROVIDER_TIMEOUT_MS = "0";
 
     try {
-      await expect(runRoadrunner(project.context, { maxSteps: 1 })).rejects.toThrow(/queue changed before retrying/);
-      const queue = await readJson<QueueFile>(project.context.paths.queue);
+      await expect(runRoadrunner(project.context, { maxSteps: 1, onEvent: (event) => events.push(event) })).rejects.toThrow(/Automatic restart limit exceeded/);
+      const queue = latestQueueSnapshot(events);
 
-      expect(queue.blocked[0]).toMatchObject({ blockedReason: "Roadrunner queue changed before retrying first-step.", id: "first-step", title: "Build first step" });
+      expect(queue.blocked[0]).toMatchObject({ id: "first-step", title: "Build first step" });
     } finally {
       await removeDir(project.directory);
     }
@@ -236,7 +240,7 @@ describe("runner restart control", () => {
 
     try {
       await expect(runRoadrunner(project.context, { maxSteps: 1, onEvent: (event) => events.push(event) })).rejects.toThrow(/Automatic restart limit exceeded/);
-      const queue = await readJson<QueueFile>(project.context.paths.queue);
+      const queue = latestQueueSnapshot(events);
 
       expect(events).toContainEqual(expect.objectContaining({ restart: 1, type: "task-auto-restart-requested" }));
       expect(events).toContainEqual(expect.objectContaining({ maxRestarts: 1, type: "task-auto-restart-limit-exceeded" }));

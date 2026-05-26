@@ -8,13 +8,12 @@ import { fileURLToPath } from "node:url";
 import chalk from "chalk";
 
 import { cleanupProcesses } from "../infrastructure/process-registry.js";
-import { formatStep, nextStep, normalizeQueueFile, readQueue, validateGoals, validateQueueFile } from "../domain/queue.js";
+import { formatStep, validateGoals } from "../domain/queue.js";
 import { initProject } from "../application/init.js";
 import { loadContext, type ProjectContext } from "../infrastructure/config.js";
 import { integerOption, optionalNumberOption, parseArgs } from "./args.js";
 import { shouldPrintHelp, validateCliInvocation } from "./validation.js";
 import { plan, status, validateProvider, type RoadrunnerRunEvent } from "../application/runner.js";
-import { importRoadmap } from "../domain/roadmap.js";
 import { formatDuration } from "../domain/duration.js";
 import { runWithTui, type RunTuiOptions } from "../ui/run-tui.js";
 
@@ -65,24 +64,15 @@ export async function main(argv = process.argv.slice(2), { cwd = process.cwd(), 
       out(formatStep(result.next));
     } else if (command === "next") {
       out(formatCliStep("Reading next queued step"));
-      const queueFile = await readQueue(context);
-      const errors = validateQueueFile(queueFile, { model: context.config.model, variant: context.config.variant });
-      if (errors.length > 0) throw new Error(errors.join("\n"));
-      out(formatStep(nextStep(normalizeQueueFile(queueFile))));
+      out(formatStep((await status(context)).next));
     } else if (command === "check") {
       out(formatCliStep("Validating Roadrunner project"));
-      const queueFile = await readQueue(context);
-      const errors = [...(await validateGoals(context)), ...validateQueueFile(queueFile, { model: context.config.model, variant: context.config.variant })];
+      const errors = await validateGoals(context);
       if (errors.length === 0) errors.push(...(await validateProvider(context)));
       if (errors.length > 0) throw new Error(errors.join("\n"));
       out(formatCliSuccess("Roadrunner project is valid."));
     } else if (command === "import-roadmap") {
-      out(formatCliStep(`Importing roadmap from ${context.paths.roadmap}`));
-      const queueFile = await importRoadmap(context);
-      out(formatCliSuccess(`Imported roadmap from ${context.paths.roadmap}.`));
-      out(`queued: ${queueFile.queue.length}`);
-      out(`done: ${queueFile.history.length}`);
-      out(`blocked: ${queueFile.blocked.length}`);
+      out(formatCliInfo("import-roadmap is no longer required; run rebuilds an in-memory queue from the roadmap each time."));
     } else if (command === "plan") {
       out(formatCliStep("Planning next queued step"));
       const result = await plan(context, { onProviderStart: (event) => out(formatProviderStartEvent(event)) });
@@ -124,6 +114,8 @@ export function formatRunEvent(event: RoadrunnerRunEvent): string {
       return formatCliStep(`Planning ${event.step.id}`);
     case "provider-start":
       return formatProviderStartEvent(event);
+    case "queue-updated":
+      return formatCliInfo(`Queue updated: queued=${event.queueFile.queue.length} done=${event.queueFile.history.length} blocked=${event.queueFile.blocked.length}`);
     case "reconcile":
       return formatCliStep(`Reconciling and optimizing queue after ${event.step.id}`);
     case "run-stop-requested":
@@ -199,7 +191,7 @@ Run UI controls:
 Path overrides:
   --goals path        Path to GOALS.md
   --goal path         Alias for --goals
-  --queue path        Path to queue JSON
+  --queue path        Legacy queue JSON path for import-roadmap
   --roadmap path      Path to roadmap Markdown
   --prompts dir       Prompt templates directory
   --logs dir          Logs directory

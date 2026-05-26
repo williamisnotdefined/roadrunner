@@ -8,7 +8,7 @@ import { promisify } from "node:util";
 import { main } from "../../src/cli/index.js";
 import { readJson, writeJson } from "../../src/infrastructure/config.js";
 import type { QueueFile } from "../../src/domain/queue.js";
-import { run as runRoadrunner } from "../../src/application/runner.js";
+import { run as runRoadrunner, type RoadrunnerRunEvent } from "../../src/application/runner.js";
 import { run } from "../helpers.js";
 
 const execFileAsync = promisify(execFile);
@@ -62,16 +62,17 @@ const configPath = path.join(outputRoot, ".roadrunner/config.json");
 const config = await readJson<Record<string, unknown>>(configPath);
 await writeJson(configPath, { ...config, allowNestedOpenCode: true, dangerouslySkipPermissions: true });
 
+const events: RoadrunnerRunEvent[] = [];
 await requireOk(
   main(["run", "--max-steps", "1"], {
     cwd: outputRoot,
-    runTui: (context, options) => runRoadrunner(context, { maxHours: options.maxHours, maxSteps: options.maxSteps }),
+    runTui: (context, options) => runRoadrunner(context, { maxHours: options.maxHours, maxSteps: options.maxSteps, onEvent: (event) => events.push(event) }),
     terminal: { isInteractive: true },
   }),
   "roadrunner run failed",
 );
 
-const queue = await readJson<QueueFile>(path.join(outputRoot, ".roadrunner/state/queue.json"));
+const queue = latestQueueSnapshot(events);
 assert(queue.queue.length === 0, "Expected queue to be empty.");
 assert(queue.history.map((step) => step.id).includes("todo-crud"), "Expected todo-crud in history.");
 assert(queue.blocked.length === 0, "Expected blocked queue to be empty.");
@@ -102,6 +103,13 @@ async function ensureOpenCode(): Promise<void> {
 async function requireOk(result: Promise<number>, message: string): Promise<void> {
   const code = await result;
   if (code !== 0) throw new Error(`${message} Exit code: ${code}.`);
+}
+
+function latestQueueSnapshot(events: RoadrunnerRunEvent[]): QueueFile {
+  const snapshots = events.filter((event): event is Extract<RoadrunnerRunEvent, { type: "queue-updated" }> => event.type === "queue-updated").map((event) => event.queueFile);
+  const latest = snapshots.at(-1);
+  if (!latest) throw new Error("Expected at least one queue-updated event.");
+  return latest;
 }
 
 async function assertTodoApi(cwd: string): Promise<void> {

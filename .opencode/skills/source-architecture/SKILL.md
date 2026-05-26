@@ -94,8 +94,8 @@ Roadrunner source code should stay organized around clear responsibility boundar
 ## Folder Layers
 
 - `src/domain/`: queue data, validation, parsing, restart policy, timeouts, and pure formatting. Domain modules should avoid process, provider, filesystem orchestration, UI, and CLI concerns.
-- `src/application/`: use cases such as init, planning, running, task execution, verification, reconciliation, queue guards, queue services, run snapshots, and restart coordination.
-- `src/infrastructure/`: side effects such as project config loading, locks, managed shell processes, process registries, process trees, prompt/log artifacts, git/filesystem fingerprints, and provider adapters.
+- `src/application/`: use cases such as init, planning, running, task execution, verification, reconciliation, queue proposals, run snapshots, and restart coordination.
+- `src/infrastructure/`: side effects such as project config loading, locks, managed shell processes, process registries, process trees, prompt/log artifacts, and provider adapters.
 - `src/infrastructure/providers/`: provider port and provider-specific adapters. OpenCode-specific behavior stays here.
 - `src/ui/`: interactive TUI state, view formatting, progress models, session logs, and log discovery.
 - `src/cli/`: command dispatch, argument parsing, and CLI invocation validation.
@@ -140,18 +140,16 @@ Core modules by layer:
 - `src/application/runner.ts`: public runner facade and startup/plan/execute/verify/reconcile-optimize loop.
 - `src/application/runner-control.ts`: run control for restart and cooperative stop requests.
 - `src/application/runner-execution.ts`: task attempt orchestration, manual restarts, automatic idle restarts, and step completion.
-- `src/application/runner-startup.ts`: run-start hard reset, roadmap/repository queue refresh, and startup queue-only enforcement.
-- `src/application/runner-planning.ts`: planning prompt execution and read-only mutation checks.
+- `src/application/runner-startup.ts`: run-start hard reset, roadmap/repository queue refresh, and startup queue proposal handling.
+- `src/application/runner-planning.ts`: planning prompt execution.
 - `src/application/runner-verification.ts`: verification commands and fix-failure provider calls.
-- `src/application/runner-reconciliation.ts`: post-step open-queue optimization, queue-only reconciliation enforcement, and closed-record preservation.
+- `src/application/runner-reconciliation.ts`: post-step read-only open-queue optimization and closed-record preservation.
 - `src/application/auto-restart-watchdog.ts`: idle activity watchdog for automatic task-attempt restarts.
-- `src/application/queue-service.ts`: application-level queue validation and blocking helpers.
-- `src/application/queue-guard.ts`: queue unchanged assertions around task attempts.
+- `src/application/queue-proposal.ts`: provider queue proposal extraction and validation.
 - `src/application/run-snapshot.ts`: run-start in-memory goals snapshot loading.
 - `src/infrastructure/config.ts`: project config and path loading.
 - `src/infrastructure/run-artifacts.ts`: private prompt/log artifact helpers.
 - `src/infrastructure/managed-process.ts`: managed shell subprocess execution for verification.
-- `src/infrastructure/mutation-fingerprint.ts`: git/filesystem mutation fingerprints.
 - `src/infrastructure/process-registry.ts`: safe child-process tracking.
 - `src/infrastructure/providers/index.ts`: provider factory and configured-provider validation.
 - `src/infrastructure/providers/provider.ts`: provider port interfaces.

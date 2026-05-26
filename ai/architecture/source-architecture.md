@@ -5,8 +5,8 @@ Roadrunner source code should stay organized around clear responsibility boundar
 ## Folder Layers
 
 - `src/domain/`: queue data, validation, parsing, restart policy, timeouts, and pure formatting. Domain modules should avoid process, provider, filesystem orchestration, UI, and CLI concerns.
-- `src/application/`: use cases such as init, planning, running, task execution, verification, reconciliation, queue guards, queue services, run snapshots, and restart coordination.
-- `src/infrastructure/`: side effects such as project config loading, locks, managed shell processes, process registries, process trees, prompt/log artifacts, git/filesystem fingerprints, and provider adapters.
+- `src/application/`: use cases such as init, planning, running, task execution, verification, reconciliation, queue proposals, run snapshots, and restart coordination.
+- `src/infrastructure/`: side effects such as project config loading, locks, managed shell processes, process registries, process trees, prompt/log artifacts, and provider adapters.
 - `src/infrastructure/providers/`: provider port and provider-specific adapters. OpenCode-specific behavior stays here.
 - `src/ui/`: interactive TUI state, view formatting, progress models, session logs, and log discovery.
 - `src/cli/`: command dispatch, argument parsing, and CLI invocation validation.

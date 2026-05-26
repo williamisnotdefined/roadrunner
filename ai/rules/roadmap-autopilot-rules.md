@@ -3,8 +3,8 @@
 ## Always
 
 - Follow `Startup Queue Refresh -> Plan -> Execute -> Verify -> Mark Done -> Reconcile/Optimize`.
-- Treat `.roadrunner/state/queue.json` as a generated operational artifact at run start.
-- Rebuild stale or missing run queues from `GOALS.md`, the configured roadmap file, and current repository state.
+- Keep autonomous run queues in memory for the current execution.
+- Rebuild every run queue from `GOALS.md`, the configured roadmap file, and current repository state.
 - Treat `queue[0]` as the current task.
 - Mark verified work done before reconciliation.
 - Preserve `history` and `blocked` records during post-step reconciliation.
@@ -17,6 +17,6 @@
 
 - Do not trust stale queue state at run start.
 - Do not rewrite history during post-step reconciliation.
-- Do not let startup refresh or reconciliation edit source files.
+- Do not let startup refresh or reconciliation edit files; they must return queue JSON proposals only.
 - Do not bypass verification.
 - Do not reread `GOALS.md` mid-run.

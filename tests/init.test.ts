@@ -3,9 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
 
-import { loadContext, pathExists, readJson } from "../src/infrastructure/config.js";
+import { loadContext, pathExists } from "../src/infrastructure/config.js";
 import { initProject } from "../src/application/init.js";
-import type { QueueFile } from "../src/domain/queue.js";
 
 describe("init", () => {
   test("initProject creates Roadrunner project files", async () => {
@@ -17,19 +16,18 @@ describe("init", () => {
 
       expect(await pathExists(paths.goals)).toBe(true);
       expect(await pathExists(paths.config)).toBe(true);
-      expect(await pathExists(paths.queue)).toBe(true);
+      expect(await pathExists(paths.queue)).toBe(false);
       expect(await pathExists(path.join(path.dirname(paths.config), ".gitignore"))).toBe(true);
       expect(await pathExists(path.join(paths.prompts, "plan-step.md"))).toBe(true);
       expect(await readFile(paths.goals, "utf8")).toMatch(/Plan -> Execute -> Verify -> Reconcile/);
-      expect((await readJson<QueueFile>(paths.queue)).queue).toEqual([]);
       expect(paths.queue).toBe(path.join(tempDir, ".roadrunner/state/queue.json"));
-      expect(await readFile(path.join(path.dirname(paths.config), ".gitignore"), "utf8")).toMatch(/state\//);
+      expect(await readFile(path.join(path.dirname(paths.config), ".gitignore"), "utf8")).toMatch(/logs\//);
     } finally {
       await rm(tempDir, { force: true, recursive: true });
     }
   });
 
-  test("initProject creates nested goal and queue paths", async () => {
+  test("initProject creates nested goal paths without runtime queue files", async () => {
     const tempDir = await mkdtemp(path.join(os.tmpdir(), "roadrunner-init-nested-"));
     try {
       const context = await loadContext(tempDir, { _: [], goals: "docs/GOALS.md", queue: "state/queue.json" });
@@ -37,7 +35,7 @@ describe("init", () => {
       await initProject(context);
 
       expect(await pathExists(path.join(tempDir, "docs/GOALS.md"))).toBe(true);
-      expect(await pathExists(path.join(tempDir, "state/queue.json"))).toBe(true);
+      expect(await pathExists(path.join(tempDir, "state/queue.json"))).toBe(false);
     } finally {
       await rm(tempDir, { force: true, recursive: true });
     }
@@ -56,13 +54,12 @@ describe("init", () => {
       expect(gitignore).toMatch(/custom-logs\//);
       expect(gitignore).toMatch(/state\/processes\.json/);
       expect(gitignore).toMatch(/state\/road\.lock/);
-      expect(gitignore).toMatch(/\.roadrunner\/state\/queue\.json|\.roadrunner\/state\//);
     } finally {
       await rm(tempDir, { force: true, recursive: true });
     }
   });
 
-  test("initProject imports roadmap when available", async () => {
+  test("initProject leaves roadmap import to run startup", async () => {
     const tempDir = await mkdtemp(path.join(os.tmpdir(), "roadrunner-init-roadmap-"));
     try {
       await writeFile(
@@ -84,7 +81,7 @@ Verification:
 
       await initProject(context);
 
-      expect(await readFile(context.paths.queue, "utf8")).toMatch(/first-step/);
+      expect(await pathExists(context.paths.queue)).toBe(false);
     } finally {
       await rm(tempDir, { force: true, recursive: true });
     }
@@ -120,7 +117,7 @@ Verification:
     }
   });
 
-  test("initProject preserves root README and uses configured queue model", async () => {
+  test("initProject preserves root README and configured model", async () => {
     const tempDir = await mkdtemp(path.join(os.tmpdir(), "roadrunner-init-root-readme-"));
     try {
       await writeFile(path.join(tempDir, "README.md"), "# Target Project\n");
@@ -129,10 +126,9 @@ Verification:
 
       await initProject(context);
 
-      const queue = await readJson<QueueFile>(context.paths.queue);
       expect(await readFile(path.join(tempDir, "README.md"), "utf8")).toBe("# Target Project\n");
-      expect(queue.model).toBe("custom-model");
-      expect(queue.variant).toBe("low");
+      expect(context.config.model).toBe("custom-model");
+      expect(context.config.variant).toBe("low");
     } finally {
       await rm(tempDir, { force: true, recursive: true });
     }

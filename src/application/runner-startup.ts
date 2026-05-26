@@ -2,14 +2,13 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { pathExists, type ProjectContext } from "../infrastructure/config.js";
-import { projectMutationFingerprint } from "../infrastructure/mutation-fingerprint.js";
 import { providerFor, type ProviderStartEvent } from "../infrastructure/providers/index.js";
-import { type QueueFile, writeQueue } from "../domain/queue.js";
-import { readValidatedQueue } from "./queue-service.js";
+import type { QueueFile } from "../domain/queue.js";
 import { queueFileFromRoadmap } from "../domain/roadmap.js";
 import type { RunSnapshot } from "./run-snapshot.js";
 import { createLogDir, renderPrompt, writePrivateFile } from "../infrastructure/run-artifacts.js";
 import { providerEnvForDeadline } from "../domain/timeouts.js";
+import { queueProposalFromOutput } from "./queue-proposal.js";
 
 export interface StartupRefreshOptions {
   deadline: number | null;
@@ -24,10 +23,13 @@ export interface StartupRefreshResult {
   queueFile: QueueFile;
 }
 
+export async function seedQueueAtRunStart(context: ProjectContext): Promise<QueueFile> {
+  return seedQueueFromRoadmap(context, await readRoadmapMarkdown(context)).queueFile;
+}
+
 export async function refreshQueueAtRunStart(context: ProjectContext, snapshot: RunSnapshot, options: StartupRefreshOptions): Promise<StartupRefreshResult> {
   const roadmapMarkdown = await readRoadmapMarkdown(context);
   const seed = seedQueueFromRoadmap(context, roadmapMarkdown);
-  await writeQueue(seed.queueFile, context);
 
   const logDir = await createLogDir(context, "startup-refresh");
   const prompt = await renderPrompt(context, "startup-refresh.md", {
@@ -39,9 +41,8 @@ export async function refreshQueueAtRunStart(context: ProjectContext, snapshot: 
   });
   await writePrivateFile(path.join(logDir, "startup-refresh.prompt.md"), prompt);
 
-  const beforeMutationFingerprint = await projectMutationFingerprint(context, { ignoredPaths: [context.paths.queue], includeIgnoredFiles: true });
   const result = await providerFor(context).run({
-    agent: "build",
+    agent: "plan",
     context,
     env: providerEnvForDeadline(options.deadline),
     logPath: path.join(logDir, "startup-refresh.opencode.log"),
@@ -50,25 +51,14 @@ export async function refreshQueueAtRunStart(context: ProjectContext, snapshot: 
     prompt,
     role: "startup-refresh",
     signal: options.signal,
-    skipPermissions: context.config.dangerouslySkipPermissions,
+    skipPermissions: false,
     streamOutput: options.streamProviderOutput,
   });
   await writePrivateFile(path.join(logDir, "startup-refresh.md"), result.output);
 
-  const afterMutationFingerprint = await projectMutationFingerprint(context, { ignoredPaths: [context.paths.queue], includeIgnoredFiles: true });
-  if (beforeMutationFingerprint !== null && afterMutationFingerprint !== null && beforeMutationFingerprint !== afterMutationFingerprint) {
-    await writeQueue(seed.queueFile, context);
-    throw new Error("Startup refresh may only update the Roadrunner queue file.");
-  }
-
   if (result.code !== 0) throw new Error(`Startup refresh failed (exit ${String(result.code)}).`);
 
-  try {
-    return { logDir, queueFile: await readValidatedQueue(context) };
-  } catch (error) {
-    await writeQueue(seed.queueFile, context);
-    throw error;
-  }
+  return { logDir, queueFile: queueProposalFromOutput(result.output, context) };
 }
 
 async function readRoadmapMarkdown(context: ProjectContext): Promise<string> {

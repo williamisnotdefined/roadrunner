@@ -2,7 +2,7 @@
 
 Refresh the Roadrunner queue at run start. Treat this as a hard operational reset.
 
-Only edit the configured queue JSON file at `{{QUEUE_PATH}}`. Do not edit source code, docs, prompts, tests, configs, lockfiles, generated files, or runtime artifacts.
+Do not edit files. This is a read-only planning pass. Return the refreshed queue as a JSON proposal in your response.
 
 Use `GOALS.md`, the roadmap, and the current repository state to generate a fresh operational queue. Ignore any previous queue state except for the seed queue shown below, which was generated from the roadmap when possible.
 
@@ -18,13 +18,26 @@ The output queue must be valid Roadrunner queue JSON:
 
 Mark work as done only when the acceptance criteria are satisfied by concrete repository evidence. If uncertain, keep the work queued and tighten the prompt or acceptance criteria.
 
-In your response, include a short Markdown summary with these headings before or after editing the queue file:
+In your response, include a short Markdown summary with these headings:
 
 - `Inferred Done`
 - `Still Needed`
 - `Blocked`
 - `Removed As Obsolete`
 - `Next Task`
+
+Then include exactly one fenced JSON block tagged `roadrunner-queue` containing the full proposed queue:
+
+```json roadrunner-queue
+{
+  "version": 2,
+  "model": "...",
+  "variant": "...",
+  "queue": [],
+  "history": [],
+  "blocked": []
+}
+```
 
 ## Goals
 

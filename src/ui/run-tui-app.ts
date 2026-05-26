@@ -5,7 +5,6 @@ import type { Widgets } from "blessed";
 
 import type { ProjectContext } from "../infrastructure/config.js";
 import type { QueueFile } from "../domain/queue.js";
-import { readValidatedQueue } from "../application/queue-service.js";
 import { escapeBlessedMarkup } from "./blessed-markup.js";
 import { selectedTaskIndex, taskRowsFromQueue, taskStats, taskTableData, type TaskRow, type TaskStats } from "./run-dashboard-model.js";
 import { discoverTaskLogs, readLogTail, type TaskLogFile } from "./run-log-discovery.js";
@@ -74,7 +73,7 @@ export async function createTuiApp(context: ProjectContext, session: RunSessionL
     render();
   }, 1_000);
 
-  await refreshQueue();
+  await refreshLogs();
   render();
 
   return {
@@ -91,6 +90,7 @@ export async function createTuiApp(context: ProjectContext, session: RunSessionL
       progress = updateProgressForEvent(progress, event, options.now());
       if (event.type === "step") selectedTaskId = event.step.id;
       if (event.type === "provider-start") selectedLogPath = event.logPath;
+      if (event.type === "queue-updated") updateQueue(event.queueFile);
       if (event.type === "validate") baseDisplay = displayState("VALIDATING", "Checking project and provider configuration.");
       if (event.type === "startup-refresh") baseDisplay = displayState("REFRESHING QUEUE", "Refreshing queue from roadmap and repository state.");
       if (event.type === "run-stop-requested") {
@@ -100,7 +100,6 @@ export async function createTuiApp(context: ProjectContext, session: RunSessionL
       if (event.type === "task-restart-requested") status = `Restart requested for ${event.step.id}.`;
       if (event.type === "task-auto-restart-requested") status = `Auto restart ${event.restart}/${event.maxRestarts} for ${event.step.id}.`;
       if (event.type === "task-auto-restart-limit-exceeded") status = `Auto restart limit exceeded for ${event.step.id}.`;
-      void refreshQueue();
       void refreshLogs();
       render();
     },
@@ -115,18 +114,11 @@ export async function createTuiApp(context: ProjectContext, session: RunSessionL
     },
   };
 
-  async function refreshQueue(): Promise<void> {
-    try {
-      const queueFile: QueueFile = await readValidatedQueue(context);
-      rows = taskRowsFromQueue(queueFile);
-      stats = taskStats(queueFile);
-      const index = selectedTaskIndex(rows, selectedTaskId);
-      selectedTaskId = index >= 0 ? rows[index]!.id : null;
-      await refreshLogs();
-    } catch (error) {
-      status = `Queue error: ${(error as Error).message}`;
-      session.event("ui-error", status);
-    }
+  function updateQueue(queueFile: QueueFile): void {
+    rows = taskRowsFromQueue(queueFile);
+    stats = taskStats(queueFile);
+    const index = selectedTaskIndex(rows, selectedTaskId);
+    selectedTaskId = index >= 0 ? rows[index]!.id : null;
   }
 
   async function refreshLogs(): Promise<void> {

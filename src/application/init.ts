@@ -1,10 +1,8 @@
-import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { defaultModel, defaultVariant, packageRoot, pathExists, type ProjectContext, writeJson } from "../infrastructure/config.js";
 import { upsertRoadrunnerGitignore } from "../infrastructure/gitignore.js";
-import { writeQueue, type QueueFile } from "../domain/queue.js";
-import { queueFileFromRoadmapFile } from "../domain/roadmap.js";
 
 export async function initProject(context: ProjectContext): Promise<void> {
   const templateRoot = path.join(packageRoot, "templates");
@@ -13,13 +11,8 @@ export async function initProject(context: ProjectContext): Promise<void> {
   await mkdir(path.dirname(context.paths.goals), { recursive: true });
   await mkdir(context.paths.prompts, { recursive: true });
   await mkdir(context.paths.logs, { recursive: true });
-  await mkdir(path.dirname(context.paths.queue), { recursive: true });
 
   if (!(await pathExists(context.paths.goals))) await cp(path.join(templateRoot, "GOALS.md"), context.paths.goals);
-  if (!(await pathExists(context.paths.queue))) {
-    if (await pathExists(context.paths.roadmap)) await writeQueue(await queueFileFromRoadmapFile(context), context);
-    else await writeQueue(await defaultQueueFile(context, templateRoot), context);
-  }
   if (!(await pathExists(context.paths.config))) {
     await writeJson(context.paths.config, {
       allowNestedOpenCode: false,
@@ -35,7 +28,6 @@ export async function initProject(context: ProjectContext): Promise<void> {
         logs: relativeToRoot(context, context.paths.logs),
         processes: relativeToRoot(context, context.paths.processRegistry),
         prompts: relativeToRoot(context, context.paths.prompts),
-        queue: relativeToRoot(context, context.paths.queue),
         roadmap: relativeToRoot(context, context.paths.roadmap),
       },
     });
@@ -44,15 +36,6 @@ export async function initProject(context: ProjectContext): Promise<void> {
   await cp(path.join(templateRoot, "prompts"), context.paths.prompts, { force: false, recursive: true });
   await ensureRuntimeGitignore(context);
   await writeRuntimeReadme(context);
-}
-
-async function defaultQueueFile(context: ProjectContext, templateRoot: string): Promise<QueueFile> {
-  const queueFile = JSON.parse(await readFile(path.join(templateRoot, "queue.json"), "utf8")) as QueueFile;
-  return {
-    ...queueFile,
-    model: context.config.model,
-    variant: context.config.variant,
-  };
 }
 
 async function writeRuntimeReadme(context: ProjectContext): Promise<void> {
@@ -69,7 +52,6 @@ async function ensureRuntimeGitignore(context: ProjectContext): Promise<void> {
     { directory: true, path: context.paths.logs },
     { directory: false, path: context.paths.processRegistry },
     { directory: false, path: context.paths.lock },
-    queueRuntimePath(context),
   ];
   const configEntries = runtimePaths.flatMap((runtimePath) => gitignoreEntry(configDir, runtimePath.path, runtimePath.directory) ?? []);
   await upsertRoadrunnerGitignore(path.join(configDir, ".gitignore"), configEntries);
@@ -79,11 +61,6 @@ async function ensureRuntimeGitignore(context: ProjectContext): Promise<void> {
     const rootEntries = runtimePaths.flatMap((runtimePath) => gitignoreEntry(context.root, runtimePath.path, runtimePath.directory) ?? []);
     await upsertRoadrunnerGitignore(path.join(context.root, ".gitignore"), rootEntries);
   }
-}
-
-function queueRuntimePath(context: ProjectContext): { directory: boolean; path: string } {
-  const defaultStateQueue = path.join(context.root, ".roadrunner/state/queue.json");
-  return path.resolve(context.paths.queue) === path.resolve(defaultStateQueue) ? { directory: true, path: path.dirname(context.paths.queue) } : { directory: false, path: context.paths.queue };
 }
 
 function gitignoreEntry(baseDir: string, filePath: string, directory: boolean): string | null {

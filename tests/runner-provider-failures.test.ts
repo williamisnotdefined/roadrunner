@@ -2,12 +2,10 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
-import { readJson } from "../src/infrastructure/config.js";
-import type { QueueFile } from "../src/domain/queue.js";
 import { providerFor } from "../src/infrastructure/providers/index.js";
-import { plan, run as runRoadrunner } from "../src/application/runner.js";
+import { plan, run as runRoadrunner, type RoadrunnerRunEvent } from "../src/application/runner.js";
 import { removeDir, run, sampleRoadmap } from "./helpers.js";
-import { setupRunnerProject } from "./runner-helpers.js";
+import { latestQueueSnapshot, setupRunnerProject } from "./runner-helpers.js";
 
 const originalEnv = { ...process.env };
 
@@ -36,35 +34,35 @@ describe("runner provider failures", () => {
     }
   });
 
-  test("blocks implementation agents that mutate queue state", async () => {
+  test("ignores stale queue files written by implementation agents", async () => {
     const project = await setupRunnerProject("queue-dirty");
+    const events: RoadrunnerRunEvent[] = [];
     try {
-      await expect(runRoadrunner(project.context)).rejects.toThrow(/Implementation may not update/);
-      const queue = await readJson<QueueFile>(project.context.paths.queue);
-      expect(queue.blocked[0]).toMatchObject({ blockedReason: "Implementation may not update the Roadrunner queue file.", id: "first-step", title: "Build first step" });
+      expect(await runRoadrunner(project.context, { onEvent: (event) => events.push(event) })).toBe(1);
+      expect(latestQueueSnapshot(events).history.map((step) => step.id)).toEqual(["first-step"]);
     } finally {
       await removeDir(project.directory);
     }
   });
 
-  test("blocks verification commands that mutate queue state", async () => {
-    const verification = `node -e "const fs = require('node:fs'); const queuePath = '.roadrunner/state/queue.json'; const q = JSON.parse(fs.readFileSync(queuePath, 'utf8')); q.queue[0].title = 'Verification touched queue'; fs.writeFileSync(queuePath, JSON.stringify(q, null, 2) + '\\n');"`;
+  test("ignores stale queue files written by verification commands", async () => {
+    const verification = `node -e "const fs = require('node:fs'); fs.mkdirSync('.roadrunner/state', { recursive: true }); fs.writeFileSync('.roadrunner/state/queue.json', JSON.stringify({ stale: true }, null, 2) + '\\n');"`;
     const project = await setupRunnerProject("success", sampleRoadmap({ verification }));
+    const events: RoadrunnerRunEvent[] = [];
     try {
-      await expect(runRoadrunner(project.context)).rejects.toThrow(/Verification may not update/);
-      const queue = await readJson<QueueFile>(project.context.paths.queue);
-      expect(queue.blocked[0]).toMatchObject({ blockedReason: "Verification may not update the Roadrunner queue file.", id: "first-step", title: "Build first step" });
+      expect(await runRoadrunner(project.context, { onEvent: (event) => events.push(event) })).toBe(1);
+      expect(latestQueueSnapshot(events).history.map((step) => step.id)).toEqual(["first-step"]);
     } finally {
       await removeDir(project.directory);
     }
   });
 
-  test("blocks fix agents that mutate queue state", async () => {
+  test("ignores stale queue files written by fix agents", async () => {
     const project = await setupRunnerProject("fix-queue-dirty");
+    const events: RoadrunnerRunEvent[] = [];
     try {
-      await expect(runRoadrunner(project.context)).rejects.toThrow(/Fix attempts may not update/);
-      const queue = await readJson<QueueFile>(project.context.paths.queue);
-      expect(queue.blocked[0]).toMatchObject({ blockedReason: "Fix attempts may not update the Roadrunner queue file.", id: "first-step", title: "Build first step" });
+      expect(await runRoadrunner(project.context, { onEvent: (event) => events.push(event) })).toBe(1);
+      expect(latestQueueSnapshot(events).history.map((step) => step.id)).toEqual(["first-step"]);
     } finally {
       await removeDir(project.directory);
     }
@@ -72,10 +70,11 @@ describe("runner provider failures", () => {
 
   test("marks provider failures as blocked", async () => {
     const project = await setupRunnerProject("provider-fail");
+    const events: RoadrunnerRunEvent[] = [];
     try {
-      await expect(runRoadrunner(project.context)).rejects.toThrow(/Implementation failed/);
+      await expect(runRoadrunner(project.context, { onEvent: (event) => events.push(event) })).rejects.toThrow(/Implementation failed/);
 
-      const queue = await readJson<QueueFile>(project.context.paths.queue);
+      const queue = latestQueueSnapshot(events);
       expect(queue.queue).toEqual([]);
       expect(queue.blocked[0]).toMatchObject({ blockedReason: "Provider exited 7", id: "first-step" });
     } finally {
@@ -83,39 +82,41 @@ describe("runner provider failures", () => {
     }
   });
 
-  test("blocks failures using the original queue when provider mutates queue state", async () => {
+  test("provider failures ignore stale runtime queue files", async () => {
     const project = await setupRunnerProject("provider-fail-queue-dirty");
+    const events: RoadrunnerRunEvent[] = [];
     try {
-      await expect(runRoadrunner(project.context)).rejects.toThrow(/Implementation may not update/);
+      await expect(runRoadrunner(project.context, { onEvent: (event) => events.push(event) })).rejects.toThrow(/Implementation failed/);
 
-      const queue = await readJson<QueueFile>(project.context.paths.queue);
-      expect(queue.blocked[0]).toMatchObject({ blockedReason: "Implementation may not update the Roadrunner queue file.", id: "first-step", title: "Build first step" });
+      expect(latestQueueSnapshot(events).blocked[0]).toMatchObject({ blockedReason: "Provider exited 7", id: "first-step", title: "Build first step" });
     } finally {
       await removeDir(project.directory);
     }
   });
 
-  test("blocks failures using the original queue when the latest queue is invalid", async () => {
+  test("provider failures ignore invalid stale runtime queue files", async () => {
     const project = await setupRunnerProject("provider-fail-invalid-queue");
+    const events: RoadrunnerRunEvent[] = [];
     try {
-      await expect(runRoadrunner(project.context)).rejects.toThrow(/Implementation may not update/);
+      await expect(runRoadrunner(project.context, { onEvent: (event) => events.push(event) })).rejects.toThrow(/Implementation failed/);
 
-      const queue = await readJson<QueueFile>(project.context.paths.queue);
+      const queue = latestQueueSnapshot(events);
       expect(queue.version).toBe(2);
       expect(queue.blocked[0]).toMatchObject({ id: "first-step", title: "Build first step" });
-      expect(queue.blocked[0]?.blockedReason).toMatch(/Implementation may not update/);
+      expect(queue.blocked[0]?.blockedReason).toBe("Provider exited 7");
     } finally {
       await removeDir(project.directory);
     }
   });
 
-  test("blocks failures using the original queue when the current step changed", async () => {
+  test("provider failures ignore stale current-step files", async () => {
     const project = await setupRunnerProject("provider-fail-other-current");
+    const events: RoadrunnerRunEvent[] = [];
     try {
-      await expect(runRoadrunner(project.context)).rejects.toThrow(/Implementation may not update/);
+      await expect(runRoadrunner(project.context, { onEvent: (event) => events.push(event) })).rejects.toThrow(/Implementation failed/);
 
-      const queue = await readJson<QueueFile>(project.context.paths.queue);
-      expect(queue.blocked[0]).toMatchObject({ blockedReason: "Implementation may not update the Roadrunner queue file.", id: "first-step" });
+      const queue = latestQueueSnapshot(events);
+      expect(queue.blocked[0]).toMatchObject({ blockedReason: "Provider exited 7", id: "first-step" });
       expect(queue.queue).toEqual([]);
     } finally {
       await removeDir(project.directory);
@@ -124,9 +125,10 @@ describe("runner provider failures", () => {
 
   test("returns planning failures as blocked", async () => {
     const project = await setupRunnerProject("plan-fail");
+    const events: RoadrunnerRunEvent[] = [];
     try {
-      await expect(runRoadrunner(project.context)).rejects.toThrow(/Planning failed/);
-      const queue = await readJson<QueueFile>(project.context.paths.queue);
+      await expect(runRoadrunner(project.context, { onEvent: (event) => events.push(event) })).rejects.toThrow(/Planning failed/);
+      const queue = latestQueueSnapshot(events);
       expect(queue.blocked[0]).toMatchObject({ blockedReason: "Planning exited 6", id: "first-step" });
     } finally {
       await removeDir(project.directory);
@@ -145,10 +147,11 @@ describe("runner provider failures", () => {
 
   test("marks verification failures as blocked when fix fails", async () => {
     const project = await setupRunnerProject("fix-fail");
+    const events: RoadrunnerRunEvent[] = [];
     try {
-      await expect(runRoadrunner(project.context)).rejects.toThrow(/Verification failed/);
+      await expect(runRoadrunner(project.context, { onEvent: (event) => events.push(event) })).rejects.toThrow(/Verification failed/);
 
-      const queue = await readJson<QueueFile>(project.context.paths.queue);
+      const queue = latestQueueSnapshot(events);
       expect(queue.blocked[0]).toMatchObject({ blockedReason: "Verification failed after fix attempt.", id: "first-step" });
     } finally {
       await removeDir(project.directory);

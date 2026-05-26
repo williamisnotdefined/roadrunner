@@ -1,12 +1,12 @@
 # Roadrunner Reconcile And Optimize Queue
 
-Review project state after a verified step and update the configured Roadrunner queue file as a queue strategist.
+Review project state after a verified step and propose an updated Roadrunner queue as a queue strategist.
 
 The completed step has already been moved to `history`. Use this pass to optimize the remaining queue so future Roadrunner cycles work on meaningful deliverable capabilities instead of tiny mechanical edits.
 
 Preserve `version`, `model`, `variant`, `history`, and `blocked` exactly.
 
-Only edit open items in `queue` and only edit the configured queue JSON file. Do not edit source code, docs, prompts, tests, configs, lockfiles, generated files, or runtime artifacts.
+Do not edit files. This is a read-only planning pass. Only change open items in `queue` in the JSON proposal.
 
 When useful, optimize `queue` by:
 
@@ -19,7 +19,7 @@ When useful, optimize `queue` by:
 
 Prefer steps that are large enough to justify a full `Plan -> Execute -> Verify -> Reconcile/Optimize` cycle and small enough to verify safely.
 
-In your response, include a short Markdown summary with these headings before or after editing the queue file:
+In your response, include a short Markdown summary with these headings:
 
 - `Grouped`
 - `Split`
@@ -27,6 +27,19 @@ In your response, include a short Markdown summary with these headings before or
 - `Added`
 - `Reordered`
 - `Unchanged`
+
+Then include exactly one fenced JSON block tagged `roadrunner-queue` containing the full proposed queue:
+
+```json roadrunner-queue
+{
+  "version": 2,
+  "model": "...",
+  "variant": "...",
+  "queue": [],
+  "history": [],
+  "blocked": []
+}
+```
 
 ## Goals
 

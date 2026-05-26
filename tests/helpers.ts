@@ -105,56 +105,58 @@ function runChecked(command, args) {
   }
 }
 
-if (prompt.includes("Roadrunner Startup Queue Refresh")) {
+function queueFromPrompt(heading) {
+  const fence = String.fromCharCode(96, 96, 96);
+  const pattern = new RegExp("## " + heading + "\\n[\\\\s\\\\S]*?" + fence + "json\\n([\\\\s\\\\S]*?)\\n" + fence, "m");
+  const match = pattern.exec(prompt);
+  if (!match) throw new Error("Missing queue JSON in prompt section " + heading);
+  return JSON.parse(match[1]);
+}
+
+function outputQueue(queue, summary = "Queue proposed") {
+  const fence = String.fromCharCode(96, 96, 96);
+  console.log(summary + "\\n\\n" + fence + "json roadrunner-queue\\n" + JSON.stringify(queue, null, 2) + "\\n" + fence);
+}
+
+function writeRogueQueueFile(value) {
   const queuePath = path.join(".roadrunner", "state", "queue.json");
+  fs.mkdirSync(path.dirname(queuePath), { recursive: true });
+  fs.writeFileSync(queuePath, JSON.stringify(value, null, 2) + "\\n");
+}
+
+if (prompt.includes("Roadrunner Startup Queue Refresh")) {
   if (mode === "startup-refresh-extra") fs.writeFileSync("unexpected-startup.txt", "nope\\n");
-  if (mode === "startup-refresh-invalid") {
-    const queue = JSON.parse(fs.readFileSync(queuePath, "utf8"));
-    queue.version = 99;
-    fs.writeFileSync(queuePath, JSON.stringify(queue, null, 2) + "\\n");
-  }
+  const queue = queueFromPrompt("Seed Queue");
+  if (mode === "startup-refresh-invalid") queue.version = 99;
   if (mode === "startup-refresh-fail") {
     console.error("startup refresh failed");
     process.exit(9);
   }
   if (mode === "startup-refresh-inferred-done") {
-    const queue = JSON.parse(fs.readFileSync(queuePath, "utf8"));
     const completed = queue.queue.shift();
     if (completed) queue.history.push({ ...completed, completedAt: "2026-01-01T00:00:00.000Z" });
-    fs.writeFileSync(queuePath, JSON.stringify(queue, null, 2) + "\\n");
   }
   if (mode === "startup-refresh-from-strategic") {
-    const queue = JSON.parse(fs.readFileSync(queuePath, "utf8"));
     queue.queue = [{ id: "strategic-step", phase: "Strategy", title: "Build strategic step", scope: ["marker.txt"], prompt: "Create marker.txt with ok content.", acceptance: ["marker exists"], verification: ["node -e \\"require('node:fs').readFileSync('marker.txt', 'utf8').includes('ok') || process.exit(1)\\""] }];
-    fs.writeFileSync(queuePath, JSON.stringify(queue, null, 2) + "\\n");
   }
-  console.log("startup refreshed");
+  outputQueue(queue, "startup refreshed");
   process.exit(0);
 }
 
 if (mode === "provider-fail-queue-dirty" && prompt.includes("Roadrunner Implement Step")) {
-  const queuePath = path.join(".roadrunner", "state", "queue.json");
-  const queue = JSON.parse(fs.readFileSync(queuePath, "utf8"));
-  queue.queue[0].title = "Provider changed title before failing";
-  fs.writeFileSync(queuePath, JSON.stringify(queue, null, 2) + "\\n");
+  writeRogueQueueFile({ changed: true });
   console.error("implementation failed");
   process.exit(7);
 }
 
 if (mode === "provider-fail-invalid-queue" && prompt.includes("Roadrunner Implement Step")) {
-  const queuePath = path.join(".roadrunner", "state", "queue.json");
-  const queue = JSON.parse(fs.readFileSync(queuePath, "utf8"));
-  queue.version = 99;
-  fs.writeFileSync(queuePath, JSON.stringify(queue, null, 2) + "\\n");
+  writeRogueQueueFile({ version: 99 });
   console.error("implementation failed");
   process.exit(7);
 }
 
 if (mode === "provider-fail-other-current" && prompt.includes("Roadrunner Implement Step")) {
-  const queuePath = path.join(".roadrunner", "state", "queue.json");
-  const queue = JSON.parse(fs.readFileSync(queuePath, "utf8"));
-  queue.queue.unshift({ ...queue.queue[0], id: "other-step", title: "Other current step" });
-  fs.writeFileSync(queuePath, JSON.stringify(queue, null, 2) + "\\n");
+  writeRogueQueueFile({ queue: [{ id: "other-step" }] });
   console.error("implementation failed");
   process.exit(7);
 }
@@ -276,16 +278,10 @@ test("supports todo CRUD", () => {
     // no changes
   } else if (mode === "queue-dirty") {
     fs.writeFileSync("marker.txt", "ok\\n");
-    const queuePath = path.join(".roadrunner", "state", "queue.json");
-    const queue = JSON.parse(fs.readFileSync(queuePath, "utf8"));
-    queue.queue[0].title = "Implementation touched queue";
-    fs.writeFileSync(queuePath, JSON.stringify(queue, null, 2) + "\\n");
+    writeRogueQueueFile({ changed: "implementation" });
   } else if (mode === "queue-dirty-hang") {
     fs.writeFileSync("marker.txt", "ok\\n");
-    const queuePath = path.join(".roadrunner", "state", "queue.json");
-    const queue = JSON.parse(fs.readFileSync(queuePath, "utf8"));
-    queue.queue[0].title = "Implementation touched queue before restart";
-    fs.writeFileSync(queuePath, JSON.stringify(queue, null, 2) + "\\n");
+    writeRogueQueueFile({ changed: "implementation before restart" });
     console.log("queue dirty before hang");
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0);
   } else if (mode === "git-commit") {
@@ -316,10 +312,7 @@ test("supports todo CRUD", () => {
 if (prompt.includes("Roadrunner Fix Failure")) {
   fs.writeFileSync("marker.txt", "ok\\n");
   if (mode === "fix-queue-dirty") {
-    const queuePath = path.join(".roadrunner", "state", "queue.json");
-    const queue = JSON.parse(fs.readFileSync(queuePath, "utf8"));
-    queue.queue[0].title = "Fix touched queue";
-    fs.writeFileSync(queuePath, JSON.stringify(queue, null, 2) + "\\n");
+    writeRogueQueueFile({ changed: "fix" });
   }
   if (mode === "fix-commit-bypass") {
     runChecked(realGit, ["add", "marker.txt"]);
@@ -346,38 +339,24 @@ if (prompt.includes("Roadrunner Reconcile Queue") || prompt.includes("Roadrunner
     runChecked(realGit, ["add", "unexpected.txt"]);
     runChecked(realGit, ["commit", "-m", "Agent reconcile commit"]);
   }
+  const queue = queueFromPrompt("Queue");
   if (mode === "reconcile-invalid") {
-    const queuePath = path.join(".roadrunner", "state", "queue.json");
-    const queue = JSON.parse(fs.readFileSync(queuePath, "utf8"));
     queue.version = 99;
-    fs.writeFileSync(queuePath, JSON.stringify(queue, null, 2) + "\\n");
   }
   if (mode === "reconcile-closed") {
-    const queuePath = path.join(".roadrunner", "state", "queue.json");
-    const queue = JSON.parse(fs.readFileSync(queuePath, "utf8"));
     queue.history = [];
     queue.blocked = [];
-    fs.writeFileSync(queuePath, JSON.stringify(queue, null, 2) + "\\n");
   }
   if (mode === "reconcile-queue") {
-    const queuePath = path.join(".roadrunner", "state", "queue.json");
-    const queue = JSON.parse(fs.readFileSync(queuePath, "utf8"));
     queue.queue[0].title = "Reconciled first step";
-    fs.writeFileSync(queuePath, JSON.stringify(queue, null, 2) + "\\n");
   }
   if (mode === "reconcile-removes-current") {
-    const queuePath = path.join(".roadrunner", "state", "queue.json");
-    const queue = JSON.parse(fs.readFileSync(queuePath, "utf8"));
     queue.queue.shift();
-    fs.writeFileSync(queuePath, JSON.stringify(queue, null, 2) + "\\n");
   }
   if (mode === "reconcile-future-queue") {
-    const queuePath = path.join(".roadrunner", "state", "queue.json");
-    const queue = JSON.parse(fs.readFileSync(queuePath, "utf8"));
     if (queue.queue[0]) queue.queue[0].title = "Reconciled future step";
-    fs.writeFileSync(queuePath, JSON.stringify(queue, null, 2) + "\\n");
   }
-  console.log("reconciled");
+  outputQueue(queue, "reconciled");
   process.exit(0);
 }
 

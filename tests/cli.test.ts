@@ -1,12 +1,12 @@
-import { readFile, symlink, writeFile } from "node:fs/promises";
+import { symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect, test } from "vitest";
 
 import { formatRunEvent, helpText, isCliEntrypoint, main } from "../src/cli/index.js";
-import { readJson, writeJson } from "../src/infrastructure/config.js";
+import { pathExists, writeJson } from "../src/infrastructure/config.js";
 import { formatDuration } from "../src/domain/duration.js";
-import type { QueueFile, QueueStep } from "../src/domain/queue.js";
+import type { QueueStep } from "../src/domain/queue.js";
 import { formatRunProgress } from "../src/ui/run-progress.js";
 import { createInitializedProject, removeDir, sampleRoadmap, tempDir } from "./helpers.js";
 import { createFakeOpenCodeBin, withPath } from "./helpers.js";
@@ -54,6 +54,7 @@ describe("cli", () => {
       formatRunEvent({ step, type: "fix" }),
       formatRunEvent({ attempt: "fixed", step, type: "verify" }),
       formatRunEvent({ step, type: "reconcile" }),
+      formatRunEvent({ queueFile: { version: 2, model: "m", variant: "v", queue: [step], history: [], blocked: [] }, type: "queue-updated" }),
       formatRunEvent({ step, type: "step-complete" }),
       formatRunEvent({ type: "run-stop-requested" }),
       formatRunEvent({ type: "cleanup" }),
@@ -69,6 +70,7 @@ describe("cli", () => {
     expect(output).toMatch(/Auto-restart limit exceeded for sample-step during plan after idle=10m00s max=3/);
     expect(output).toMatch(/Restarting sample-step attempt=2/);
     expect(output).toMatch(/Reconciling and optimizing queue after sample-step/);
+    expect(output).toMatch(/Queue updated: queued=1 done=0 blocked=0/);
     expect(output).toMatch(/Re-running verification for sample-step/);
     expect(output).toMatch(/Completed sample-step/);
     expect(output).toMatch(/Stop requested; cleaning Roadrunner-owned processes/);
@@ -166,30 +168,21 @@ describe("cli", () => {
     }
   });
 
-  test("reports queue validation errors in check", async () => {
-    const directory = await tempDir("roadrunner-cli-check-error-");
-    const errors: string[] = [];
+  test("check and next ignore stale runtime queue files", async () => {
+    const directory = await tempDir("roadrunner-cli-stale-queue-");
+    const output: string[] = [];
+    const originalPath = process.env.PATH;
     try {
+      const binDir = await createFakeOpenCodeBin(directory);
+      process.env.PATH = withPath(binDir);
       const context = await createInitializedProject(directory);
-      await writeFile(context.paths.queue, `${JSON.stringify({ version: 1 }, null, 2)}\n`);
+      await writeJson(context.paths.queue, { version: 1 });
 
-      expect(await main(["check"], { cwd: directory, io: { stderr: (message) => errors.push(message) } })).toBe(1);
-      expect(errors.join("\n")).toMatch(/queue.version must be 2/);
+      expect(await main(["check"], { cwd: directory, io: { stdout: (message) => output.push(message) } })).toBe(0);
+      expect(await main(["next"], { cwd: directory, io: { stdout: (message) => output.push(message) } })).toBe(0);
+      expect(output.join("\n")).toMatch(/first-step - Build first step/);
     } finally {
-      await removeDir(directory);
-    }
-  });
-
-  test("reports queue validation errors in next", async () => {
-    const directory = await tempDir("roadrunner-cli-next-error-");
-    const errors: string[] = [];
-    try {
-      const context = await createInitializedProject(directory);
-      await writeFile(context.paths.queue, `${JSON.stringify({ version: 1 }, null, 2)}\n`);
-
-      expect(await main(["next"], { cwd: directory, io: { stderr: (message) => errors.push(message) } })).toBe(1);
-      expect(errors.join("\n")).toMatch(/queue.version must be 2/);
-    } finally {
+      process.env.PATH = originalPath;
       await removeDir(directory);
     }
   });
@@ -212,15 +205,17 @@ describe("cli", () => {
   test("prints no queued step for plan when queue is empty", async () => {
     const directory = await tempDir("roadrunner-cli-plan-");
     const output: string[] = [];
+    const originalPath = process.env.PATH;
     try {
+      const binDir = await createFakeOpenCodeBin(directory);
+      process.env.PATH = withPath(binDir);
       const context = await createInitializedProject(directory);
-      const queue = await readJson<QueueFile>(context.paths.queue);
-      queue.queue = [];
-      await writeJson(context.paths.queue, queue);
+      await writeFile(context.paths.roadmap, "# Roadmap\n\nNo operational steps.\n");
 
       expect(await main(["plan"], { cwd: directory, io: { stdout: (message) => output.push(message) } })).toBe(0);
       expect(output.join("\n")).toMatch(/No queued step/);
     } finally {
+      process.env.PATH = originalPath;
       await removeDir(directory);
     }
   });
@@ -291,7 +286,7 @@ describe("cli", () => {
       expect(errors.join("\n")).toMatch(/Expected a value for --max-hours/);
 
       expect(await main(["check"], { cwd: directory, io: { stderr: (message) => errors.push(message) } })).toBe(1);
-      expect(errors.join("\n")).toMatch(/ENOENT|no such file/i);
+      expect(errors.join("\n")).toMatch(/GOALS\.md must exist/);
     } finally {
       await removeDir(directory);
     }
@@ -307,7 +302,7 @@ describe("cli", () => {
       };
 
       expect(await main(["check"], { cwd: directory })).toBe(1);
-      expect(errors.join("\n")).toMatch(/ENOENT|no such file/i);
+      expect(errors.join("\n")).toMatch(/GOALS\.md must exist/);
     } finally {
       console.error = originalError;
       await removeDir(directory);
@@ -332,7 +327,7 @@ describe("cli", () => {
     try {
       await writeFile(path.join(directory, "CUSTOM.md"), sampleRoadmap());
       expect(await main(["init", "--roadmap", "CUSTOM.md"], { cwd: directory })).toBe(0);
-      expect(await readFile(path.join(directory, ".roadrunner/state/queue.json"), "utf8")).toMatch(/first-step/);
+      expect(await pathExists(path.join(directory, ".roadrunner/state/queue.json"))).toBe(false);
     } finally {
       await removeDir(directory);
     }

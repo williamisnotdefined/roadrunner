@@ -1,7 +1,6 @@
 import type { ProjectContext } from "../infrastructure/config.js";
 import { acquireProjectLock } from "../infrastructure/lock.js";
-import { nextStep, type QueueStep } from "../domain/queue.js";
-import { readValidatedQueue } from "./queue-service.js";
+import { nextStep, type QueueFile, type QueueStep } from "../domain/queue.js";
 import { cleanupProcesses } from "../infrastructure/process-registry.js";
 import { validateConfiguredProvider, type ProviderStartEvent } from "../infrastructure/providers/index.js";
 import { readRunSnapshot } from "./run-snapshot.js";
@@ -9,7 +8,7 @@ import { planStep, type PlanOptions } from "./runner-planning.js";
 import { createRunControl, type RunControlState } from "./runner-control.js";
 import { isRunStopRequested, RunStopRequested, runStepWithRestarts } from "./runner-execution.js";
 import { reconcileQueue } from "./runner-reconciliation.js";
-import { refreshQueueAtRunStart } from "./runner-startup.js";
+import { refreshQueueAtRunStart, seedQueueAtRunStart } from "./runner-startup.js";
 
 export type { PlanOptions } from "./runner-planning.js";
 export { verify } from "./runner-verification.js";
@@ -48,6 +47,7 @@ export type RoadrunnerRunEvent =
   | { step: QueueStep; type: "implement" }
   | { step: QueueStep; type: "plan" }
   | ({ step?: QueueStep; type: "provider-start" } & ProviderStartEvent)
+  | { queueFile: QueueFile; type: "queue-updated" }
   | { step: QueueStep; type: "reconcile" }
   | { step: QueueStep; type: "step" }
   | { step: QueueStep; type: "step-complete" }
@@ -61,7 +61,7 @@ export type RoadrunnerRunEvent =
   | { type: "validate" };
 
 export async function status(context: ProjectContext): Promise<RoadrunnerStatus> {
-  const queueFile = await readValidatedQueue(context);
+  const queueFile = await seedQueueAtRunStart(context);
 
   return {
     blocked: queueFile.blocked.length,
@@ -78,10 +78,17 @@ export async function plan(
   const releaseLock = await acquireProjectLock(context, "Roadrunner plan");
   try {
     const snapshot = await readRunSnapshot(context);
-    const queueFile = await readValidatedQueue(context);
+    await ensureProviderAvailable(context);
+    const startup = await refreshQueueAtRunStart(context, snapshot, {
+      deadline: options.deadline ?? null,
+      onOutput: options.onOutput,
+      onProviderStart: options.onProviderStart,
+      signal: options.signal,
+      streamProviderOutput: options.streamProviderOutput,
+    });
+    const queueFile = startup.queueFile;
     const step = nextStep(queueFile);
     if (!step) return null;
-    await ensureProviderAvailable(context);
 
     return planStep(context, step, snapshot, options);
   } finally {
@@ -101,6 +108,7 @@ export async function run(context: ProjectContext, options: RunOptions = {}): Pr
     const deadline = maxHours === undefined ? null : Date.now() + maxHours * 60 * 60 * 1000;
     let completed = 0;
     let completedResult: number | undefined;
+    let queueFile: QueueFile | null = null;
 
     let primaryError: unknown;
     let cleanupError: unknown;
@@ -111,7 +119,7 @@ export async function run(context: ProjectContext, options: RunOptions = {}): Pr
         await cleanupProcesses(context, { force: true });
         emitRunEvent(options, { type: "startup-refresh" });
         await ensureProviderAvailable(context);
-        await runAbortableOperation(controlState, (signal) =>
+        const startup = await runAbortableOperation(controlState, (signal) =>
           refreshQueueAtRunStart(context, snapshot, {
             deadline,
             onOutput: () => emitRunActivity(options, { phase: "startup-refresh" }),
@@ -120,6 +128,8 @@ export async function run(context: ProjectContext, options: RunOptions = {}): Pr
             streamProviderOutput,
           }),
         );
+        queueFile = startup.queueFile;
+        emitRunEvent(options, { queueFile, type: "queue-updated" });
       }
 
       while (completed < maxSteps && !controlState.stopRequested) {
@@ -128,7 +138,10 @@ export async function run(context: ProjectContext, options: RunOptions = {}): Pr
           break;
         }
 
-        const queueFile = await readValidatedQueue(context);
+        if (!queueFile) {
+          completedResult = completed;
+          break;
+        }
         const step = nextStep(queueFile);
         if (!step) {
           completedResult = completed;
@@ -158,11 +171,12 @@ export async function run(context: ProjectContext, options: RunOptions = {}): Pr
           throw error;
         }
         completed += 1;
+        queueFile = stepResult.queueFile;
         if (controlState.stopRequested) break;
         emitRunEvent(options, { step: stepResult.step, type: "reconcile" });
         try {
-          await runAbortableOperation(controlState, (signal) =>
-            reconcileQueue(context, stepResult.step, snapshot, stepResult.logDir, {
+          queueFile = await runAbortableOperation(controlState, (signal) =>
+            reconcileQueue(context, queueFile!, stepResult.step, snapshot, stepResult.logDir, {
               deadline,
               onOutput: () => emitRunActivity(options, { phase: "reconcile", step: stepResult.step }),
               onProviderStart: (event) => emitRunEvent(options, { ...event, step: stepResult.step, type: "provider-start" }),
@@ -170,6 +184,7 @@ export async function run(context: ProjectContext, options: RunOptions = {}): Pr
               streamProviderOutput,
             }),
           );
+          emitRunEvent(options, { queueFile, type: "queue-updated" });
         } catch (error) {
           if (isRunStopRequested(error) || controlState.stopRequested) {
             completedResult = completed;

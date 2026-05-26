@@ -2,8 +2,7 @@ import { rmSync, writeFileSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { afterEach, describe, expect, test } from "vitest";
 
-import { pathExists, readJson, writeJson } from "../src/infrastructure/config.js";
-import type { QueueFile } from "../src/domain/queue.js";
+import { pathExists, readJson } from "../src/infrastructure/config.js";
 import { plan, run as runRoadrunner } from "../src/application/runner.js";
 import { removeDir } from "./helpers.js";
 import { setupRunnerProject } from "./runner-helpers.js";
@@ -51,9 +50,6 @@ describe("runner locks", () => {
   test("removes stale run locks", async () => {
     const project = await setupRunnerProject("startup-refresh-inferred-done");
     try {
-      const queue = await readJson<QueueFile>(project.context.paths.queue);
-      queue.queue = [];
-      await writeJson(project.context.paths.queue, queue);
       await writeFile(project.context.paths.lock, `${JSON.stringify({ pid: 99999999, startedAt: new Date().toISOString() }, null, 2)}\n`);
 
       expect(await runRoadrunner(project.context)).toBe(0);
@@ -66,9 +62,6 @@ describe("runner locks", () => {
   test("removes run locks whose pid has been reused", async () => {
     const project = await setupRunnerProject("startup-refresh-inferred-done");
     try {
-      const queue = await readJson<QueueFile>(project.context.paths.queue);
-      queue.queue = [];
-      await writeJson(project.context.paths.queue, queue);
       await writeFile(project.context.paths.lock, `${JSON.stringify({ pid: process.pid, startedAt: "old-lock", startTimeTicks: "definitely-not-current" }, null, 2)}\n`);
 
       expect(await runRoadrunner(project.context)).toBe(0);
@@ -81,9 +74,6 @@ describe("runner locks", () => {
   test("does not remove a replacement run lock on release", async () => {
     const project = await setupRunnerProject("startup-refresh-inferred-done");
     try {
-      const queue = await readJson<QueueFile>(project.context.paths.queue);
-      queue.queue = [];
-      await writeJson(project.context.paths.queue, queue);
       const replacementLock = { pid: process.pid, startedAt: "replacement-lock" };
 
       expect(
@@ -102,10 +92,6 @@ describe("runner locks", () => {
   test("does not remove a corrupt replacement run lock on release", async () => {
     const project = await setupRunnerProject("startup-refresh-inferred-done");
     try {
-      const queue = await readJson<QueueFile>(project.context.paths.queue);
-      queue.queue = [];
-      await writeJson(project.context.paths.queue, queue);
-
       expect(
         await runRoadrunner(project.context, {
           onEvent: (event) => {
@@ -122,10 +108,6 @@ describe("runner locks", () => {
   test("handles a missing run lock on release", async () => {
     const project = await setupRunnerProject("startup-refresh-inferred-done");
     try {
-      const queue = await readJson<QueueFile>(project.context.paths.queue);
-      queue.queue = [];
-      await writeJson(project.context.paths.queue, queue);
-
       expect(
         await runRoadrunner(project.context, {
           onEvent: (event) => {

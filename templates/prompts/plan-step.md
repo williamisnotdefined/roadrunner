@@ -18,4 +18,4 @@ Plan the next implementation step. Do not edit files.
 
 {{ROADMAP_STATUS}}
 
-Return a Markdown plan with goal alignment, files, approach, tests, verification, risks, and out-of-scope work.
+Return a Markdown plan with goal alignment, files you expect to change, why each file is in scope, approach, tests, verification commands, risks, and out-of-scope work.

@@ -1,7 +1,6 @@
 import path from "node:path";
 
 import type { ProjectContext } from "../infrastructure/config.js";
-import { projectMutationFingerprint } from "../infrastructure/mutation-fingerprint.js";
 import { formatStep, type QueueStep } from "../domain/queue.js";
 import { providerFor, type ProviderStartEvent } from "../infrastructure/providers/index.js";
 import type { RunSnapshot } from "./run-snapshot.js";
@@ -31,8 +30,7 @@ export async function planStep(context: ProjectContext, step: QueueStep, snapsho
   });
 
   await writePrivateFile(path.join(logDir, "plan.prompt.md"), prompt);
-  const beforePlanFingerprint = await projectMutationFingerprint(context, { includeIgnoredFiles: true });
-  let result = await providerFor(context).run({
+  const result = await providerFor(context).run({
     agent: "plan",
     context,
     env: providerEnvForDeadline(options.deadline),
@@ -45,12 +43,6 @@ export async function planStep(context: ProjectContext, step: QueueStep, snapsho
     skipPermissions: false,
     streamOutput: options.streamProviderOutput,
   });
-
-  const afterPlanFingerprint = await projectMutationFingerprint(context, { includeIgnoredFiles: true });
-  if (beforePlanFingerprint !== null && afterPlanFingerprint !== null && beforePlanFingerprint !== afterPlanFingerprint) {
-    const message = "Planning modified project files. Planning agents must be read-only.";
-    result = { code: result.code === 0 ? 1 : result.code, output: `${result.output}${result.output.endsWith("\n") ? "" : "\n"}${message}\n` };
-  }
 
   await writePrivateFile(path.join(logDir, "plan.md"), result.output);
 

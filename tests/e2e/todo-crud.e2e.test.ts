@@ -4,9 +4,9 @@ import { afterEach, describe, expect, test } from "vitest";
 
 import { main } from "../../src/cli/index.js";
 import { readJson, writeJson } from "../../src/infrastructure/config.js";
-import type { QueueFile } from "../../src/domain/queue.js";
-import { run as runRoadrunner } from "../../src/application/runner.js";
+import { run as runRoadrunner, type RoadrunnerRunEvent } from "../../src/application/runner.js";
 import { commitAll, createFakeOpenCodeBin, initGit, run, withPath } from "../helpers.js";
+import { latestQueueSnapshot } from "../runner-helpers.js";
 
 const outputRoot = path.resolve("test-output/e2e/todo-crud");
 const originalEnv = { ...process.env };
@@ -61,15 +61,16 @@ Verification:
     await initGit(outputRoot);
     await commitAll(outputRoot, "Initial Todo CRUD target");
 
+    const events: RoadrunnerRunEvent[] = [];
     expect(
       await main(["run", "--max-steps", "1"], {
         cwd: outputRoot,
-        runTui: (context, options) => runRoadrunner(context, { maxHours: options.maxHours, maxSteps: options.maxSteps }),
+        runTui: (context, options) => runRoadrunner(context, { maxHours: options.maxHours, maxSteps: options.maxSteps, onEvent: (event) => events.push(event) }),
         terminal: { isInteractive: true },
       }),
     ).toBe(0);
 
-    const queue = await readJson<QueueFile>(path.join(outputRoot, ".roadrunner/state/queue.json"));
+    const queue = latestQueueSnapshot(events);
     const testResult = await run("npm", ["test"], outputRoot);
     const gitStatus = await run("git", ["status", "--short"], outputRoot);
 
