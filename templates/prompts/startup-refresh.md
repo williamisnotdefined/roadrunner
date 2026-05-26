@@ -9,6 +9,9 @@ Use `GOALS.md`, the roadmap, and the current repository state to generate a fres
 The output queue must be valid Roadrunner queue JSON:
 
 - preserve `version`, `model`, and `variant` from the seed queue;
+- every item in `queue`, `history`, and `blocked` must include `id`, `phase`, `title`, `scope`, `prompt`, `acceptance`, and `verification`;
+- use `phase`, not `roadmapPhase`, and use `acceptance`, not `acceptanceCriteria`;
+- `scope`, `acceptance`, and `verification` must be non-empty string arrays;
 - put already satisfied roadmap work in `history` with `completedAt` timestamps;
 - put only currently relevant future work in `queue`;
 - put still-relevant but blocked work in `blocked` with `blockedAt` and `blockedReason`;
@@ -33,7 +36,17 @@ Then include exactly one fenced JSON block tagged `roadrunner-queue` containing 
   "version": 2,
   "model": "...",
   "variant": "...",
-  "queue": [],
+  "queue": [
+    {
+      "id": "kebab-case-task-id",
+      "phase": "Roadmap phase name",
+      "title": "Task title",
+      "scope": ["path/or/component"],
+      "prompt": "Implementation prompt for this task.",
+      "acceptance": ["Observable acceptance criterion."],
+      "verification": ["command to verify"]
+    }
+  ],
   "history": [],
   "blocked": []
 }

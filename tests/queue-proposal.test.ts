@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { parseQueueProposalJson, queueProposalFromOutput } from "../src/application/queue-proposal.js";
+import { appendQueueProposalContract, parseQueueProposalJson, queueProposalFromOutput } from "../src/application/queue-proposal.js";
 import { defaultModel, defaultVariant, loadContext } from "../src/infrastructure/config.js";
 import type { QueueFile } from "../src/domain/queue.js";
 import { removeDir, tempDir } from "./helpers.js";
@@ -36,6 +36,17 @@ describe("queue proposals", () => {
     } finally {
       await removeDir(directory);
     }
+  });
+
+  test("appends concrete step schema requirements", () => {
+    const prompt = appendQueueProposalContract("# Queue prompt");
+
+    for (const field of ["`id`", "`phase`", "`title`", "`scope`", "`prompt`", "`acceptance`", "`verification`"]) {
+      expect(prompt).toContain(field);
+    }
+    expect(prompt).toContain("Do not substitute aliases");
+    expect(prompt).toContain("`roadmapPhase`");
+    expect(prompt).toContain("`acceptanceCriteria`");
   });
 });
 

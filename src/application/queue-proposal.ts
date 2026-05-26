@@ -11,6 +11,10 @@ const queueProposalContract = [
   "",
   "Your final response must include exactly one fenced JSON block whose info string includes both `json` and `roadrunner-queue`.",
   "The block content must be a complete valid Roadrunner queue JSON object with `version`, `model`, `variant`, `queue`, `history`, and `blocked`.",
+  "Every item in `queue`, `history`, and `blocked` must include these required step fields: `id`, `phase`, `title`, `scope`, `prompt`, `acceptance`, and `verification`.",
+  "Use `phase` for the roadmap or execution phase, and use `acceptance` for acceptance criteria. Do not substitute aliases such as `roadmapPhase` or `acceptanceCriteria`.",
+  "`scope`, `acceptance`, and `verification` must be non-empty string arrays. `id` must be kebab-case. `phase`, `title`, and `prompt` must be non-empty strings.",
+  "Closed records may also include `completedAt`, `blockedAt`, and `blockedReason`, but those optional fields do not replace the required step fields.",
   "If no queue changes are needed, return the current queue unchanged in that tagged block. Do not return only prose.",
 ].join("\n");
 

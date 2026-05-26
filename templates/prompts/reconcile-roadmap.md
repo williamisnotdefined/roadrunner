@@ -8,6 +8,8 @@ Preserve `version`, `model`, `variant`, `history`, and `blocked` exactly.
 
 Do not edit files. This is a read-only planning pass. Only change open items in `queue` in the JSON proposal.
 
+Every open item in `queue` must include `id`, `phase`, `title`, `scope`, `prompt`, `acceptance`, and `verification`. Use `phase`, not `roadmapPhase`, and use `acceptance`, not `acceptanceCriteria`. `scope`, `acceptance`, and `verification` must be non-empty string arrays.
+
 When useful, optimize `queue` by:
 
 - grouping related microtasks that belong to the same capability;
@@ -35,7 +37,17 @@ Then include exactly one fenced JSON block tagged `roadrunner-queue` containing 
   "version": 2,
   "model": "...",
   "variant": "...",
-  "queue": [],
+  "queue": [
+    {
+      "id": "kebab-case-task-id",
+      "phase": "Roadmap phase name",
+      "title": "Task title",
+      "scope": ["path/or/component"],
+      "prompt": "Implementation prompt for this task.",
+      "acceptance": ["Observable acceptance criterion."],
+      "verification": ["command to verify"]
+    }
+  ],
   "history": [],
   "blocked": []
 }

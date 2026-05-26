@@ -48,16 +48,28 @@ describe("run artifacts", () => {
     try {
       const context = await loadContext(directory, { _: [] });
 
-      const prompt = await renderPrompt(context, "startup-refresh.md", {
+      const startupPrompt = await renderPrompt(context, "startup-refresh.md", {
         GOALS_MD: "# Goals",
         QUEUE_JSON: "{}",
         QUEUE_PATH: ".roadrunner/state/queue.json",
         ROADMAP_MD: "# Roadmap",
         ROADMAP_PARSE_STATUS: "parsed",
       });
+      const reconcilePrompt = await renderPrompt(context, "reconcile-roadmap.md", {
+        GOALS_MD: "# Goals",
+        QUEUE_JSON: "{}",
+        STEP_JSON: "{}",
+      });
 
-      expect(prompt).toContain("Roadrunner Startup Queue Refresh");
-      expect(prompt).toContain("# Goals");
+      expect(startupPrompt).toContain("Roadrunner Startup Queue Refresh");
+      expect(startupPrompt).toContain("# Goals");
+      for (const prompt of [startupPrompt, reconcilePrompt]) {
+        expect(prompt).toContain("`id`, `phase`, `title`, `scope`, `prompt`, `acceptance`, and `verification`");
+        expect(prompt).toContain("not `roadmapPhase`");
+        expect(prompt).toContain("not `acceptanceCriteria`");
+        expect(prompt).toContain('"phase": "Roadmap phase name"');
+        expect(prompt).toContain('"acceptance": ["Observable acceptance criterion."]');
+      }
     } finally {
       await removeDir(directory);
     }
