@@ -11,6 +11,7 @@ import { discoverTaskLogs, readLogTail, type TaskLogFile } from "./run-log-disco
 import { updateProgressForActivity, updateProgressForEvent, type RunProgressState } from "./run-progress.js";
 import type { RunSessionLogger } from "./run-session-log.js";
 import { nextFocus, previousFocus, type FocusPanel } from "./run-tui-navigation.js";
+import { eventMessage, eventPayload } from "./run-tui-events.js";
 import { actionText, detailsText, displayStateFromProgress, headerText, type RunDisplayState, type RunDisplayStatus } from "./run-tui-view.js";
 import type { RoadrunnerRunActivityEvent, RoadrunnerRunControl, RoadrunnerRunEvent } from "../application/runner.js";
 
@@ -42,6 +43,7 @@ export async function createTuiApp(context: ProjectContext, session: RunSessionL
   let baseDisplay: RunDisplayState = displayState("STARTING", "Loading Roadrunner state.");
   let stats: TaskStats = { blocked: 0, current: 0, done: 0, next: 0 };
   let status = `Session log: ${session.sessionLogPath}`;
+  let pendingStop = false;
   let stopping = false;
 
   const screen = blessed.screen({ fullUnicode: true, input: options.input as never, output: options.output as never, smartCSR: true, title: "Roadrunner" });
@@ -66,7 +68,6 @@ export async function createTuiApp(context: ProjectContext, session: RunSessionL
   screen.key(["q", "C-c", "C-q"], () => requestStop());
   screen.key(["y", "Y"], () => confirmRestart(true));
   screen.key(["n", "N", "escape"], () => confirmRestart(false));
-  actions.on("click", () => requestRestart());
 
   const timer = setInterval(() => {
     void refreshOpenLog(false);
@@ -84,6 +85,10 @@ export async function createTuiApp(context: ProjectContext, session: RunSessionL
     },
     onControl(nextControl) {
       control = nextControl;
+      if (pendingStop) {
+        stopFromControl();
+        render();
+      }
     },
     onEvent(event) {
       session.event(event.type, eventMessage(event), eventPayload(event));
@@ -100,7 +105,7 @@ export async function createTuiApp(context: ProjectContext, session: RunSessionL
       if (event.type === "task-restart-requested") status = `Restart requested for ${event.step.id}.`;
       if (event.type === "task-auto-restart-requested") status = `Auto restart ${event.restart}/${event.maxRestarts} for ${event.step.id}.`;
       if (event.type === "task-auto-restart-limit-exceeded") status = `Auto restart limit exceeded for ${event.step.id}.`;
-      void refreshLogs();
+      refreshLogsAndRender();
       render();
     },
     setStatus(nextStatus) {
@@ -170,7 +175,7 @@ export async function createTuiApp(context: ProjectContext, session: RunSessionL
     const index = selectedTaskIndex(rows, selectedTaskId);
     selectedTaskId = rows[Math.max(0, Math.min(rows.length - 1, index + delta))]!.id;
     session.event("task-selected", `selected task ${selectedTaskId}`, { taskId: selectedTaskId });
-    void refreshLogs().then(render);
+    refreshLogsAndRender(true);
   }
 
   function moveLog(delta: number): void {
@@ -216,14 +221,36 @@ export async function createTuiApp(context: ProjectContext, session: RunSessionL
   }
 
   function requestStop(): void {
-    if (stopping) return;
-    stopping = true;
+    if (stopping && !pendingStop) return;
     pendingRestart = false;
+    stopping = true;
+    if (control) stopFromControl();
+    else {
+      pendingStop = true;
+      status = "Stop requested before runner control was ready.";
+      baseDisplay = displayState("STOPPING", status);
+      session.event("stop-requested", status, { source: "tui" });
+    }
+    render();
+  }
+
+  function stopFromControl(): void {
     const ok = control?.stopRun() ?? false;
+    pendingStop = !ok;
+    stopping = ok || pendingStop;
     status = ok ? "Stopping run and cleaning Roadrunner-owned processes." : "Stop requested before runner control was ready.";
     baseDisplay = displayState("STOPPING", status);
     session.event("stop-requested", status, { source: "tui" });
-    render();
+  }
+
+  function refreshLogsAndRender(showErrors = false): void {
+    void refreshLogs()
+      .then(render)
+      .catch((error: Error) => {
+        if (showErrors) status = `Log error: ${error.message}`;
+        session.event("log-refresh-error", `log refresh failed: ${error.message}`, { message: error.message });
+        render();
+      });
   }
 
   function setFocus(nextFocus: FocusPanel): void {
@@ -265,16 +292,5 @@ export async function createTuiApp(context: ProjectContext, session: RunSessionL
     const content = logText.length > 0 ? logText : "Waiting for provider output...";
     return `Viewing: ${file.label}\nPath: ${file.relativePath}\n\n${content}`;
   }
-}
-
-function eventMessage(event: RoadrunnerRunEvent): string {
-  if (event.type === "provider-start") return `provider started role=${event.role} pid=${event.pid ?? "n/a"} log=${event.logPath}`;
-  if ("step" in event && event.step) return `${event.type} ${event.step.id}`;
-  return event.type;
-}
-
-function eventPayload(event: RoadrunnerRunEvent): Record<string, unknown> {
-  if ("step" in event && event.step) return { stepId: event.step.id };
-  return {};
 }
 /* v8 ignore stop */

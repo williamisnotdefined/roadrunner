@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 
-import { defaultModel, defaultVariant, type ProjectContext } from "../infrastructure/config.js";
+import { defaultModel, defaultVariant } from "./provider-defaults.js";
 import { validateQueueFile, type QueueFile, type QueueStep } from "./queue.js";
 
 interface RoadmapSection {
@@ -15,6 +15,12 @@ interface RoadmapOptions {
   variant?: string;
 }
 
+interface RoadmapFileContext {
+  config: Required<RoadmapOptions> & Record<string, unknown>;
+  paths: { roadmap: string };
+  root?: unknown;
+}
+
 const fieldAliases: ReadonlyMap<string, string> = new Map([
   ["phase", "phase"],
   ["scope", "scope"],
@@ -23,7 +29,7 @@ const fieldAliases: ReadonlyMap<string, string> = new Map([
   ["verification", "verification"],
 ]);
 
-export async function queueFileFromRoadmapFile(context: ProjectContext): Promise<QueueFile> {
+export async function queueFileFromRoadmapFile(context: RoadmapFileContext): Promise<QueueFile> {
   const markdown = await readFile(context.paths.roadmap, "utf8");
   return queueFileFromRoadmap(markdown, {
     model: context.config.model,

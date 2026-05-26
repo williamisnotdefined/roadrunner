@@ -49,6 +49,19 @@ describe("run log discovery", () => {
     }
   });
 
+  test("ignores matching log entries that are not directories", async () => {
+    const directory = await tempDir("roadrunner-log-discovery-file-");
+    try {
+      const context = await loadContext(directory, { _: [] });
+      await mkdir(context.paths.logs, { recursive: true });
+      await writeFile(path.join(context.paths.logs, "2026-01-01T00-00-00-000Z-first-step"), "not a directory\n");
+
+      await expect(discoverTaskLogs(context, "first-step")).resolves.toEqual([]);
+    } finally {
+      await removeDir(directory);
+    }
+  });
+
   test("reads only the tail of large logs", async () => {
     const directory = await tempDir("roadrunner-log-tail-");
     try {

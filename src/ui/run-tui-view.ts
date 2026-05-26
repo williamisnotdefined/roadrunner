@@ -3,8 +3,19 @@ import { escapeBlessedMarkup } from "./blessed-markup.js";
 import type { RunProgressState } from "./run-progress.js";
 import type { RunSessionLogger } from "./run-session-log.js";
 import { formatDuration } from "../domain/duration.js";
+import type { RoadrunnerRunPhase } from "../application/runner.js";
 
 export type RunDisplayStatus = "STARTING" | "VALIDATING" | "REFRESHING QUEUE" | "PLANNING" | "IMPLEMENTING" | "VERIFYING" | "FIXING" | "RECONCILING" | "STOPPING" | "DONE" | "FAILED";
+
+const statusByPhase: Record<RoadrunnerRunPhase, RunDisplayStatus> = {
+  fix: "FIXING",
+  implement: "IMPLEMENTING",
+  plan: "PLANNING",
+  reconcile: "RECONCILING",
+  "startup-refresh": "REFRESHING QUEUE",
+  verify: "VERIFYING",
+  "verify-fixed": "VERIFYING",
+};
 
 export interface RunDisplayState {
   attempt: number | null;
@@ -68,10 +79,5 @@ export function actionText(progress: RunProgressState | null, pendingRestart: bo
 }
 
 function statusFromPhase(phase: RunProgressState["phase"]): RunDisplayStatus {
-  if (phase === "startup-refresh") return "REFRESHING QUEUE";
-  if (phase === "plan") return "PLANNING";
-  if (phase === "implement") return "IMPLEMENTING";
-  if (phase === "verify" || phase === "verify-fixed") return "VERIFYING";
-  if (phase === "fix") return "FIXING";
-  return "RECONCILING";
+  return statusByPhase[phase];
 }

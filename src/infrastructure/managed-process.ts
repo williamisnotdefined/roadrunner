@@ -3,8 +3,8 @@ import { mkdir } from "node:fs/promises";
 import path from "node:path";
 
 import type { ProjectContext } from "./config.js";
-import { registerProcess, unregisterProcess } from "./process-registry.js";
-import { signalProcessTree as signalRegisteredProcessTree } from "./process-tree.js";
+import { registerProcess, unregisterProcessIfProcessGroupExited } from "./process-registry.js";
+import { processTreeExists, signalProcessTree as signalRegisteredProcessTree } from "./process-tree.js";
 import { writePrivateFile } from "./run-artifacts.js";
 
 const forceKillDelayMs = 1_000;
@@ -82,11 +82,10 @@ export async function runShell(
       settled = true;
       signal?.removeEventListener("abort", abortRun);
       clearTimeout(timeout);
-      if (forceKillDone) await forceKillDone;
-      else clearTimeout(killTimeout);
+      await finishScheduledProcessTreeKill(child.pid, forceKillDone, killTimeout);
       output += `${error.message}\n`;
       await registrationDone;
-      if (registeredPid !== null) await unregisterProcess(registeredPid, context);
+      await unregisterRegisteredProcess(registeredPid, context);
       await writePrivateFile(logPath, output);
       resolve({ code: 1, output });
     });
@@ -96,14 +95,26 @@ export async function runShell(
       settled = true;
       signal?.removeEventListener("abort", abortRun);
       clearTimeout(timeout);
-      if (forceKillDone) await forceKillDone;
-      else clearTimeout(killTimeout);
+      await finishScheduledProcessTreeKill(child.pid, forceKillDone, killTimeout);
       await registrationDone;
-      if (registeredPid !== null) await unregisterProcess(registeredPid, context);
+      await unregisterRegisteredProcess(registeredPid, context);
       await writePrivateFile(logPath, output);
       resolve({ code: registrationFailed ? 1 : timedOut ? 124 : aborted ? 130 : code, output });
     });
   });
+}
+
+async function unregisterRegisteredProcess(pid: number | null, context: ProjectContext): Promise<void> {
+  if (pid !== null) await unregisterProcessIfProcessGroupExited(pid, context);
+}
+
+async function finishScheduledProcessTreeKill(pid: number | undefined, forceKillDone: Promise<void> | undefined, killTimeout: NodeJS.Timeout | undefined): Promise<void> {
+  if (forceKillDone && processTreeExists(pid)) {
+    await forceKillDone;
+    return;
+  }
+
+  clearTimeout(killTimeout);
 }
 
 function scheduleProcessTreeKill(pid: number | undefined, appendOutput: (text: string) => void): { done: Promise<void>; timeout: NodeJS.Timeout } {

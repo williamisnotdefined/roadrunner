@@ -47,8 +47,11 @@ describe("cli", () => {
       formatRunEvent({ command: ["opencode", "run", "<prompt>"], debug: false, logPath: "/tmp/missing.log", pid: null, role: "plan", step, type: "provider-start" }),
       formatRunEvent({ step, type: "implement" }),
       formatRunEvent({ elapsedMs: 123_000, phase: "implement", step, type: "task-restart-requested" }),
+      formatRunEvent({ elapsedMs: 1_000, phase: null, step, type: "task-restart-requested" }),
       formatRunEvent({ idleMs: 600_000, maxRestarts: 3, phase: "implement", restart: 2, step, type: "task-auto-restart-requested" }),
+      formatRunEvent({ idleMs: 1_000, maxRestarts: 3, phase: null, restart: 1, step, type: "task-auto-restart-requested" }),
       formatRunEvent({ idleMs: 600_000, maxRestarts: 3, phase: "plan", step, type: "task-auto-restart-limit-exceeded" }),
+      formatRunEvent({ idleMs: 1_000, maxRestarts: 3, phase: null, step, type: "task-auto-restart-limit-exceeded" }),
       formatRunEvent({ attempt: 2, step, type: "task-restart" }),
       formatRunEvent({ attempt: "initial", step, type: "verify" }),
       formatRunEvent({ step, type: "fix" }),
@@ -66,8 +69,11 @@ describe("cli", () => {
     expect(output).toMatch(/OpenCode plan started pid=123 log=\/tmp\/plan\.log debug=on/);
     expect(output).toMatch(/OpenCode plan started pid=n\/a log=\/tmp\/missing\.log/);
     expect(output).toMatch(/Restart requested for sample-step during implement after 2m03s/);
+    expect(output).toMatch(/Restart requested for sample-step after 1s/);
     expect(output).toMatch(/Auto-restart requested for sample-step during implement after idle=10m00s restart=2\/3/);
+    expect(output).toMatch(/Auto-restart requested for sample-step after idle=1s restart=1\/3/);
     expect(output).toMatch(/Auto-restart limit exceeded for sample-step during plan after idle=10m00s max=3/);
+    expect(output).toMatch(/Auto-restart limit exceeded for sample-step after idle=1s max=3/);
     expect(output).toMatch(/Restarting sample-step attempt=2/);
     expect(output).toMatch(/Reconciling and optimizing queue after sample-step/);
     expect(output).toMatch(/Queue updated: queued=1 done=0 blocked=0/);

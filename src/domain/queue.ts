@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-import { defaultModel, defaultVariant, type ProjectContext } from "../infrastructure/config.js";
+import { defaultModel, defaultVariant } from "./provider-defaults.js";
 
 export interface QueueStep {
   acceptance: string[];
@@ -28,6 +28,11 @@ export interface QueueFile {
 export interface QueueValidationOptions {
   model?: string;
   variant?: string;
+}
+
+interface GoalsContext {
+  paths: { goals: string };
+  root?: string;
 }
 
 export function validateQueueFile(queueFile: unknown, { model = defaultModel, variant = defaultVariant }: QueueValidationOptions = {}): string[] {
@@ -63,7 +68,7 @@ export function validateQueueFile(queueFile: unknown, { model = defaultModel, va
   return errors;
 }
 
-export async function validateGoals(context: ProjectContext): Promise<string[]> {
+export async function validateGoals(context: GoalsContext): Promise<string[]> {
   let content = "";
   const label = goalsPathLabel(context);
   try {
@@ -75,7 +80,7 @@ export async function validateGoals(context: ProjectContext): Promise<string[]> 
   return validateGoalsContent(context, content);
 }
 
-export function validateGoalsContent(context: ProjectContext, content: string): string[] {
+export function validateGoalsContent(context: GoalsContext, content: string): string[] {
   const label = goalsPathLabel(context);
   return content.trim().length === 0 ? [`${label} must not be empty.`] : [];
 }
@@ -152,8 +157,8 @@ function normalizeStep(step: QueueStep): QueueStep {
   return normalized;
 }
 
-export function goalsPathLabel(context: ProjectContext): string {
-  const root = (context as Partial<ProjectContext>).root;
+export function goalsPathLabel(context: GoalsContext): string {
+  const root = context.root;
   if (!root) return path.basename(context.paths.goals);
   const relative = path.relative(root, context.paths.goals).split(path.sep).join(path.posix.sep);
   return relative.length > 0 && !relative.startsWith("..") && !path.isAbsolute(relative) ? relative : context.paths.goals;

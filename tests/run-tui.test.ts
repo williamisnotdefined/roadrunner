@@ -2,11 +2,13 @@ import { describe, expect, test } from "vitest";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { PassThrough } from "node:stream";
+import { setTimeout as sleep } from "node:timers/promises";
 
 import { loadContext } from "../src/infrastructure/config.js";
 import type { QueueStep } from "../src/domain/queue.js";
 import { runWithTui } from "../src/ui/run-tui.js";
 import { createTuiApp } from "../src/ui/run-tui-app.js";
+import { eventMessage, eventPayload } from "../src/ui/run-tui-events.js";
 import { nextFocus, previousFocus } from "../src/ui/run-tui-navigation.js";
 import { actionText, detailsText, displayStateFromProgress, headerText, type RunDisplayState } from "../src/ui/run-tui-view.js";
 import type { RoadrunnerRunControl, RunOptions } from "../src/application/runner.js";
@@ -157,6 +159,34 @@ describe("run TUI", () => {
     }
   });
 
+  test("honors stop requested before runner control is ready", async () => {
+    const directory = await tempDir("roadrunner-tui-pending-stop-");
+    let app: Awaited<ReturnType<typeof createTuiApp>> | null = null;
+    let stopCalls = 0;
+    try {
+      const context = await createInitializedProject(directory);
+      const input = ttyStream();
+      app = await createTuiApp(context, fakeLogger([]), { input, now: () => 1_000, output: ttyStream() });
+
+      input.write("q");
+      input.emit("keypress", "q", { full: "q", name: "q" });
+      await sleep(20);
+      app.onControl({
+        restartCurrentTask: () => false,
+        stopRun: () => {
+          stopCalls += 1;
+          return true;
+        },
+      });
+      await sleep(20);
+
+      expect(stopCalls).toBe(1);
+    } finally {
+      app?.stop();
+      await removeDir(directory);
+    }
+  });
+
   test("formats clean run state header and details", () => {
     const row = taskRow("current");
     const display: RunDisplayState = {
@@ -227,6 +257,19 @@ describe("run TUI", () => {
     expect(previousFocus("tasks")).toBe("log");
     expect(previousFocus("log")).toBe("logs");
     expect(previousFocus("logs")).toBe("tasks");
+  });
+
+  test("formats TUI session event messages and payloads", () => {
+    expect(eventMessage({ command: ["opencode"], debug: false, logPath: "/tmp/plan.log", pid: 123, role: "plan", type: "provider-start" })).toBe(
+      "provider started role=plan pid=123 log=/tmp/plan.log",
+    );
+    expect(eventMessage({ command: ["opencode"], debug: false, logPath: "/tmp/plan.log", pid: null, role: "plan", type: "provider-start" })).toBe(
+      "provider started role=plan pid=n/a log=/tmp/plan.log",
+    );
+    expect(eventMessage({ step, type: "step" })).toBe("step sample-step");
+    expect(eventPayload({ step, type: "step" })).toEqual({ stepId: "sample-step" });
+    expect(eventMessage({ type: "cleanup" })).toBe("cleanup");
+    expect(eventPayload({ type: "cleanup" })).toEqual({});
   });
 
   test("creates a real session log when no logger is injected", async () => {

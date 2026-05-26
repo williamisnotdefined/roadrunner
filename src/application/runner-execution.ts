@@ -4,15 +4,14 @@ import { recordAttemptActivity, startAutoRestartWatchdog } from "./auto-restart-
 import type { ProjectContext } from "../infrastructure/config.js";
 import { cleanupProcesses } from "../infrastructure/process-registry.js";
 import { formatStep, markBlocked, markDone, normalizeQueueFile, type QueueFile, type QueueStep } from "../domain/queue.js";
-import { providerFor } from "../infrastructure/providers/index.js";
 import { automaticRestartBlockedReason, resolveAutoRestartPolicy } from "../domain/restart-policy.js";
 import type { RunSnapshot } from "./run-snapshot.js";
 import { createLogDir, renderPrompt, writePrivateFile } from "../infrastructure/run-artifacts.js";
 import type { CurrentAttemptState, RunControlState } from "./runner-control.js";
 import { planStep } from "./runner-planning.js";
 import { fixFailure, verify as verifyStep } from "./runner-verification.js";
-import { providerEnvForDeadline } from "../domain/timeouts.js";
 import type { RoadrunnerRunActivityEvent, RoadrunnerRunEvent, RoadrunnerRunPhase } from "./runner.js";
+import { runProviderRole } from "./provider-runner.js";
 
 interface RunStepInput {
   context: ProjectContext;
@@ -91,20 +90,19 @@ export async function runStepWithRestarts({ context, controlState, deadline, emi
       emitEvent({ step: attemptStep, type: "implement" });
       const result = await withControlCheck(
         () =>
-          providerFor(context).run({
+          runProviderRole(context, {
             agent: "build",
-            context,
-            env: providerEnvForDeadline(deadline),
+            deadline,
             logPath: path.join(logDir, "implement.opencode.log"),
             onOutput: activityEmitter(attemptState, emitActivity, attemptStep, "implement"),
-            onStart: (event) => {
+            onProviderStart: (event) => {
               recordAttemptActivity(attemptState);
               emitEvent({ ...event, step: attemptStep, type: "provider-start" });
             },
             prompt,
             role: "implement",
             signal: attemptState.abortController.signal,
-            streamOutput: streamProviderOutput,
+            streamProviderOutput,
             workspaceAccess: "write",
             bypassProviderPermissions: context.config.dangerouslySkipPermissions,
           }),

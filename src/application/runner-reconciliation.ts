@@ -2,11 +2,11 @@ import path from "node:path";
 
 import type { ProjectContext } from "../infrastructure/config.js";
 import type { QueueFile, QueueStep } from "../domain/queue.js";
-import { providerFor, type ProviderStartEvent } from "../infrastructure/providers/index.js";
+import type { ProviderStartEvent } from "../infrastructure/providers/index.js";
 import type { RunSnapshot } from "./run-snapshot.js";
 import { renderPrompt, writePrivateFile } from "../infrastructure/run-artifacts.js";
-import { providerEnvForDeadline } from "../domain/timeouts.js";
 import { appendQueueProposalContract, queueProposalFromOutput } from "./queue-proposal.js";
+import { runProviderRole } from "./provider-runner.js";
 
 interface ReconcileOptions {
   deadline: number | null;
@@ -26,17 +26,16 @@ export async function reconcileQueue(context: ProjectContext, queueBeforeReconci
   }));
   await writePrivateFile(path.join(logDir, "reconcile.prompt.md"), prompt);
 
-  const result = await providerFor(context).run({
+  const result = await runProviderRole(context, {
     agent: "plan",
-    context,
-    env: providerEnvForDeadline(options.deadline),
+    deadline: options.deadline,
     logPath: path.join(logDir, "reconcile.opencode.log"),
     onOutput: options.onOutput,
-    onStart: options.onProviderStart,
+    onProviderStart: options.onProviderStart,
     prompt,
     role: "reconcile",
     signal: options.signal,
-    streamOutput: options.streamProviderOutput,
+    streamProviderOutput: options.streamProviderOutput,
     workspaceAccess: "read-only",
   });
   await writePrivateFile(path.join(logDir, "reconcile.md"), result.output);

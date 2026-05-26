@@ -44,6 +44,21 @@ export async function unregisterProcess(pid: number, context: ProjectContext): P
   );
 }
 
+export async function unregisterProcessIfProcessGroupExited(pid: number, context: ProjectContext): Promise<boolean> {
+  const processes = await readProcesses(context);
+  const record = processes.find((processRecord) => processRecord.pid === pid);
+  if (!record) return true;
+
+  const processGroupId = safeProcessGroupId(record);
+  if (processGroupId !== null && processGroupExists(processGroupId)) return false;
+
+  await writeProcesses(
+    processes.filter((processRecord) => processRecord.pid !== pid),
+    context,
+  );
+  return true;
+}
+
 export async function cleanupProcesses(context: ProjectContext, { force = false } = {}): Promise<Array<{ pid: number; role: string; signal?: string; status: string }>> {
   const survivors: ProcessRecord[] = [];
   const results: Array<{ pid: number; role: string; signal?: string; status: string }> = [];

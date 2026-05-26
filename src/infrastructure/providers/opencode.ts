@@ -4,10 +4,11 @@ import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 
-import { defaultModel, defaultVariant, type ProjectContext } from "../config.js";
-import { registerProcess, unregisterProcess } from "../process-registry.js";
+import type { ProjectContext } from "../config.js";
+import { registerProcess, unregisterProcessIfProcessGroupExited } from "../process-registry.js";
 import { processTreeExists, signalProcessTree } from "../process-tree.js";
 import { createPrivateWriteStream, writePrivateFile } from "../run-artifacts.js";
+import { defaultModel, defaultVariant } from "../../domain/provider-defaults.js";
 import { openCodeCheckTimeoutMs, providerTimeoutMs } from "../../domain/timeouts.js";
 import type { Provider, ProviderRunInput, ProviderRunResult } from "./provider.js";
 
@@ -27,26 +28,14 @@ export class OpenCodeProvider implements Provider {
   }
 
   async run({ agent, bypassProviderPermissions = false, context, env = {}, logPath, onOutput, onStart, prompt, role, signal, streamOutput = true, workspaceAccess }: ProviderRunInput): Promise<ProviderRunResult> {
-    const childEnv: NodeJS.ProcessEnv = { ...process.env, ...env, OPENCODE_MODEL: this.model, OPENCODE_VARIANT: this.variant };
-    const nestedIndicator = nestedOpenCodeIndicator(childEnv);
-    if (nestedIndicator && !context.config.allowNestedOpenCode) {
-      throw new Error(`Refusing to launch nested OpenCode session (${nestedIndicator} is set). Set allowNestedOpenCode: true to override.`);
-    }
-    if (workspaceAccess === "read-only" && bypassProviderPermissions) throw new Error("Read-only provider runs cannot bypass provider permissions.");
-
-    for (const key of nestedOpenCodeEnvKeys) delete childEnv[key];
-
+    const childEnv = openCodeRunEnv({ context, env, model: this.model, variant: this.variant, workspaceAccess, bypassProviderPermissions });
     await mkdir(path.dirname(logPath), { recursive: true });
     const promptFilePath = await writePromptFile(logPath, prompt);
     const logStream = await createPrivateWriteStream(logPath);
     logStream.on("error", Function.prototype as (error: Error) => void);
     const debug = childEnv.ROADRUNNER_OPENCODE_DEBUG === "1";
     const timeoutMs = providerTimeoutMs(childEnv.ROADRUNNER_PROVIDER_TIMEOUT_MS);
-    const args = ["run", "--model", this.model, "--variant", this.variant, "--agent", agent, promptMessage, "--file", promptFilePath];
-
-    if (debug) args.push("--print-logs", "--log-level", "DEBUG");
-
-    if (workspaceAccess === "write" && bypassProviderPermissions) args.push("--dangerously-skip-permissions");
+    const args = openCodeRunArgs({ agent, bypassProviderPermissions, debug, model: this.model, promptFilePath, variant: this.variant, workspaceAccess });
 
     const child = spawn("opencode", args, {
       cwd: context.root,
@@ -191,8 +180,27 @@ function writeProviderOutput(logStream: WriteStream, text: string, appendOutput:
   }
 }
 
+function openCodeRunEnv({ bypassProviderPermissions, context, env, model, variant, workspaceAccess }: Pick<ProviderRunInput, "bypassProviderPermissions" | "context" | "env" | "workspaceAccess"> & { model: string; variant: string }): NodeJS.ProcessEnv {
+  const childEnv: NodeJS.ProcessEnv = { ...process.env, ...(env ?? {}), OPENCODE_MODEL: model, OPENCODE_VARIANT: variant };
+  const nestedIndicator = nestedOpenCodeIndicator(childEnv);
+  if (nestedIndicator && !context.config.allowNestedOpenCode) {
+    throw new Error(`Refusing to launch nested OpenCode session (${nestedIndicator} is set). Set allowNestedOpenCode: true to override.`);
+  }
+  if (workspaceAccess === "read-only" && bypassProviderPermissions) throw new Error("Read-only provider runs cannot bypass provider permissions.");
+
+  for (const key of nestedOpenCodeEnvKeys) delete childEnv[key];
+  return childEnv;
+}
+
+function openCodeRunArgs({ agent, bypassProviderPermissions, debug, model, promptFilePath, variant, workspaceAccess }: Pick<ProviderRunInput, "agent" | "bypassProviderPermissions" | "workspaceAccess"> & { debug: boolean; model: string; promptFilePath: string; variant: string }): string[] {
+  const args = ["run", "--model", model, "--variant", variant, "--agent", agent, promptMessage, "--file", promptFilePath];
+  if (debug) args.push("--print-logs", "--log-level", "DEBUG");
+  if (workspaceAccess === "write" && bypassProviderPermissions) args.push("--dangerously-skip-permissions");
+  return args;
+}
+
 async function unregisterRegisteredProcess(pid: number | null, context: ProjectContext): Promise<void> {
-  if (pid !== null) await unregisterProcess(pid, context);
+  if (pid !== null) await unregisterProcessIfProcessGroupExited(pid, context);
 }
 
 function scheduleChildProcessGroupKill(pid: number | undefined): { done: Promise<void>; timeout: NodeJS.Timeout } {

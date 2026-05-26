@@ -24,6 +24,7 @@ describe("run dashboard model", () => {
     expect(taskStats(queueFile)).toEqual({ blocked: 1, current: 1, done: 1, next: 1 });
     expect(selectedTaskIndex(rows, null)).toBe(0);
     expect(selectedTaskIndex(rows, "next-step")).toBe(1);
+    expect(taskTableData(rows, null, taskStats(queueFile))[1]).toEqual(["› ▶ Active", "current-step", "Bootstrap", "Current Step"]);
     expect(taskTableData(rows, "current-step", taskStats(queueFile))[1]).toEqual(["› ▶ Active", "current-step", "Bootstrap", "Current Step"]);
     expect(taskTableData(rows, "current-step", taskStats(queueFile)).at(-1)).toEqual(["", "", "", "1 completed hidden"]);
   });

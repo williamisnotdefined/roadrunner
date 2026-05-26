@@ -2,11 +2,10 @@ import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { type CliArgs, stringOption } from "../cli/args.js";
+import { defaultModel, defaultVariant } from "../domain/provider-defaults.js";
 import { defaultAutoRestartIdleMs, defaultMaxAutoRestartsPerStep } from "../domain/restart-policy.js";
 
-export const defaultModel = "openai/gpt-5.5";
-export const defaultVariant = "xhigh";
+export { defaultModel, defaultVariant } from "../domain/provider-defaults.js";
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 const sourceRoot = path.resolve(moduleDir, "../..");
@@ -50,6 +49,8 @@ export interface RoadrunnerConfig {
   paths?: PathOverrides;
 }
 
+type LoadContextOverrides = PathOverrides & { _?: unknown };
+
 export interface ProjectContext {
   config: Required<Pick<RoadrunnerConfig, "provider" | "model" | "variant">> & {
     allowNestedOpenCode: boolean;
@@ -61,6 +62,31 @@ export interface ProjectContext {
   paths: ProjectPaths;
   root: string;
 }
+
+type Validator = (value: unknown, path: string) => string[];
+
+const configValidators = {
+  allowNestedOpenCode: booleanValidator,
+  autoRestartIdleMs: nonNegativeIntegerValidator,
+  dangerouslySkipPermissions: booleanValidator,
+  maxAutoRestartsPerStep: nonNegativeIntegerValidator,
+  model: nonEmptyStringValidator,
+  paths: pathsValidator,
+  provider: nonEmptyStringValidator,
+  variant: nonEmptyStringValidator,
+} satisfies Record<string, Validator>;
+
+const pathValidators = {
+  config: nonEmptyStringValidator,
+  goal: nonEmptyStringValidator,
+  goals: nonEmptyStringValidator,
+  lock: nonEmptyStringValidator,
+  logs: nonEmptyStringValidator,
+  processes: nonEmptyStringValidator,
+  prompts: nonEmptyStringValidator,
+  queue: nonEmptyStringValidator,
+  roadmap: nonEmptyStringValidator,
+} satisfies Record<string, Validator>;
 
 export function projectPaths(projectRoot = process.cwd(), overrides: PathOverrides = {}): ProjectPaths {
   return {
@@ -74,12 +100,11 @@ export function projectPaths(projectRoot = process.cwd(), overrides: PathOverrid
   };
 }
 
-export async function loadContext(projectRoot = process.cwd(), args: CliArgs = { _: [] }): Promise<ProjectContext> {
-  const flagOverrides = pathOverridesFromArgs(args);
-  const configPath = flagOverrides.config ? resolveProjectPath(projectRoot, flagOverrides.config) : await defaultConfigPath(projectRoot);
+export async function loadContext(projectRoot = process.cwd(), overrides: LoadContextOverrides = {}): Promise<ProjectContext> {
+  const configPath = overrides.config ? resolveProjectPath(projectRoot, overrides.config) : await defaultConfigPath(projectRoot);
   const fileConfig = (await pathExists(configPath)) ? await readConfig(configPath) : {};
   const configOverrides = { ...fileConfig.paths };
-  const paths = projectPaths(projectRoot, { ...configOverrides, ...flagOverrides, config: configPath });
+  const paths = projectPaths(projectRoot, { ...configOverrides, ...overrides, config: configPath });
 
   return {
     config: {
@@ -95,27 +120,6 @@ export async function loadContext(projectRoot = process.cwd(), args: CliArgs = {
     paths,
     root: projectRoot,
   };
-}
-
-export function pathOverridesFromArgs(args: CliArgs): PathOverrides {
-  const overrides: PathOverrides = {};
-  const options: Array<[keyof PathOverrides, unknown]> = [
-    ["config", args.config],
-    ["goals", args.goals],
-    ["goal", args.goal],
-    ["lock", args.lock],
-    ["logs", args.logs],
-    ["processes", args.processes],
-    ["prompts", args.prompts],
-    ["roadmap", args.roadmap],
-  ];
-
-  for (const [key, value] of options) {
-    const option = stringOption(value);
-    if (option !== undefined) overrides[key] = option;
-  }
-
-  return overrides;
 }
 
 export async function pathExists(filePath: string): Promise<boolean> {
@@ -135,37 +139,13 @@ export function validateRoadrunnerConfig(value: unknown, filePath = "Roadrunner 
   const errors: string[] = [];
   if (!isRecord(value)) return [`${filePath} must be a JSON object.`];
 
-  const allowedConfigKeys = new Set(["allowNestedOpenCode", "autoRestartIdleMs", "dangerouslySkipPermissions", "maxAutoRestartsPerStep", "provider", "model", "variant", "paths"]);
-  for (const key of Object.keys(value)) {
-    if (!allowedConfigKeys.has(key)) errors.push(`${filePath}.${key} is not a supported config key.`);
-  }
-
-  for (const key of ["allowNestedOpenCode", "dangerouslySkipPermissions"] as const) {
-    if (value[key] !== undefined && typeof value[key] !== "boolean") errors.push(`${filePath}.${key} must be a boolean.`);
-  }
-
-  for (const key of ["provider", "model", "variant"] as const) {
-    if (value[key] !== undefined && (typeof value[key] !== "string" || value[key].length === 0)) errors.push(`${filePath}.${key} must be a non-empty string.`);
-  }
-
-  for (const key of ["autoRestartIdleMs", "maxAutoRestartsPerStep"] as const) {
-    const numericValue = value[key];
-    if (numericValue !== undefined && (typeof numericValue !== "number" || !Number.isSafeInteger(numericValue) || numericValue < 0)) errors.push(`${filePath}.${key} must be a non-negative integer.`);
-  }
-
-  if (value.paths !== undefined) {
-    if (!isRecord(value.paths)) {
-      errors.push(`${filePath}.paths must be a JSON object.`);
-    } else {
-      const allowedPathKeys = new Set(["config", "goals", "goal", "lock", "logs", "processes", "prompts", "queue", "roadmap"]);
-      for (const [key, pathValue] of Object.entries(value.paths)) {
-        if (!allowedPathKeys.has(key)) {
-          errors.push(`${filePath}.paths.${key} is not a supported path key.`);
-          continue;
-        }
-        if (typeof pathValue !== "string" || pathValue.length === 0) errors.push(`${filePath}.paths.${key} must be a non-empty string.`);
-      }
+  for (const [key, configValue] of Object.entries(value)) {
+    const validator = configValidators[key as keyof typeof configValidators];
+    if (!validator) {
+      errors.push(`${filePath}.${key} is not a supported config key.`);
+      continue;
     }
+    errors.push(...validator(configValue, `${filePath}.${key}`));
   }
 
   return errors;
@@ -185,6 +165,33 @@ async function readConfig(filePath: string): Promise<RoadrunnerConfig> {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function booleanValidator(value: unknown, pathLabel: string): string[] {
+  return typeof value === "boolean" ? [] : [`${pathLabel} must be a boolean.`];
+}
+
+function nonEmptyStringValidator(value: unknown, pathLabel: string): string[] {
+  return typeof value === "string" && value.length > 0 ? [] : [`${pathLabel} must be a non-empty string.`];
+}
+
+function nonNegativeIntegerValidator(value: unknown, pathLabel: string): string[] {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? [] : [`${pathLabel} must be a non-negative integer.`];
+}
+
+function pathsValidator(value: unknown, pathLabel: string): string[] {
+  if (!isRecord(value)) return [`${pathLabel} must be a JSON object.`];
+
+  const errors: string[] = [];
+  for (const [key, pathValue] of Object.entries(value)) {
+    const validator = pathValidators[key as keyof typeof pathValidators];
+    if (!validator) {
+      errors.push(`${pathLabel}.${key} is not a supported path key.`);
+      continue;
+    }
+    errors.push(...validator(pathValue, `${pathLabel}.${key}`));
+  }
+  return errors;
 }
 
 function resolveProjectPath(projectRoot: string, filePath: string): string {

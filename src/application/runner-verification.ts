@@ -3,10 +3,11 @@ import path from "node:path";
 import type { ProjectContext } from "../infrastructure/config.js";
 import { runShell } from "../infrastructure/managed-process.js";
 import type { QueueStep } from "../domain/queue.js";
-import { providerFor, type ProviderRunResult, type ProviderStartEvent } from "../infrastructure/providers/index.js";
+import type { ProviderRunResult, ProviderStartEvent } from "../infrastructure/providers/index.js";
 import type { RunSnapshot } from "./run-snapshot.js";
 import { renderPrompt, writePrivateFile } from "../infrastructure/run-artifacts.js";
-import { providerEnvForDeadline, verificationTimeoutMs } from "../domain/timeouts.js";
+import { verificationTimeoutMs } from "../domain/timeouts.js";
+import { runProviderRole } from "./provider-runner.js";
 
 interface FixFailureOptions {
   deadline: number | null;
@@ -54,17 +55,16 @@ export async function fixFailure(
   });
   await writePrivateFile(path.join(logDir, "fix-failure.prompt.md"), prompt);
 
-  const result = await providerFor(context).run({
+  const result = await runProviderRole(context, {
     agent: "build",
-    context,
-    env: providerEnvForDeadline(options.deadline),
+    deadline: options.deadline,
     logPath: path.join(logDir, "fix-failure.opencode.log"),
     onOutput: options.onOutput,
-    onStart: options.onProviderStart,
+    onProviderStart: options.onProviderStart,
     prompt,
     role: "fix-failure",
     signal: options.signal,
-    streamOutput: options.streamProviderOutput,
+    streamProviderOutput: options.streamProviderOutput,
     workspaceAccess: "write",
     bypassProviderPermissions: context.config.dangerouslySkipPermissions,
   });

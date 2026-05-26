@@ -1,3 +1,4 @@
+import type { Dirent } from "node:fs";
 import { open, readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
@@ -16,16 +17,20 @@ const defaultTailBytes = 120_000;
 
 export async function discoverTaskLogs(context: ProjectContext, taskId: string, activeLogPath?: string | null): Promise<TaskLogFile[]> {
   const logs: TaskLogFile[] = [];
-  let entries: string[] = [];
+  let entries: Dirent[] = [];
   try {
-    entries = await readdir(context.paths.logs);
+    entries = await readdir(context.paths.logs, { withFileTypes: true });
   } catch {
     entries = [];
   }
 
-  for (const entry of entries.sort()) {
-    if (!isTaskLogDir(entry, taskId)) continue;
-    logs.push(...(await logsFromDirectory(context, entry, activeLogPath)));
+  for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+    if (!entry.isDirectory() || !isTaskLogDir(entry.name, taskId)) continue;
+    try {
+      logs.push(...(await logsFromDirectory(context, entry.name, activeLogPath)));
+    } catch {
+      /* Log discovery is best-effort while the runner is writing files. */
+    }
   }
 
   if (activeLogPath && !logs.some((log) => path.resolve(log.path) === path.resolve(activeLogPath))) {

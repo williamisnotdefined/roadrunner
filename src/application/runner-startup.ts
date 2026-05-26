@@ -2,13 +2,13 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { pathExists, type ProjectContext } from "../infrastructure/config.js";
-import { providerFor, type ProviderStartEvent } from "../infrastructure/providers/index.js";
+import type { ProviderStartEvent } from "../infrastructure/providers/index.js";
 import type { QueueFile } from "../domain/queue.js";
 import { queueFileFromRoadmap } from "../domain/roadmap.js";
 import type { RunSnapshot } from "./run-snapshot.js";
 import { createLogDir, renderPrompt, writePrivateFile } from "../infrastructure/run-artifacts.js";
-import { providerEnvForDeadline } from "../domain/timeouts.js";
 import { appendQueueProposalContract, queueProposalFromOutput } from "./queue-proposal.js";
+import { runProviderRole } from "./provider-runner.js";
 
 export interface StartupRefreshOptions {
   deadline: number | null;
@@ -40,17 +40,16 @@ export async function refreshQueueAtRunStart(context: ProjectContext, snapshot: 
   }));
   await writePrivateFile(path.join(logDir, "startup-refresh.prompt.md"), prompt);
 
-  const result = await providerFor(context).run({
+  const result = await runProviderRole(context, {
     agent: "plan",
-    context,
-    env: providerEnvForDeadline(options.deadline),
+    deadline: options.deadline,
     logPath: path.join(logDir, "startup-refresh.opencode.log"),
     onOutput: options.onOutput,
-    onStart: options.onProviderStart,
+    onProviderStart: options.onProviderStart,
     prompt,
     role: "startup-refresh",
     signal: options.signal,
-    streamOutput: options.streamProviderOutput,
+    streamProviderOutput: options.streamProviderOutput,
     workspaceAccess: "read-only",
   });
   await writePrivateFile(path.join(logDir, "startup-refresh.md"), result.output);

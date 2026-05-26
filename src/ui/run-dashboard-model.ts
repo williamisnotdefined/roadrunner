@@ -53,10 +53,11 @@ export function selectedTaskIndex(rows: TaskRow[], selectedTaskId: string | null
 }
 
 export function taskTableData(rows: TaskRow[], selectedTaskId: string | null, stats?: TaskStats): string[][] {
+  const selectedIndex = selectedTaskIndex(rows, selectedTaskId);
   const data = [
     ["Status", "ID", "Phase", "Title"],
-    ...rows.map((row) => {
-      const marker = row.id === selectedTaskId ? "›" : " ";
+    ...rows.map((row, index) => {
+      const marker = index === selectedIndex ? "›" : " ";
       return [
         `${marker} ${escapeBlessedMarkup(row.icon)} ${escapeBlessedMarkup(row.statusLabel)}`,
         escapeBlessedMarkup(row.id),

@@ -11,7 +11,7 @@ import { cleanupProcesses } from "../infrastructure/process-registry.js";
 import { formatStep, validateGoals } from "../domain/queue.js";
 import { initProject } from "../application/init.js";
 import { loadContext, type ProjectContext } from "../infrastructure/config.js";
-import { integerOption, optionalNumberOption, parseArgs } from "./args.js";
+import { integerOption, optionalNumberOption, parseArgs, pathOverridesFromArgs } from "./args.js";
 import { shouldPrintHelp, validateCliInvocation } from "./validation.js";
 import { plan, status, validateProvider, type RoadrunnerRunEvent } from "../application/runner.js";
 import { formatDuration } from "../domain/duration.js";
@@ -33,6 +33,98 @@ export interface CliMainOptions {
   };
 }
 
+interface CliCommandInput {
+  args: ReturnType<typeof parseArgs>;
+  context: ProjectContext;
+  out: (message: string) => void;
+  runTui?: (context: ProjectContext, options: RunTuiOptions) => Promise<number>;
+  terminal?: CliMainOptions["terminal"];
+}
+
+type CliCommandHandler = (input: CliCommandInput) => Promise<void>;
+
+const commandHandlers = {
+  async check({ context, out }) {
+    out(formatCliStep("Validating Roadrunner project"));
+    const errors = await validateGoals(context);
+    if (errors.length === 0) errors.push(...(await validateProvider(context)));
+    if (errors.length > 0) throw new Error(errors.join("\n"));
+    out(formatCliSuccess("Roadrunner project is valid."));
+  },
+  async cleanup({ args, context, out }) {
+    out(formatCliStep("Cleaning Roadrunner-owned processes"));
+    const results = await cleanupProcesses(context, { force: Boolean(args.force) });
+    if (results.length === 0) out(formatCliInfo("No Roadrunner-owned processes are registered."));
+    for (const result of results) out(`${result.status}: pid=${result.pid} role=${result.role}`);
+  },
+  async init({ context, out }) {
+    out(formatCliStep("Initializing Roadrunner project"));
+    await initProject(context);
+    out(formatCliSuccess("Roadrunner initialized."));
+  },
+  async next({ context, out }) {
+    out(formatCliStep("Reading next queued step"));
+    out(formatStep((await status(context)).next));
+  },
+  async plan({ context, out }) {
+    out(formatCliStep("Planning next queued step"));
+    const result = await plan(context, { onProviderStart: (event) => out(formatProviderStartEvent(event)) });
+    if (!result) out(formatCliInfo("No queued step."));
+    else if (result.result.code !== 0)
+      throw new Error(`Planning failed for ${result.step.id} (exit ${String(result.result.code)}). See ${path.join(result.logDir, "plan.opencode.log")}.`);
+    else out(formatCliSuccess(`Plan written to ${result.logDir}`));
+  },
+  async run({ args, context, runTui, terminal }) {
+    await (runTui ?? runWithTui)(context, {
+      input: terminal?.input,
+      isInteractive: terminal?.isInteractive,
+      maxHours: optionalNumberOption(args["max-hours"]),
+      maxSteps: integerOption(args["max-steps"], 1),
+      output: terminal?.output,
+    });
+  },
+  async status({ context, out }) {
+    out(formatCliStep("Reading Roadrunner status"));
+    const result = await status(context);
+    out(`${chalk.cyan("queued:")} ${result.queued}`);
+    out(`${chalk.cyan("done:")} ${result.done}`);
+    out(`${chalk.cyan("blocked:")} ${result.blocked}`);
+    out("");
+    out(formatStep(result.next));
+  },
+} satisfies Record<string, CliCommandHandler>;
+
+type RunEventFormatter<T extends RoadrunnerRunEvent["type"]> = (event: Extract<RoadrunnerRunEvent, { type: T }>) => string;
+
+const runEventFormatters: { [Type in RoadrunnerRunEvent["type"]]: RunEventFormatter<Type> } = {
+  cleanup: () => formatCliStep("Cleaning Roadrunner-owned processes"),
+  fix: (event) => formatCliStep(`Fixing verification failure for ${event.step.id}`),
+  implement: (event) => formatCliStep(`Implementing ${event.step.id}`),
+  plan: (event) => formatCliStep(`Planning ${event.step.id}`),
+  "provider-start": formatProviderStartEvent,
+  "queue-updated": (event) => formatCliInfo(`Queue updated: queued=${event.queueFile.queue.length} done=${event.queueFile.history.length} blocked=${event.queueFile.blocked.length}`),
+  reconcile: (event) => formatCliStep(`Reconciling and optimizing queue after ${event.step.id}`),
+  "run-stop-requested": () => formatCliInfo("Stop requested; cleaning Roadrunner-owned processes"),
+  step: (event) => formatCliStep(`Selected step ${event.step.id}: ${event.step.title}`),
+  "step-complete": (event) => formatCliSuccess(`Completed ${event.step.id}`),
+  "startup-refresh": () => formatCliStep("Refreshing queue from roadmap and repository state"),
+  "task-auto-restart-limit-exceeded": (event) => {
+    const phase = event.phase ? ` during ${event.phase}` : "";
+    return formatCliError(`Auto-restart limit exceeded for ${event.step.id}${phase} after idle=${formatDuration(event.idleMs)} max=${event.maxRestarts}`);
+  },
+  "task-auto-restart-requested": (event) => {
+    const phase = event.phase ? ` during ${event.phase}` : "";
+    return formatCliInfo(`Auto-restart requested for ${event.step.id}${phase} after idle=${formatDuration(event.idleMs)} restart=${event.restart}/${event.maxRestarts}`);
+  },
+  "task-restart": (event) => formatCliStep(`Restarting ${event.step.id} attempt=${event.attempt}`),
+  "task-restart-requested": (event) => {
+    const phase = event.phase ? ` during ${event.phase}` : "";
+    return formatCliInfo(`Restart requested for ${event.step.id}${phase} after ${formatDuration(event.elapsedMs)}`);
+  },
+  validate: () => formatCliStep("Validating project"),
+  verify: (event) => formatCliStep(event.attempt === "fixed" ? `Re-running verification for ${event.step.id}` : `Verifying ${event.step.id}`),
+};
+
 export async function main(argv = process.argv.slice(2), { cwd = process.cwd(), io = {}, runTui, terminal }: CliMainOptions = {}): Promise<number> {
   const out = io.stdout ?? ((message: string) => console.log(message));
   const err = io.stderr ?? ((message: string) => console.error(message));
@@ -48,50 +140,11 @@ export async function main(argv = process.argv.slice(2), { cwd = process.cwd(), 
     const invocationErrors = validateCliInvocation(command, args);
     if (invocationErrors.length > 0) throw new Error(invocationErrors.join("\n"));
 
-    const context = await loadContext(cwd, args);
+    const context = await loadContext(cwd, pathOverridesFromArgs(args));
 
-    if (command === "init") {
-      out(formatCliStep("Initializing Roadrunner project"));
-      await initProject(context);
-      out(formatCliSuccess("Roadrunner initialized."));
-    } else if (command === "status") {
-      out(formatCliStep("Reading Roadrunner status"));
-      const result = await status(context);
-      out(`${chalk.cyan("queued:")} ${result.queued}`);
-      out(`${chalk.cyan("done:")} ${result.done}`);
-      out(`${chalk.cyan("blocked:")} ${result.blocked}`);
-      out("");
-      out(formatStep(result.next));
-    } else if (command === "next") {
-      out(formatCliStep("Reading next queued step"));
-      out(formatStep((await status(context)).next));
-    } else if (command === "check") {
-      out(formatCliStep("Validating Roadrunner project"));
-      const errors = await validateGoals(context);
-      if (errors.length === 0) errors.push(...(await validateProvider(context)));
-      if (errors.length > 0) throw new Error(errors.join("\n"));
-      out(formatCliSuccess("Roadrunner project is valid."));
-    } else if (command === "plan") {
-      out(formatCliStep("Planning next queued step"));
-      const result = await plan(context, { onProviderStart: (event) => out(formatProviderStartEvent(event)) });
-      if (!result) out(formatCliInfo("No queued step."));
-      else if (result.result.code !== 0)
-        throw new Error(`Planning failed for ${result.step.id} (exit ${String(result.result.code)}). See ${path.join(result.logDir, "plan.opencode.log")}.`);
-      else out(formatCliSuccess(`Plan written to ${result.logDir}`));
-    } else if (command === "run") {
-      await (runTui ?? runWithTui)(context, {
-        input: terminal?.input,
-        isInteractive: terminal?.isInteractive,
-        maxHours: optionalNumberOption(args["max-hours"]),
-        maxSteps: integerOption(args["max-steps"], 1),
-        output: terminal?.output,
-      });
-    } else {
-      out(formatCliStep("Cleaning Roadrunner-owned processes"));
-      const results = await cleanupProcesses(context, { force: Boolean(args.force) });
-      if (results.length === 0) out(formatCliInfo("No Roadrunner-owned processes are registered."));
-      for (const result of results) out(`${result.status}: pid=${result.pid} role=${result.role}`);
-    }
+    const handler = commandHandlers[command as keyof typeof commandHandlers];
+    if (!handler) throw new Error(`Unknown command: ${command}.`);
+    await handler({ args, context, out, runTui, terminal });
 
     return 0;
   } catch (error) {
@@ -101,48 +154,7 @@ export async function main(argv = process.argv.slice(2), { cwd = process.cwd(), 
 }
 
 export function formatRunEvent(event: RoadrunnerRunEvent): string {
-  switch (event.type) {
-    case "cleanup":
-      return formatCliStep("Cleaning Roadrunner-owned processes");
-    case "fix":
-      return formatCliStep(`Fixing verification failure for ${event.step.id}`);
-    case "implement":
-      return formatCliStep(`Implementing ${event.step.id}`);
-    case "plan":
-      return formatCliStep(`Planning ${event.step.id}`);
-    case "provider-start":
-      return formatProviderStartEvent(event);
-    case "queue-updated":
-      return formatCliInfo(`Queue updated: queued=${event.queueFile.queue.length} done=${event.queueFile.history.length} blocked=${event.queueFile.blocked.length}`);
-    case "reconcile":
-      return formatCliStep(`Reconciling and optimizing queue after ${event.step.id}`);
-    case "run-stop-requested":
-      return formatCliInfo("Stop requested; cleaning Roadrunner-owned processes");
-    case "step":
-      return formatCliStep(`Selected step ${event.step.id}: ${event.step.title}`);
-    case "step-complete":
-      return formatCliSuccess(`Completed ${event.step.id}`);
-    case "startup-refresh":
-      return formatCliStep("Refreshing queue from roadmap and repository state");
-    case "task-auto-restart-limit-exceeded": {
-      const phase = event.phase ? ` during ${event.phase}` : "";
-      return formatCliError(`Auto-restart limit exceeded for ${event.step.id}${phase} after idle=${formatDuration(event.idleMs)} max=${event.maxRestarts}`);
-    }
-    case "task-auto-restart-requested": {
-      const phase = event.phase ? ` during ${event.phase}` : "";
-      return formatCliInfo(`Auto-restart requested for ${event.step.id}${phase} after idle=${formatDuration(event.idleMs)} restart=${event.restart}/${event.maxRestarts}`);
-    }
-    case "task-restart":
-      return formatCliStep(`Restarting ${event.step.id} attempt=${event.attempt}`);
-    case "task-restart-requested": {
-      const phase = event.phase ? ` during ${event.phase}` : "";
-      return formatCliInfo(`Restart requested for ${event.step.id}${phase} after ${formatDuration(event.elapsedMs)}`);
-    }
-    case "validate":
-      return formatCliStep("Validating project");
-    case "verify":
-      return formatCliStep(event.attempt === "fixed" ? `Re-running verification for ${event.step.id}` : `Verifying ${event.step.id}`);
-  }
+  return (runEventFormatters[event.type] as (nextEvent: RoadrunnerRunEvent) => string)(event);
 }
 
 function formatProviderStartEvent(event: { debug: boolean; logPath: string; pid: number | null; role: string }): string {

@@ -1,10 +1,12 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 
 import { describe, expect, test } from "vitest";
 
 import { loadContext } from "../src/infrastructure/config.js";
 import { runShell } from "../src/infrastructure/managed-process.js";
+import { cleanupProcesses, readProcesses } from "../src/infrastructure/process-registry.js";
 import { removeDir, tempDir } from "./helpers.js";
 
 describe("managed process", () => {
@@ -64,4 +66,61 @@ describe("managed process", () => {
       await removeDir(directory);
     }
   });
+
+  test("keeps process registry records for background descendants", async () => {
+    const directory = await tempDir("roadrunner-managed-process-child-");
+    let childPid: number | null = null;
+    try {
+      const context = await loadContext(directory, { _: [] });
+      const childPidFile = path.join(directory, "child.pid");
+      const parentScriptPath = path.join(directory, "spawn-child.cjs");
+      const childScript = "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);";
+      const parentScript = [
+        'const { spawn } = require("node:child_process");',
+        'const fs = require("node:fs");',
+        `const child = spawn(process.execPath, ["-e", ${JSON.stringify(childScript)}], { stdio: "ignore" });`,
+        `fs.writeFileSync(${JSON.stringify(childPidFile)}, String(child.pid));`,
+        "child.unref();",
+      ].join("\n");
+      await writeFile(parentScriptPath, parentScript);
+
+      const result = await runShell(context, `${JSON.stringify(process.execPath)} ${JSON.stringify(parentScriptPath)}`, path.join(directory, "background.log"), "verify-1");
+      childPid = Number(await readFile(childPidFile, "utf8"));
+
+      expect(result.code).toBe(0);
+      expect(processIsRunning(childPid)).toBe(true);
+      expect(await readProcesses(context)).toEqual([expect.objectContaining({ role: "verify-1" })]);
+
+      await cleanupProcesses(context, { force: true });
+      await waitForProcessExit(childPid);
+
+      expect(processIsRunning(childPid)).toBe(false);
+      expect(await readProcesses(context)).toEqual([]);
+    } finally {
+      if (childPid !== null) killIfRunning(childPid);
+      await removeDir(directory);
+    }
+  });
 });
+
+function processIsRunning(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+async function waitForProcessExit(pid: number, timeoutMs = 1000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline && processIsRunning(pid)) await sleep(20);
+}
+
+function killIfRunning(pid: number): void {
+  try {
+    process.kill(pid, "SIGKILL");
+  } catch {
+    // Best-effort cleanup for failed assertions.
+  }
+}

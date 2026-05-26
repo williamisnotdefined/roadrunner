@@ -1,4 +1,5 @@
 import { formatDuration } from "./duration.js";
+import { parseNonNegativeIntegerValue } from "./numeric-options.js";
 
 export const defaultAutoRestartIdleMs = 10 * 60 * 1000;
 export const defaultMaxAutoRestartsPerStep = 3;
@@ -27,11 +28,4 @@ export function resolveAutoRestartPolicy(config: AutoRestartConfig, env: NodeJS.
 
 export function automaticRestartBlockedReason(policy: AutoRestartPolicy): string {
   return `Provider idle for ${formatDuration(policy.idleMs)} after ${policy.maxRestarts} automatic restarts.`;
-}
-
-function parseNonNegativeIntegerValue(name: string, value: string | undefined, defaultValue: number): number {
-  if (value === undefined) return defaultValue;
-  const parsed = Number(value);
-  if (!Number.isSafeInteger(parsed) || parsed < 0) throw new Error(`${name} must be a non-negative integer, got ${value}.`);
-  return parsed;
 }

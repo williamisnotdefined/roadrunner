@@ -147,7 +147,6 @@ export async function run(context: ProjectContext, options: RunOptions = {}): Pr
           completedResult = completed;
           break;
         }
-        await ensureProviderAvailable(context);
 
         emitRunEvent(options, { step, type: "step" });
         let stepResult: Awaited<ReturnType<typeof runStepWithRestarts>>;

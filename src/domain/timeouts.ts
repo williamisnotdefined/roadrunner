@@ -1,3 +1,5 @@
+import { parseNonNegativeIntegerValue } from "./numeric-options.js";
+
 const defaultVerificationTimeoutMs = 10 * 60 * 1000;
 const defaultProviderTimeoutMs = 30 * 60 * 1000;
 const defaultOpenCodeCheckTimeoutMs = 10_000;
@@ -32,11 +34,4 @@ function remainingDeadlineMs(deadline: number): number {
   const remaining = Math.floor(deadline - Date.now());
   if (remaining <= 0) throw new Error("Roadrunner deadline exceeded.");
   return remaining;
-}
-
-function parseNonNegativeIntegerValue(name: string, value: string | undefined, defaultValue: number): number {
-  if (value === undefined) return defaultValue;
-  const parsed = Number(value);
-  if (!Number.isSafeInteger(parsed) || parsed < 0) throw new Error(`${name} must be a non-negative integer, got ${value}.`);
-  return parsed;
 }

@@ -1,3 +1,5 @@
+import type { PathOverrides } from "../infrastructure/config.js";
+
 export type CliArgs = Record<string, string | boolean | string[]> & { _: string[] };
 
 export function parseArgs(argv: string[]): CliArgs {
@@ -57,4 +59,25 @@ export function optionalNumberOption(value: unknown): number | undefined {
   if (value === undefined) return undefined;
   if (value === true) throw new Error("Expected a positive number, got true.");
   return numberOption(value, 0);
+}
+
+export function pathOverridesFromArgs(args: CliArgs): PathOverrides {
+  const overrides: PathOverrides = {};
+  const options: Array<[keyof PathOverrides, unknown]> = [
+    ["config", args.config],
+    ["goals", args.goals],
+    ["goal", args.goal],
+    ["lock", args.lock],
+    ["logs", args.logs],
+    ["processes", args.processes],
+    ["prompts", args.prompts],
+    ["roadmap", args.roadmap],
+  ];
+
+  for (const [key, value] of options) {
+    const option = stringOption(value);
+    if (option !== undefined) overrides[key] = option;
+  }
+
+  return overrides;
 }
