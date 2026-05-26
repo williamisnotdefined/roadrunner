@@ -29,7 +29,7 @@ describe("OpenCodeProvider validation", () => {
     const directory = await tempDir("roadrunner-provider-validate-error-");
     try {
       process.env.PATH = directory;
-      expect(await validateOpenCodeCli()).toEqual(["opencode must be installed and available in PATH."]);
+      expect(await validateOpenCodeCli()).toEqual(["OpenCode CLI was not found. Install opencode or ensure the opencode executable is available in PATH."]);
 
       const binDir = path.join(directory, "bin");
       await mkdir(binDir, { recursive: true });
@@ -37,19 +37,19 @@ describe("OpenCodeProvider validation", () => {
       process.env.PATH = `${binDir}${path.delimiter}${oldEnv.PATH ?? ""}`;
 
       expect(await validateOpenCodeCli()).toEqual([
-        "opencode run --help is missing required flag --variant.",
-        "opencode run --help is missing required flag --agent.",
-        "opencode run --help is missing required flag --file.",
-        "opencode run --help is missing required flag --dangerously-skip-permissions.",
+        "Installed OpenCode CLI is missing required flag --variant; update OpenCode or check that the expected opencode executable is first in PATH.",
+        "Installed OpenCode CLI is missing required flag --agent; update OpenCode or check that the expected opencode executable is first in PATH.",
+        "Installed OpenCode CLI is missing required flag --file; update OpenCode or check that the expected opencode executable is first in PATH.",
+        "Installed OpenCode CLI is missing required flag --dangerously-skip-permissions; update OpenCode or check that the expected opencode executable is first in PATH.",
       ]);
 
       await writeFile(path.join(binDir, "opencode"), "#!/usr/bin/env node\nconsole.log('--modeling --variant-name --agentic --filename --dangerously-skip-permissions-extra');\n", { mode: 0o755 });
       expect(await validateOpenCodeCli()).toEqual([
-        "opencode run --help is missing required flag --model.",
-        "opencode run --help is missing required flag --variant.",
-        "opencode run --help is missing required flag --agent.",
-        "opencode run --help is missing required flag --file.",
-        "opencode run --help is missing required flag --dangerously-skip-permissions.",
+        "Installed OpenCode CLI is missing required flag --model; update OpenCode or check that the expected opencode executable is first in PATH.",
+        "Installed OpenCode CLI is missing required flag --variant; update OpenCode or check that the expected opencode executable is first in PATH.",
+        "Installed OpenCode CLI is missing required flag --agent; update OpenCode or check that the expected opencode executable is first in PATH.",
+        "Installed OpenCode CLI is missing required flag --file; update OpenCode or check that the expected opencode executable is first in PATH.",
+        "Installed OpenCode CLI is missing required flag --dangerously-skip-permissions; update OpenCode or check that the expected opencode executable is first in PATH.",
       ]);
 
       await writeFile(path.join(binDir, "opencode"), "#!/usr/bin/env node\nconsole.error('bad help');\nprocess.exit(2);\n", { mode: 0o755 });
@@ -57,7 +57,7 @@ describe("OpenCodeProvider validation", () => {
 
       await writeFile(path.join(binDir, "opencode"), "#!/usr/bin/env node\nif (process.argv.includes('--help')) setInterval(() => {}, 1000);\n", { mode: 0o755 });
       process.env.ROADRUNNER_OPENCODE_CHECK_TIMEOUT_MS = "50";
-      expect(await validateOpenCodeCli()).toEqual(["opencode run --help timed out after 50 ms."]);
+      expect(await validateOpenCodeCli()).toEqual(["opencode run --help timed out after 0s (50 ms)."]);
 
       process.env.ROADRUNNER_OPENCODE_CHECK_TIMEOUT_MS = "nope";
       expect(await validateOpenCodeCli()).toEqual(["ROADRUNNER_OPENCODE_CHECK_TIMEOUT_MS must be a positive integer, got nope."]);

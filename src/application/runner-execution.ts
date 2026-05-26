@@ -9,11 +9,12 @@ import type { RunSnapshot } from "./run-snapshot.js";
 import { createLogDir, renderPrompt, writePrivateFile } from "../infrastructure/run-artifacts.js";
 import type { CurrentAttemptState, RunControlState } from "./runner-control.js";
 import { planStep } from "./runner-planning.js";
-import { fixFailure, verify as verifyStep } from "./runner-verification.js";
+import { fixFailure, verify as verifyStep, type VerificationFailure } from "./runner-verification.js";
 import type { RoadrunnerRunActivityEvent, RoadrunnerRunEvent, RoadrunnerRunPhase } from "./runner.js";
 import { runProviderRole } from "./provider-runner.js";
 import { PlanOutputError } from "./plan-output.js";
 import { AutomaticRestartLimitExceededError } from "./run-errors.js";
+import { formatContextualError } from "./error-message.js";
 
 interface RunStepInput {
   context: ProjectContext;
@@ -82,7 +83,7 @@ export async function runStepWithRestarts({ context, controlState, deadline, emi
       }
       if (planResult.result.code !== 0) {
         emitEvent({ queueFile: blockedQueue(originalQueueFile, step, `Planning exited ${String(planResult.result.code)}`), type: "queue-updated" });
-        throw new Error(`Planning failed for ${attemptStep.id} (exit ${String(planResult.result.code)}). See ${path.join(planResult.logDir, "plan.opencode.log")}.`);
+        throw new Error(formatContextualError(`Planning provider failed for ${attemptStep.id}.`, [`Exit code: ${String(planResult.result.code)}.`], path.join(planResult.logDir, "plan.opencode.log")));
       }
 
       const logDir = await createLogDir(context, attemptStep.id);
@@ -120,7 +121,7 @@ export async function runStepWithRestarts({ context, controlState, deadline, emi
       );
       if (result.code !== 0) {
         emitEvent({ queueFile: blockedQueue(originalQueueFile, step, `Provider exited ${String(result.code)}`), type: "queue-updated" });
-        throw new Error(`Implementation failed for ${attemptStep.id}.`);
+        throw new Error(formatContextualError(`Implementation provider failed for ${attemptStep.id}.`, [`Exit code: ${String(result.code)}.`], path.join(logDir, "implement.opencode.log")));
       }
 
       setAttemptPhase(attemptState, "verify");
@@ -135,6 +136,7 @@ export async function runStepWithRestarts({ context, controlState, deadline, emi
         controlState,
         attemptState,
       );
+      let fixExitCode: number | null | undefined;
       if (!verification.ok) {
         setAttemptPhase(attemptState, "fix");
         emitEvent({ step: attemptStep, type: "fix" });
@@ -167,12 +169,14 @@ export async function runStepWithRestarts({ context, controlState, deadline, emi
             controlState,
             attemptState,
           );
+        } else {
+          fixExitCode = fix.code;
         }
       }
 
       if (!verification.ok) {
         emitEvent({ queueFile: blockedQueue(originalQueueFile, step, "Verification failed after fix attempt."), type: "queue-updated" });
-        throw new Error(`Verification failed for ${attemptStep.id}.`);
+        throw new Error(formatVerificationFailure(attemptStep, verification.failedCommand, fixExitCode, path.join(logDir, "fix-failure.opencode.log")));
       }
 
       const completionQueue = normalizeQueueFile(originalQueueFile);
@@ -215,6 +219,13 @@ function blockedQueue(queueFile: QueueFile, step: QueueStep, reason: string): Qu
   const nextQueue = normalizeQueueFile(queueFile);
   markBlocked(nextQueue, step.id, reason);
   return nextQueue;
+}
+
+function formatVerificationFailure(step: QueueStep, failure: VerificationFailure, fixExitCode: number | null | undefined, fixLogPath: string): string {
+  const details = [`Failed command: ${failure.command}`, `Command index: verification[${failure.index}].`, `Exit code: ${String(failure.code)}.`];
+  if (fixExitCode !== undefined) details.push(`Fix attempt exit code: ${String(fixExitCode)}.`, `Fix attempt log: ${fixLogPath}`);
+  else details.push(`Fix attempt log: ${fixLogPath}`);
+  return formatContextualError(`Verification failed for ${step.id}.`, details, failure.logPath);
 }
 
 function startAttempt(state: RunControlState, step: QueueStep): CurrentAttemptState {

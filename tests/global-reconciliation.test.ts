@@ -44,7 +44,7 @@ describe("global reconciliation", () => {
   });
 
   test.each([
-    ["reconcile-fail", /Global reconciliation failed/],
+    ["reconcile-fail", /Global reconciliation provider failed/],
     ["reconcile-invalid", /queue.version/],
     ["reconcile-wrong-model", /queue.model/],
     ["reconcile-wrong-variant", /queue.variant/],

@@ -189,7 +189,7 @@ describe("OpenCodeProvider", () => {
       });
 
       expect(result.code).toBe(124);
-      expect(result.output).toMatch(/Provider timed out after 50 ms/);
+      expect(result.output).toMatch(/Provider timed out after 0s \(50 ms\)/);
       expect(await readFile(logPath, "utf8")).toBe(result.output);
     } finally {
       await removeDir(directory);

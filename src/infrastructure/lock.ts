@@ -22,7 +22,7 @@ export async function acquireProjectLock(context: ProjectContext, label = "Roadr
       await handle.close();
     }
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "EEXIST" || !(await removeStaleProjectLock(context))) throw new Error(`${label} lock already exists at ${context.paths.lock}.`);
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST" || !(await removeStaleProjectLock(context))) throw new Error(`${label} lock already exists at ${context.paths.lock}. Another Roadrunner run may still be active. Close the other run or wait for it to finish, then retry. If you are sure no Roadrunner process is running, remove the stale lock file manually.`);
     return acquireProjectLock(context, label);
   }
 

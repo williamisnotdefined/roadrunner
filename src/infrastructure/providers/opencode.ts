@@ -12,6 +12,7 @@ import { providerChildEnv } from "../child-env.js";
 import { createCapturedOutputBuffer } from "../captured-output.js";
 import { defaultModel, defaultVariant } from "../../domain/provider-defaults.js";
 import { openCodeCheckTimeoutMs, providerTimeoutMs } from "../../domain/timeouts.js";
+import { formatDuration } from "../../domain/duration.js";
 import type { Provider, ProviderRunInput, ProviderRunResult } from "./provider.js";
 
 const nestedOpenCodeEnvKeys = ["OPENCODE_SESSION", "OPENCODE_SESSION_ID", "OPENCODE_SERVER", "OPENCODE_WORKSPACE", "OPENCODE_APP_INFO"];
@@ -103,7 +104,7 @@ export class OpenCodeProvider implements Provider {
     if (timeoutMs > 0) {
       timeout = setTimeout(() => {
         timedOut = true;
-        terminateChild(`Provider timed out after ${timeoutMs} ms. Sending SIGTERM.\n`);
+        terminateChild(`Provider timed out after ${formatTimeout(timeoutMs)}. Sending SIGTERM.\n`);
       }, timeoutMs);
     }
 
@@ -156,13 +157,13 @@ export async function validateOpenCodeCli(): Promise<string[]> {
     const result = await execFileAsync("opencode", ["run", "--help"], { killSignal: "SIGKILL", timeout: timeoutMs });
     const help = `${result.stdout}\n${result.stderr}`;
     const flags = new Set(help.match(/--[A-Za-z0-9][A-Za-z0-9-]*/g) ?? []);
-    return requiredRunFlags.filter((flag) => !flags.has(flag)).map((flag) => `opencode run --help is missing required flag ${flag}.`);
+    return requiredRunFlags.filter((flag) => !flags.has(flag)).map((flag) => `Installed OpenCode CLI is missing required flag ${flag}; update OpenCode or check that the expected opencode executable is first in PATH.`);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).message.includes("ROADRUNNER_OPENCODE_CHECK_TIMEOUT_MS")) return [(error as Error).message];
     const code = (error as NodeJS.ErrnoException).code;
-    if (code === "ENOENT") return ["opencode must be installed and available in PATH."];
+    if (code === "ENOENT") return ["OpenCode CLI was not found. Install opencode or ensure the opencode executable is available in PATH."];
     if ((error as { killed?: boolean; signal?: NodeJS.Signals }).killed || (error as { signal?: NodeJS.Signals }).signal === "SIGKILL") {
-      return [`opencode run --help timed out after ${openCodeCheckTimeoutMs(process.env.ROADRUNNER_OPENCODE_CHECK_TIMEOUT_MS)} ms.`];
+      return [`opencode run --help timed out after ${formatTimeout(openCodeCheckTimeoutMs(process.env.ROADRUNNER_OPENCODE_CHECK_TIMEOUT_MS))}.`];
     }
     return [`opencode run --help failed: ${(error as Error).message}`];
   }
@@ -187,9 +188,9 @@ function openCodeRunEnv({ bypassProviderPermissions, context, env, model, varian
   const childEnv: NodeJS.ProcessEnv = providerChildEnv(process.env, { ...(env ?? {}), OPENCODE_MODEL: model, OPENCODE_VARIANT: variant });
   const nestedIndicator = nestedOpenCodeIndicator(childEnv);
   if (nestedIndicator && !context.config.allowNestedOpenCode) {
-    throw new Error(`Refusing to launch nested OpenCode session (${nestedIndicator} is set). Set allowNestedOpenCode: true to override.`);
+    throw new Error(`Refusing to launch a nested OpenCode session (${nestedIndicator} is set). Roadrunner blocks nested sessions to avoid controlling the parent assistant session. Set allowNestedOpenCode: true only if this is intentional.`);
   }
-  if (workspaceAccess === "read-only" && bypassProviderPermissions) throw new Error("Read-only provider runs cannot bypass provider permissions.");
+  if (workspaceAccess === "read-only" && bypassProviderPermissions) throw new Error("Read-only provider runs cannot bypass provider permissions; disable dangerouslySkipPermissions for read-only phases.");
 
   for (const key of nestedOpenCodeEnvKeys) delete childEnv[key];
   return childEnv;
@@ -253,4 +254,8 @@ function nestedOpenCodeIndicator(env: NodeJS.ProcessEnv): string | null {
     if (env[key]) return key;
   }
   return null;
+}
+
+function formatTimeout(timeoutMs: number): string {
+  return `${formatDuration(timeoutMs)} (${timeoutMs} ms)`;
 }

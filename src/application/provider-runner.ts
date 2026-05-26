@@ -35,7 +35,21 @@ export async function runProviderRole(context: ProjectContext, input: ProviderRo
   });
   if (before) {
     const changes = workspaceFingerprintChanges(before, await workspaceFingerprint(context));
-    if (changes.length > 0) throw new Error(`Read-only provider role ${input.role} modified workspace files: ${changes.join(", ")}`);
+    if (changes.length > 0) throw new Error(formatReadOnlyWorkspaceChange(input.role, changes));
   }
   return result;
+}
+
+function formatReadOnlyWorkspaceChange(role: string, changes: readonly string[]): string {
+  const visibleChanges = changes.slice(0, 10);
+  const hiddenCount = changes.length - visibleChanges.length;
+  return [
+    `Read-only provider role ${role} modified workspace files.`,
+    "",
+    "Roadrunner stopped because this phase is only allowed to inspect the repository.",
+    "",
+    "Changed files:",
+    ...visibleChanges.map((change) => `- ${change}`),
+    ...(hiddenCount > 0 ? [`- ...and ${hiddenCount} more`] : []),
+  ].join("\n");
 }

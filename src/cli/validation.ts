@@ -21,17 +21,17 @@ export function shouldPrintHelp(args: CliArgs, command: string): boolean {
 
 export function validateCliInvocation(command: string, args: CliArgs): string[] {
   const errors: string[] = [];
-  if (!projectCommands.has(command)) return [`Unknown command: ${command}.`];
+  if (!projectCommands.has(command)) return [`Unknown command: ${command}. Run roadrunner --help to see available commands.`];
   if (args._.length > 1) errors.push(`Unexpected positional argument: ${args._[1]}.`);
 
   const allowedOptions = new Set([...pathOptions, ...(commandOptions[command] ?? []), "help"]);
   for (const [key, value] of Object.entries(args)) {
     if (key === "_") continue;
     if (!allowedOptions.has(key)) {
-      errors.push(`Unsupported option for ${command}: --${key}.`);
+      errors.push(`Unsupported option for ${command}: --${key}. Run roadrunner ${command} --help to see supported options.`);
       continue;
     }
-    if (valueOptions.has(key) && (typeof value !== "string" || value.length === 0)) errors.push(`Expected a value for --${key}.`);
+    if (valueOptions.has(key) && (typeof value !== "string" || value.length === 0)) errors.push(`Expected a value for --${key}. Example: --${key} <value>.`);
     if (booleanOptions.has(key) && typeof value !== "boolean") errors.push(`Option --${key} does not take a value.`);
   }
 

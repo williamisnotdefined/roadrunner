@@ -72,7 +72,7 @@ describe("runner provider failures", () => {
     const project = await setupRunnerProject("provider-fail");
     const events: RoadrunnerRunEvent[] = [];
     try {
-      await expect(runRoadrunner(project.context, { onEvent: (event) => events.push(event) })).rejects.toThrow(/Implementation failed/);
+      await expect(runRoadrunner(project.context, { onEvent: (event) => events.push(event) })).rejects.toThrow(/Implementation provider failed/);
 
       const queue = latestQueueSnapshot(events);
       expect(queue.queue).toEqual([]);
@@ -86,7 +86,7 @@ describe("runner provider failures", () => {
     const project = await setupRunnerProject("provider-fail-queue-dirty");
     const events: RoadrunnerRunEvent[] = [];
     try {
-      await expect(runRoadrunner(project.context, { onEvent: (event) => events.push(event) })).rejects.toThrow(/Implementation failed/);
+      await expect(runRoadrunner(project.context, { onEvent: (event) => events.push(event) })).rejects.toThrow(/Implementation provider failed/);
 
       expect(latestQueueSnapshot(events).blocked[0]).toMatchObject({ blockedReason: "Provider exited 7", id: "first-step", title: "Build first step" });
     } finally {
@@ -98,7 +98,7 @@ describe("runner provider failures", () => {
     const project = await setupRunnerProject("provider-fail-invalid-queue");
     const events: RoadrunnerRunEvent[] = [];
     try {
-      await expect(runRoadrunner(project.context, { onEvent: (event) => events.push(event) })).rejects.toThrow(/Implementation failed/);
+      await expect(runRoadrunner(project.context, { onEvent: (event) => events.push(event) })).rejects.toThrow(/Implementation provider failed/);
 
       const queue = latestQueueSnapshot(events);
       expect(queue.version).toBe(2);
@@ -113,7 +113,7 @@ describe("runner provider failures", () => {
     const project = await setupRunnerProject("provider-fail-other-current");
     const events: RoadrunnerRunEvent[] = [];
     try {
-      await expect(runRoadrunner(project.context, { onEvent: (event) => events.push(event) })).rejects.toThrow(/Implementation failed/);
+      await expect(runRoadrunner(project.context, { onEvent: (event) => events.push(event) })).rejects.toThrow(/Implementation provider failed/);
 
       const queue = latestQueueSnapshot(events);
       expect(queue.blocked[0]).toMatchObject({ blockedReason: "Provider exited 7", id: "first-step" });
@@ -127,7 +127,7 @@ describe("runner provider failures", () => {
     const project = await setupRunnerProject("plan-fail");
     const events: RoadrunnerRunEvent[] = [];
     try {
-      await expect(runRoadrunner(project.context, { onEvent: (event) => events.push(event) })).rejects.toThrow(/Planning failed/);
+      await expect(runRoadrunner(project.context, { onEvent: (event) => events.push(event) })).rejects.toThrow(/Planning provider failed/);
       const queue = latestQueueSnapshot(events);
       expect(queue.blocked[0]).toMatchObject({ blockedReason: "Planning exited 6", id: "first-step" });
     } finally {

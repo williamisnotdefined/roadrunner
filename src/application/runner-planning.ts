@@ -6,7 +6,8 @@ import type { ProviderStartEvent } from "../infrastructure/providers/index.js";
 import type { RunSnapshot } from "./run-snapshot.js";
 import { createLogDir, renderPrompt, writePrivateFile } from "../infrastructure/run-artifacts.js";
 import { runProviderRole } from "./provider-runner.js";
-import { planMarkdownFromOutput } from "./plan-output.js";
+import { PlanOutputError, planMarkdownFromOutput } from "./plan-output.js";
+import { formatContextualError } from "./error-message.js";
 
 export interface PlanOptions {
   deadline?: number | null;
@@ -48,7 +49,17 @@ export async function planStep(context: ProjectContext, step: QueueStep, snapsho
   });
 
   await writePrivateFile(path.join(logDir, "plan.md"), result.output);
-  const planMarkdown = result.code === 0 ? planMarkdownFromOutput(result.output) : null;
+  let planMarkdown: string | null = null;
+  if (result.code === 0) {
+    try {
+      planMarkdown = planMarkdownFromOutput(result.output);
+    } catch (error) {
+      if (error instanceof PlanOutputError) {
+        throw new PlanOutputError(formatContextualError(`Planning output was invalid for ${step.id}.`, [error.message], path.join(logDir, "plan.opencode.log")));
+      }
+      throw error;
+    }
+  }
   if (planMarkdown !== null) await writePrivateFile(path.join(logDir, "plan.clean.md"), `${planMarkdown}\n`);
 
   return { logDir, planMarkdown, result, step };

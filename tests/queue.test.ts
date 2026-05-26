@@ -136,9 +136,9 @@ describe("queue", () => {
     try {
       const context = { paths: { goals: path.join(directory, "GOALS.md") } } as Parameters<typeof validateGoals>[0];
 
-      expect(await validateGoals(context)).toEqual(["GOALS.md must exist."]);
+      expect(await validateGoals(context)).toEqual(["GOALS.md must exist. Create it or run roadrunner init."]);
       await writeFile(context.paths.goals, "\n");
-      expect(await validateGoals(context)).toEqual(["GOALS.md must not be empty."]);
+      expect(await validateGoals(context)).toEqual(["GOALS.md must not be empty. Add product goals before running Roadrunner."]);
       await writeFile(context.paths.goals, "# Goals\n");
       expect(await validateGoals(context)).toEqual([]);
     } finally {
@@ -153,8 +153,8 @@ describe("queue", () => {
       const context = { paths: { goals: path.join(directory, "docs/GOALS.md") }, root: directory } as Parameters<typeof validateGoals>[0];
       const outsideContext = { paths: { goals: path.join(outside, "GOALS.md") }, root: directory } as Parameters<typeof validateGoals>[0];
 
-      expect(await validateGoals(context)).toEqual(["docs/GOALS.md must exist."]);
-      expect(await validateGoals(outsideContext)).toEqual([`${path.join(outside, "GOALS.md")} must exist.`]);
+      expect(await validateGoals(context)).toEqual(["docs/GOALS.md must exist. Create it or run roadrunner init."]);
+      expect(await validateGoals(outsideContext)).toEqual([`${path.join(outside, "GOALS.md")} must exist. Create it or run roadrunner init.`]);
     } finally {
       await removeDir(directory);
       await removeDir(outside);

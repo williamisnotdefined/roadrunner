@@ -13,7 +13,7 @@ export async function readRunSnapshot(context: ProjectContext, options: { operat
   try {
     goalsMarkdown = await readFile(context.paths.goals, "utf8");
   } catch {
-    throw new Error(`${goalsPathLabel(context)} must exist.`);
+    throw new Error(`${goalsPathLabel(context)} must exist. Create it or run roadrunner init.`);
   }
 
   const errors = validateGoalsContent(context, goalsMarkdown);

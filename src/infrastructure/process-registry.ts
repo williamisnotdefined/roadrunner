@@ -163,7 +163,7 @@ async function acquireProcessRegistryLock(lockPath: string, lock: ProcessRegistr
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
       if (await removeStaleProcessRegistryLock(lockPath)) continue;
-      if (Date.now() >= deadline) throw new Error(`Process registry lock already exists at ${lockPath}.`);
+      if (Date.now() >= deadline) throw new Error(`Process registry lock already exists at ${lockPath}. Another Roadrunner cleanup or subprocess registration may still be active. Retry shortly, or remove the stale lock manually only if you are sure no Roadrunner process is using it.`);
       await sleep(registryLockRetryMs);
     }
   }

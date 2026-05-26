@@ -190,10 +190,11 @@ Commands:
   roadrunner run [--config path] [--max-steps 1] [--max-hours n]
   roadrunner cleanup [--config path] [--force]
 
-Run UI controls:
+  Run UI controls:
   Up/Down            Select tasks or logs
   Tab/Shift+Tab      Switch between task, logs, and log viewer panels
   Enter              Open the selected task log
+  Enter/Esc          Close an active failure modal
   r                  Restart the current task attempt from planning
   q, Ctrl+C, Ctrl+Q  Stop the run and clean Roadrunner-owned subprocesses
 

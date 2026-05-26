@@ -9,6 +9,7 @@ import { processTreeExists, signalProcessTree as signalRegisteredProcessTree } f
 import { createPrivateWriteStream } from "./run-artifacts.js";
 import { verificationChildEnv } from "./child-env.js";
 import { createCapturedOutputBuffer } from "./captured-output.js";
+import { formatDuration } from "../domain/duration.js";
 
 const forceKillDelayMs = 1_000;
 
@@ -32,7 +33,7 @@ export async function runShell(
   const child = spawn(command, [], { cwd: context.root, detached: process.platform !== "win32", env: verificationChildEnv(), shell: true });
   if (!child.pid) {
     await closeLogStream(logStream);
-    throw new Error("Failed to start shell process.");
+    throw new Error("Failed to start shell process for verification command.");
   }
   let registeredPid: number | null = child.pid;
   let aborted = false;
@@ -76,7 +77,7 @@ export async function runShell(
   if (timeoutMs > 0) {
     timeout = setTimeout(() => {
       timedOut = true;
-      terminateProcess(`Command timed out after ${timeoutMs} ms. Sending SIGTERM.\n`);
+      terminateProcess(`Verification command timed out after ${formatTimeout(timeoutMs)}. Sending SIGTERM.\n`);
     }, timeoutMs);
   }
 
@@ -159,4 +160,8 @@ function closeLogStream(logStream: WriteStream): Promise<void> {
       resolve();
     });
   });
+}
+
+function formatTimeout(timeoutMs: number): string {
+  return `${formatDuration(timeoutMs)} (${timeoutMs} ms)`;
 }

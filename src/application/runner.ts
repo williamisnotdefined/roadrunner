@@ -10,6 +10,7 @@ import { createRunControl, type RunControlState } from "./runner-control.js";
 import { isRunStopRequested, RunStopRequested, runStepWithRestarts } from "./runner-execution.js";
 import { reconcileQueue } from "./runner-reconciliation.js";
 import { refreshQueueAtRunStart, seedQueueAtRunStart } from "./runner-startup.js";
+import { formatContextualError } from "./error-message.js";
 
 export type { PlanOptions } from "./runner-planning.js";
 export { verify } from "./runner-verification.js";
@@ -231,7 +232,7 @@ export async function run(context: ProjectContext, options: RunOptions = {}): Pr
 async function prepareInitialQueueFile(context: ProjectContext, queueFile: QueueFile): Promise<QueueFile> {
   const seedQueue = await seedQueueAtRunStart(context);
   const errors = validateQueueFile(queueFile, { model: context.config.model, variant: context.config.variant });
-  if (errors.length > 0) throw new Error(errors.join("\n"));
+  if (errors.length > 0) throw new Error(formatContextualError("Initial queue file is invalid.", errors));
 
   const normalizedQueueFile = normalizeQueueFile(queueFile);
   const verificationErrors = validateVerificationPolicy({
@@ -239,7 +240,7 @@ async function prepareInitialQueueFile(context: ProjectContext, queueFile: Queue
     proposed: normalizedQueueFile,
     trustedCommands: trustedVerificationCommands(seedQueue),
   });
-  if (verificationErrors.length > 0) throw new Error(verificationErrors.join("\n"));
+  if (verificationErrors.length > 0) throw new Error(formatContextualError("Initial queue file has untrusted verification commands.", verificationErrors));
 
   return normalizedQueueFile;
 }

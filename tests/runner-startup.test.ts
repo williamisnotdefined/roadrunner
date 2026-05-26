@@ -87,7 +87,7 @@ describe("runner startup refresh", () => {
     try {
       await writeFile(project.context.paths.roadmap, `# Strategic Roadmap\n\nBuild the smallest useful marker-backed feature without operational fields.\n`);
 
-      await expect(runRoadrunner(project.context, { maxSteps: 1 })).rejects.toThrow(/verification\[0\] is not trusted/);
+      await expect(runRoadrunner(project.context, { maxSteps: 1 })).rejects.toThrow(/Verification commands were rejected before execution/);
     } finally {
       await removeDir(project.directory);
     }
@@ -113,7 +113,7 @@ describe("runner startup refresh", () => {
   test("fails when the startup refresh provider fails", async () => {
     const project = await setupRunnerProject("startup-refresh-fail");
     try {
-      await expect(runRoadrunner(project.context, { maxSteps: 1 })).rejects.toThrow(/Startup refresh failed/);
+      await expect(runRoadrunner(project.context, { maxSteps: 1 })).rejects.toThrow(/Startup refresh provider failed/);
     } finally {
       await removeDir(project.directory);
     }

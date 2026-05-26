@@ -94,12 +94,12 @@ export function currentDisplayState(input: { baseDisplay: RunDisplayState; now: 
 export function failureActionText(failure: RunTuiFailure | null): string | null {
   if (!failure) return null;
   const detailsText = failure.details.length > 0 ? ` ${escapeBlessedMarkup(failure.details.join(" | "))}` : "";
-  return ` {red-fg}${escapeBlessedMarkup(failure.title)}{/red-fg}:${detailsText}  {cyan-fg}[r] Restart task{/cyan-fg}  [l] View logs  [c] Cleanup  [q] Exit`;
+  return ` {red-fg}${escapeBlessedMarkup(failure.title)}{/red-fg}:${detailsText}  {cyan-fg}[Enter/Esc] Close{/cyan-fg}  [r] Restart task  [l] View logs  [c] Cleanup  [q] Exit`;
 }
 
 export function failureModalText(failure: RunTuiFailure): string {
   const details = failure.details.length > 0 ? `\n${failure.details.map((detail) => `- ${escapeBlessedMarkup(detail)}`).join("\n")}` : "";
-  return `{red-fg}{bold}${escapeBlessedMarkup(failure.title)}{/bold}{/red-fg}\n${escapeBlessedMarkup(failure.message)}${details}\n\n[r] Restart task   [l] View logs   [c] Cleanup   [q] Exit`;
+  return `{red-fg}{bold}${escapeBlessedMarkup(failure.title)}{/bold}{/red-fg}\n${escapeBlessedMarkup(failure.message)}${details}\n\n[Enter/Esc] Close   [r] Restart task   [l] View logs   [c] Cleanup   [q] Exit`;
 }
 
 export function renderFailureModal(modal: { hide(): void; setContent(content: string): void; show(): void }, failure: RunTuiFailure | null): void {

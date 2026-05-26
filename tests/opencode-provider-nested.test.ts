@@ -21,7 +21,7 @@ describe("OpenCodeProvider nested sessions", () => {
       process.env.OPENCODE_SESSION = "nested";
 
       await expect(new OpenCodeProvider().run({ agent: "plan", context, logPath: path.join(directory, "log.txt"), prompt: "prompt", role: "plan", workspaceAccess: "read-only" })).rejects.toThrow(
-        /Refusing to launch nested OpenCode/,
+        /Refusing to launch a nested OpenCode/,
       );
 
       context.config.allowNestedOpenCode = true;

@@ -24,7 +24,7 @@ describe("runner initial queues", () => {
       const queueFile = queueFileFromRoadmap(sampleRoadmap(), project.context.config);
       queueFile.queue[0]!.verification = ['node -e "process.exit(0)"'];
 
-      await expect(runRoadrunner(project.context, { initialQueueFile: queueFile, maxSteps: 1 })).rejects.toThrow(/verification\[0\] is not trusted/);
+      await expect(runRoadrunner(project.context, { initialQueueFile: queueFile, maxSteps: 1 })).rejects.toThrow(/Verification commands were rejected before execution/);
     } finally {
       await removeDir(project.directory);
     }

@@ -1,6 +1,7 @@
 import type { Widgets } from "blessed";
 
 export interface RunTuiKeyHandlers {
+  cancel(): void;
   cleanup(): void;
   confirmRestart(yes: boolean): void;
   directive(): void;
@@ -34,5 +35,6 @@ export function bindRunTuiKeys(screen: Widgets.Screen, handlers: RunTuiKeyHandle
   screen.key(["q", "C-c", "C-q"], handlers.exit);
   screen.key(["l"], handlers.viewLogs);
   screen.key(["y", "Y"], () => handlers.confirmRestart(true));
-  screen.key(["n", "N", "escape"], () => handlers.confirmRestart(false));
+  screen.key(["n", "N"], () => handlers.confirmRestart(false));
+  screen.key(["escape"], handlers.cancel);
 }

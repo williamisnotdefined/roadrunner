@@ -161,7 +161,7 @@ describe("runner reconciliation", () => {
     const project = await setupRunnerProject("reconcile-fail");
     const events: RoadrunnerRunEvent[] = [];
     try {
-      await expect(runRoadrunner(project.context, { onEvent: (event) => events.push(event) })).rejects.toThrow(/Reconciliation failed/);
+      await expect(runRoadrunner(project.context, { onEvent: (event) => events.push(event) })).rejects.toThrow(/Reconciliation provider failed/);
       const queue = latestQueueSnapshot(events);
       expect(queue.history.map((step) => step.id)).toEqual(["first-step"]);
       expect(queue.blocked).toEqual([]);

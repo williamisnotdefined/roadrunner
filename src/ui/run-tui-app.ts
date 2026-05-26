@@ -43,11 +43,12 @@ export async function createTuiApp(context: ProjectContext, session: RunSessionL
   const elements = createRunTuiElements(blessed, options.input, options.output);
   const { actions, details, footer, header, log, logs, modal, screen, table } = elements;
   bindRunTuiKeys(screen, {
+    cancel: () => (activeFailure ? dismissFailure() : confirmRestart(false)),
     cleanup: () => enqueueAction({ type: "cleanup" }),
     confirmRestart: (yes) => confirmRestart(yes),
     directive: () => promptForDirective(blessed, screen, (text) => enqueueAction({ text, type: "add-directive" })),
     down: () => (focus === "logs" ? moveLog(1) : focus === "log" ? scrollLog(1) : moveTask(1)),
-    enter: () => openSelectedLog(),
+    enter: () => (activeFailure ? dismissFailure() : openSelectedLog()),
     exit: () => requestExit(),
     focusBack: () => setFocus(previousFocus(focus)),
     focusNext: () => setFocus(nextFocus(focus)),
@@ -275,6 +276,10 @@ export async function createTuiApp(context: ProjectContext, session: RunSessionL
   function chooseFailureAction(type: "restart-task" | "view-logs"): void {
     activeFailure = null;
     enqueueAction({ type });
+    render();
+  }
+  function dismissFailure(): void {
+    activeFailure = null;
     render();
   }
   function enqueueAction(action: RunTuiAction): void {

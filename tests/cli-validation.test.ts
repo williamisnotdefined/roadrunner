@@ -10,8 +10,8 @@ describe("cli validation", () => {
     expect(shouldPrintHelp({ _: ["run"], help: true }, "run")).toBe(true);
     expect(shouldPrintHelp({ _: ["run"] }, "run")).toBe(false);
     expect(validateCliInvocation("cleanup", { _: ["cleanup"], force: "true" })).toEqual(["Option --force does not take a value."]);
-    expect(validateCliInvocation("run", { _: ["run"], "max-steps": true })).toEqual(["Expected a value for --max-steps."]);
-    expect(validateCliInvocation("run", { _: ["run"], queue: "state/queue.json" })).toEqual(["Unsupported option for run: --queue."]);
+    expect(validateCliInvocation("run", { _: ["run"], "max-steps": true })).toEqual(["Expected a value for --max-steps. Example: --max-steps <value>."]);
+    expect(validateCliInvocation("run", { _: ["run"], queue: "state/queue.json" })).toEqual(["Unsupported option for run: --queue. Run roadrunner run --help to see supported options."]);
   });
 
   test("rejects unknown commands without loading project config", async () => {

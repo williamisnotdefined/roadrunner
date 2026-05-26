@@ -8,6 +8,7 @@ import { trustedVerificationCommands, validateVerificationPolicy } from "../doma
 import { renderPrompt, writePrivateFile } from "../infrastructure/run-artifacts.js";
 import { appendQueueProposalContract, queueProposalFromOutput } from "./queue-proposal.js";
 import { runProviderRole } from "./provider-runner.js";
+import { errorMessage, formatContextualError } from "./error-message.js";
 
 interface ReconcileOptions {
   deadline: number | null;
@@ -27,11 +28,12 @@ export async function reconcileQueue(context: ProjectContext, queueBeforeReconci
     STEP_JSON: JSON.stringify(step, null, 2),
   }));
   await writePrivateFile(path.join(logDir, "reconcile.prompt.md"), prompt);
+  const providerLogPath = path.join(logDir, "reconcile.opencode.log");
 
   const result = await runProviderRole(context, {
     agent: "plan",
     deadline: options.deadline,
-    logPath: path.join(logDir, "reconcile.opencode.log"),
+    logPath: providerLogPath,
     onOutput: options.onOutput,
     onProviderStart: options.onProviderStart,
     prompt,
@@ -42,16 +44,21 @@ export async function reconcileQueue(context: ProjectContext, queueBeforeReconci
   });
   await writePrivateFile(path.join(logDir, "reconcile.md"), result.output);
 
-  if (result.code !== 0) throw new Error(`Reconciliation failed for ${step.id}.`);
+  if (result.code !== 0) throw new Error(formatContextualError(`Reconciliation provider failed for ${step.id}.`, [`Exit code: ${String(result.code)}.`], providerLogPath));
 
-  const proposedQueueFile = queueProposalFromOutput(result.output, context);
+  let proposedQueueFile: QueueFile;
+  try {
+    proposedQueueFile = queueProposalFromOutput(result.output, context);
+  } catch (error) {
+    throw new Error(formatContextualError(`Reconciliation returned an invalid queue proposal for ${step.id}.`, [errorMessage(error)], providerLogPath));
+  }
   const normalizedQueueFile = preserveClosedRecords(queueBeforeReconcile, proposedQueueFile);
   const errors = [
     ...validateReconcileQueueScope(queueBeforeReconcile, normalizedQueueFile),
     ...validateQueueFile(normalizedQueueFile, { model: context.config.model, variant: context.config.variant }),
     ...validateVerificationPolicy({ allowedCommands: context.config.allowedVerificationCommands, proposed: normalizedQueueFile, trustedCommands: trustedVerificationCommands(queueBeforeReconcile) }),
   ];
-  if (errors.length > 0) throw new Error(errors.join("\n"));
+  if (errors.length > 0) throw new Error(formatContextualError(`Reconciliation returned an invalid queue proposal for ${step.id}.`, errors, providerLogPath));
 
   return normalizedQueueFile;
 }

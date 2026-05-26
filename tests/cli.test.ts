@@ -110,6 +110,7 @@ describe("cli", () => {
     const output: string[] = [];
     try {
       expect(helpText()).not.toMatch(/import-roadmap/);
+      expect(helpText()).toMatch(/Enter\/Esc\s+Close an active failure modal/);
       expect(await main([], { cwd: directory, io: { stdout: (message) => output.push(message) } })).toBe(0);
       expect(output.join("\n")).toMatch(/Roadrunner/);
     } finally {
@@ -179,7 +180,7 @@ describe("cli", () => {
       process.env.PATH = directory;
 
       expect(await main(["check"], { cwd: directory, io: { stderr: (message) => errors.push(message) } })).toBe(1);
-      expect(errors.join("\n")).toMatch(/opencode must be installed/);
+      expect(errors.join("\n")).toMatch(/OpenCode CLI was not found/);
     } finally {
       process.env.PATH = originalPath;
       await removeDir(directory);

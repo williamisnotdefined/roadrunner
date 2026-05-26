@@ -74,7 +74,7 @@ export async function validateGoals(context: GoalsContext): Promise<string[]> {
   try {
     content = await readFile(context.paths.goals, "utf8");
   } catch {
-    return [`${label} must exist.`];
+    return [`${label} must exist. Create it or run roadrunner init.`];
   }
 
   return validateGoalsContent(context, content);
@@ -82,7 +82,7 @@ export async function validateGoals(context: GoalsContext): Promise<string[]> {
 
 export function validateGoalsContent(context: GoalsContext, content: string): string[] {
   const label = goalsPathLabel(context);
-  return content.trim().length === 0 ? [`${label} must not be empty.`] : [];
+  return content.trim().length === 0 ? [`${label} must not be empty. Add product goals before running Roadrunner.`] : [];
 }
 
 export function normalizeQueueFile(queueFile: QueueFile): QueueFile {

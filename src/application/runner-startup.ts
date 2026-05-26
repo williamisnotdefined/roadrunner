@@ -10,6 +10,7 @@ import type { RunSnapshot } from "./run-snapshot.js";
 import { createLogDir, renderPrompt, writePrivateFile } from "../infrastructure/run-artifacts.js";
 import { appendQueueProposalContract, queueProposalFromOutput } from "./queue-proposal.js";
 import { runProviderRole } from "./provider-runner.js";
+import { errorMessage, formatContextualError } from "./error-message.js";
 
 export interface StartupRefreshOptions {
   deadline: number | null;
@@ -41,11 +42,12 @@ export async function refreshQueueAtRunStart(context: ProjectContext, snapshot: 
     ROADMAP_PARSE_STATUS: seed.parseStatus,
   }));
   await writePrivateFile(path.join(logDir, "startup-refresh.prompt.md"), prompt);
+  const providerLogPath = path.join(logDir, "startup-refresh.opencode.log");
 
   const result = await runProviderRole(context, {
     agent: "plan",
     deadline: options.deadline,
-    logPath: path.join(logDir, "startup-refresh.opencode.log"),
+    logPath: providerLogPath,
     onOutput: options.onOutput,
     onProviderStart: options.onProviderStart,
     prompt,
@@ -56,9 +58,14 @@ export async function refreshQueueAtRunStart(context: ProjectContext, snapshot: 
   });
   await writePrivateFile(path.join(logDir, "startup-refresh.md"), result.output);
 
-  if (result.code !== 0) throw new Error(`Startup refresh failed (exit ${String(result.code)}).`);
+  if (result.code !== 0) throw new Error(formatContextualError("Startup refresh provider failed.", [`Exit code: ${String(result.code)}.`], providerLogPath));
 
-  const queueFile = queueProposalFromOutput(result.output, context);
+  let queueFile: QueueFile;
+  try {
+    queueFile = queueProposalFromOutput(result.output, context);
+  } catch (error) {
+    throw new Error(formatContextualError("Startup refresh returned an invalid queue proposal.", [errorMessage(error)], providerLogPath));
+  }
   const validationErrors = [
     ...validateStartupQueueScope(queueFile),
     ...validateVerificationPolicy({
@@ -67,7 +74,7 @@ export async function refreshQueueAtRunStart(context: ProjectContext, snapshot: 
       trustedCommands: trustedVerificationCommands(seed.queueFile),
     }),
   ];
-  if (validationErrors.length > 0) throw new Error(validationErrors.join("\n"));
+  if (validationErrors.length > 0) throw new Error(formatContextualError("Startup refresh returned an invalid queue proposal.", validationErrors, providerLogPath));
 
   return { logDir, queueFile };
 }

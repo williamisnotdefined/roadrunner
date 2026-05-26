@@ -146,7 +146,7 @@ export function validateRoadrunnerConfig(value: unknown, filePath = "Roadrunner 
   for (const [key, configValue] of Object.entries(value)) {
     const validator = configValidators[key as keyof typeof configValidators];
     if (!validator) {
-      errors.push(`${filePath}.${key} is not a supported config key.`);
+      errors.push(`${filePath}.${key} is not a supported config key. Supported keys: ${Object.keys(configValidators).sort().join(", ")}.`);
       continue;
     }
     errors.push(...validator(configValue, `${filePath}.${key}`));
@@ -161,7 +161,13 @@ export async function writeJson(filePath: string, value: unknown): Promise<void>
 }
 
 async function readConfig(filePath: string): Promise<RoadrunnerConfig> {
-  const value = await readJson<unknown>(filePath);
+  let value: unknown;
+  try {
+    value = await readJson<unknown>(filePath);
+  } catch (error) {
+    if (error instanceof SyntaxError) throw new Error(`Failed to read Roadrunner config at ${filePath}.\n\nThe file is not valid JSON:\n${error.message}`);
+    throw error;
+  }
   const errors = validateRoadrunnerConfig(value, filePath);
   if (errors.length > 0) throw new Error(errors.join("\n"));
   return value as RoadrunnerConfig;
@@ -184,10 +190,10 @@ function nonNegativeIntegerValidator(value: unknown, pathLabel: string): string[
 }
 
 function stringArrayValidator(value: unknown, pathLabel: string): string[] {
-  if (!Array.isArray(value)) return [`${pathLabel} must be an array of non-empty strings.`];
+  if (!Array.isArray(value)) return [`${pathLabel} must be an array of exact non-empty command strings.`];
   const errors: string[] = [];
   for (const [index, item] of value.entries()) {
-    if (typeof item !== "string" || item.length === 0) errors.push(`${pathLabel}[${index}] must be a non-empty string.`);
+    if (typeof item !== "string" || item.length === 0) errors.push(`${pathLabel}[${index}] must be an exact non-empty command string.`);
   }
   return errors;
 }

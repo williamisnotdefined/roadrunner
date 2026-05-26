@@ -10,6 +10,7 @@ import { createLogDir, renderPrompt, writePrivateFile } from "../infrastructure/
 import { appendQueueProposalContract, queueProposalFromOutput } from "./queue-proposal.js";
 import type { RunSnapshot } from "./run-snapshot.js";
 import { runProviderRole } from "./provider-runner.js";
+import { errorMessage, formatContextualError } from "./error-message.js";
 
 export interface GlobalReconcileOptions {
   deadline: number | null;
@@ -33,11 +34,12 @@ export async function reconcileProjectQueue(context: ProjectContext, queueFile: 
     ROADMAP_MD: await readRoadmapMarkdown(context),
   }));
   await writePrivateFile(path.join(logDir, "global-reconcile.prompt.md"), prompt);
+  const providerLogPath = path.join(logDir, "global-reconcile.opencode.log");
 
   const result = await runProviderRole(context, {
     agent: "plan",
     deadline: options.deadline,
-    logPath: path.join(logDir, "global-reconcile.opencode.log"),
+    logPath: providerLogPath,
     onOutput: options.onOutput,
     onProviderStart: options.onProviderStart,
     prompt,
@@ -47,15 +49,20 @@ export async function reconcileProjectQueue(context: ProjectContext, queueFile: 
     workspaceAccess: "read-only",
   });
   await writePrivateFile(path.join(logDir, "global-reconcile.md"), result.output);
-  if (result.code !== 0) throw new Error("Global reconciliation failed.");
+  if (result.code !== 0) throw new Error(formatContextualError("Global reconciliation provider failed.", [`Exit code: ${String(result.code)}.`], providerLogPath));
 
-  const proposedQueueFile = queueProposalFromOutput(result.output, context);
+  let proposedQueueFile: QueueFile;
+  try {
+    proposedQueueFile = queueProposalFromOutput(result.output, context);
+  } catch (error) {
+    throw new Error(formatContextualError("Global reconciliation returned an invalid queue proposal.", [errorMessage(error)], providerLogPath));
+  }
   const normalizedQueueFile = preserveClosedRecords(queueFile, proposedQueueFile);
   const errors = [
     ...validateQueueFile(normalizedQueueFile, { model: context.config.model, variant: context.config.variant }),
     ...validateVerificationPolicy({ allowedCommands: context.config.allowedVerificationCommands, proposed: normalizedQueueFile, trustedCommands: trustedVerificationCommands(queueFile) }),
   ];
-  if (errors.length > 0) throw new Error(errors.join("\n"));
+  if (errors.length > 0) throw new Error(formatContextualError("Global reconciliation returned an invalid queue proposal.", errors, providerLogPath));
   return { logDir, queueFile: normalizedQueueFile };
 }
 
