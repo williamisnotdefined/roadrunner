@@ -48,7 +48,7 @@ export async function readLogTail(filePath: string, maxBytes = defaultTailBytes)
   try {
     const buffer = Buffer.alloc(maxBytes);
     await handle.read(buffer, 0, maxBytes, fileStat.size - maxBytes);
-    return `[Showing last ${maxBytes} bytes of ${fileStat.size}]\n${buffer.toString("utf8")}`;
+    return `[Showing last ${maxBytes} bytes of ${fileStat.size}]\n${trimLeadingUtf8ContinuationBytes(buffer).toString("utf8")}`;
   } finally {
     await handle.close();
   }
@@ -60,7 +60,15 @@ export function relativeLogLabel(context: ProjectContext, filePath: string): str
 }
 
 function isTaskLogDir(entry: string, taskId: string): boolean {
-  return entry.endsWith(`-${taskId}`) || entry.endsWith(`-${taskId}-plan`);
+  const match = /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z-(.+)$/.exec(entry);
+  const name = match?.[1];
+  return name === taskId || name === `${taskId}-plan`;
+}
+
+function trimLeadingUtf8ContinuationBytes(buffer: Buffer): Buffer {
+  let start = 0;
+  while (start < buffer.length && (buffer[start]! & 0b1100_0000) === 0b1000_0000) start += 1;
+  return start === 0 ? buffer : buffer.subarray(start);
 }
 
 async function logsFromDirectory(context: ProjectContext, entry: string, activeLogPath?: string | null): Promise<TaskLogFile[]> {

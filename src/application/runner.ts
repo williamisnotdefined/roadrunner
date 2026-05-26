@@ -172,6 +172,10 @@ export async function run(context: ProjectContext, options: RunOptions = {}): Pr
         completed += 1;
         queueFile = stepResult.queueFile;
         if (controlState.stopRequested) break;
+        if (deadline !== null && Date.now() >= deadline) {
+          completedResult = completed;
+          break;
+        }
         emitRunEvent(options, { step: stepResult.step, type: "reconcile" });
         try {
           queueFile = await runAbortableOperation(controlState, (signal) =>

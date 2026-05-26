@@ -31,7 +31,10 @@ export function appendQueueProposalContract(prompt: string): string {
 
 export function parseQueueProposalJson(output: string): unknown {
   const blocks = fencedBlocks(output);
-  const namedBlocks = blocks.filter((block) => block.info.split(/\s+/).includes("roadrunner-queue"));
+  const namedBlocks = blocks.filter((block) => {
+    const tokens = block.info.split(/\s+/);
+    return tokens.includes("json") && tokens.includes("roadrunner-queue");
+  });
 
   if (namedBlocks.length === 0) throw new Error("Provider output must include a fenced JSON block tagged roadrunner-queue.");
   if (namedBlocks.length > 1) throw new Error("Provider output must include exactly one Roadrunner queue JSON proposal.");

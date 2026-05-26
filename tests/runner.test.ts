@@ -1,6 +1,6 @@
 import { readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { writeJson } from "../src/infrastructure/config.js";
 import { plan, run as runRoadrunner, status, verify, type RoadrunnerRunControl, type RoadrunnerRunEvent } from "../src/application/runner.js";
@@ -186,6 +186,32 @@ describe("runner", () => {
         "cleanup",
       ]);
     } finally {
+      await removeDir(project.directory);
+    }
+  });
+
+  test("keeps completed work when the deadline expires before reconciliation", async () => {
+    const project = await setupRunnerProject("success");
+    const events: string[] = [];
+    const now = vi.spyOn(Date, "now");
+    let currentTime = 1_700_000_000_000;
+    now.mockImplementation(() => currentTime);
+
+    try {
+      const completed = await runRoadrunner(project.context, {
+        maxHours: 1,
+        maxSteps: 1,
+        onEvent: (event) => {
+          events.push(event.type);
+          if (event.type === "step-complete") currentTime += 2 * 60 * 60 * 1000;
+        },
+      });
+
+      expect(completed).toBe(1);
+      expect(events).toContain("step-complete");
+      expect(events).not.toContain("reconcile");
+    } finally {
+      now.mockRestore();
       await removeDir(project.directory);
     }
   });

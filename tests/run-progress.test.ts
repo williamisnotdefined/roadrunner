@@ -25,6 +25,13 @@ describe("run progress", () => {
   test("handles verify variants, restarts, cleanup, and unrelated events", () => {
     let progress: RunProgressState | null = updateProgressForEvent(null, { step, type: "step" }, 0);
 
+    progress = updateProgressForEvent(progress, { step, type: "plan" }, 500);
+    expect(progress).toMatchObject({ lastActivityAt: 500, phase: "plan", phaseStartedAt: 500 });
+    progress = updateProgressForEvent(progress, { step, type: "fix" }, 750);
+    expect(progress).toMatchObject({ lastActivityAt: 750, phase: "fix", phaseStartedAt: 750 });
+    progress = updateProgressForEvent(progress, { step, type: "reconcile" }, 900);
+    expect(progress).toMatchObject({ lastActivityAt: 900, phase: "reconcile", phaseStartedAt: 900 });
+
     progress = updateProgressForEvent(progress, { attempt: "initial", step, type: "verify" }, 1_000);
     expect(progress?.phase).toBe("verify");
     progress = updateProgressForEvent(progress, { attempt: "fixed", step, type: "verify" }, 2_000);
@@ -39,6 +46,9 @@ describe("run progress", () => {
     const otherStep = { ...step, id: "other-step" };
     progress = updateProgressForEvent(progress, { command: ["opencode"], debug: false, logPath: "/tmp/other.log", pid: 456, role: "plan", step: otherStep, type: "provider-start" }, 5_000);
     expect(progress?.logPath).toBeNull();
+    progress = updateProgressForActivity(progress, { phase: "plan", step: otherStep }, 5_500);
+    expect(progress?.lastActivityAt).toBe(4_000);
+    expect(updateProgressForEvent(progress, { queueFile: { version: 2, model: "m", variant: "v", queue: [], history: [], blocked: [] }, type: "queue-updated" }, 5_750)).toBe(progress);
 
     expect(updateProgressForEvent(null, { step, type: "implement" }, 6_000)).toBeNull();
     progress = updateProgressForEvent(progress, { step, type: "step-complete" }, 7_000);

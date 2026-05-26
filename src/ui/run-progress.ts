@@ -12,6 +12,29 @@ export interface RunProgressState {
   taskStartedAt: number;
 }
 
+type ProgressEventHandler<T extends RoadrunnerRunEvent["type"]> = (
+  progress: RunProgressState | null,
+  event: Extract<RoadrunnerRunEvent, { type: T }>,
+  now: number,
+) => RunProgressState | null;
+
+const progressEventHandlers: Partial<{ [Type in RoadrunnerRunEvent["type"]]: ProgressEventHandler<Type> }> = {
+  cleanup: () => null,
+  fix: (progress, _event, now) => setPhase(progress, "fix", now),
+  implement: (progress, _event, now) => setPhase(progress, "implement", now),
+  plan: (progress, _event, now) => setPhase(progress, "plan", now),
+  "provider-start": (progress, event, now) => {
+    if (!progress || (event.step ? progress.stepId !== event.step.id : progress.phase !== "startup-refresh")) return progress;
+    return { ...progress, lastActivityAt: now, logPath: event.logPath, pid: event.pid };
+  },
+  reconcile: (progress, _event, now) => setPhase(progress, "reconcile", now),
+  step: (_progress, event, now) => startProgress(event.step.id, 1, "plan", now),
+  "step-complete": () => null,
+  "startup-refresh": (_progress, _event, now) => startProgress(null, 1, "startup-refresh", now),
+  "task-restart": (_progress, event, now) => startProgress(event.step.id, event.attempt, "plan", now),
+  verify: (progress, event, now) => setPhase(progress, event.attempt === "fixed" ? "verify-fixed" : "verify", now),
+};
+
 export function updateProgressForActivity(progress: RunProgressState | null, event: RoadrunnerRunActivityEvent, now: number): RunProgressState | null {
   if (!progress || progress.phase !== event.phase) return progress;
   if (event.step && progress.stepId !== event.step.id) return progress;
@@ -19,16 +42,8 @@ export function updateProgressForActivity(progress: RunProgressState | null, eve
 }
 
 export function updateProgressForEvent(progress: RunProgressState | null, event: RoadrunnerRunEvent, now: number): RunProgressState | null {
-  if (event.type === "startup-refresh") return startProgress(null, 1, "startup-refresh", now);
-  if (event.type === "step") return startProgress(event.step.id, 1, "plan", now);
-  if (event.type === "plan" || event.type === "implement" || event.type === "fix" || event.type === "reconcile") return setPhase(progress, event.type, now);
-  if (event.type === "verify") return setPhase(progress, event.attempt === "fixed" ? "verify-fixed" : "verify", now);
-  if (event.type === "provider-start" && progress && (event.step ? progress.stepId === event.step.id : progress.phase === "startup-refresh")) {
-    return { ...progress, lastActivityAt: now, logPath: event.logPath, pid: event.pid };
-  }
-  if (event.type === "task-restart") return startProgress(event.step.id, event.attempt, "plan", now);
-  if (event.type === "step-complete" || event.type === "cleanup") return null;
-  return progress;
+  const handler = progressEventHandlers[event.type] as ((currentProgress: RunProgressState | null, nextEvent: RoadrunnerRunEvent, timestamp: number) => RunProgressState | null) | undefined;
+  return handler ? handler(progress, event, now) : progress;
 }
 
 export function formatRunProgress(state: RunProgressState, now: number): string {
