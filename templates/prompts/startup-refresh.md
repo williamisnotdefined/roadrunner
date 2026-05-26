@@ -22,11 +22,11 @@ The output queue must be valid Roadrunner queue JSON:
 - remove obsolete, duplicate, or superseded work instead of leaving it queued;
 - prefer meaningful deliverable capabilities over tiny mechanical microtasks;
 - keep each queued task independently verifiable;
-- keep or add a final `integrated-product-validation` queue item when completed roadmap work lacks concrete evidence that the whole solution has passed an end-to-end integrated gate after the latest changes.
+- keep or add a final `integrated-product-validation` queue item when completed roadmap work lacks durable repository evidence that the whole solution has passed an end-to-end integrated gate after the latest relevant changes.
 
 Mark work as done only when the acceptance criteria are satisfied by concrete repository evidence. If uncertain, keep the work queued and tighten the prompt or acceptance criteria.
 
-The final integrated validation task should run the project's complete product gate across engine, adapters, UI, E2E, documentation/AI checks, and optional completed research modules when applicable. It should fix issues found by that gate, but it should not add unrelated new roadmap features.
+The final integrated validation task should first audit whether the existing gate covers `GOALS.md` and the completed roadmap. If coverage is incomplete, it should add or update the missing tests, scripts, or documentation needed for a meaningful product gate before declaring success. It should then run the complete gate across engine, adapters, UI, E2E, documentation/AI checks, and optional completed research modules when applicable. It should fix issues found by that gate, but it should not add unrelated new roadmap features. Its acceptance criteria should require durable repository evidence, such as a validation report or documented product-gate command with latest results, so future startup refreshes can recognize that integrated validation already passed unless relevant files changed afterward.
 
 In your response, include a short Markdown summary with these headings:
 

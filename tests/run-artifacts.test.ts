@@ -60,15 +60,24 @@ describe("run artifacts", () => {
         QUEUE_JSON: "{}",
         STEP_JSON: "{}",
       });
+      const planPrompt = await renderPrompt(context, "plan-step.md", {
+        GOALS_MD: "# Goals",
+        ROADMAP_STATUS: "next step",
+        STEP_JSON: "{}",
+      });
 
       expect(startupPrompt).toContain("Roadrunner Startup Queue Refresh");
       expect(startupPrompt).toContain("# Goals");
+      expect(planPrompt).toContain("use a longer outer fence");
+      expect(planPrompt).toContain("````md roadrunner-plan");
       for (const prompt of [startupPrompt, reconcilePrompt]) {
         expect(prompt).toContain("`id`, `phase`, `title`, `scope`, `prompt`, `acceptance`, and `verification`");
         expect(prompt).toContain("not `roadmapPhase`");
         expect(prompt).toContain("not `acceptanceCriteria`");
         expect(prompt).toContain('"phase": "Roadmap phase name"');
         expect(prompt).toContain('"acceptance": ["Observable acceptance criterion."]');
+        expect(prompt).toContain("durable repository evidence");
+        expect(prompt).toContain("existing gate covers `GOALS.md` and the completed roadmap");
       }
     } finally {
       await removeDir(directory);

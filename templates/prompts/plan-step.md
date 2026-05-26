@@ -22,11 +22,11 @@ Plan the next implementation step. Do not edit files.
 
 {{ROADMAP_STATUS}}
 
-Your final response must include exactly one fenced Markdown block whose info string includes both `md` and `roadrunner-plan`. Roadrunner passes only that block content to the implementation agent.
+Your final response must include exactly one fenced Markdown block whose info string includes both `md` and `roadrunner-plan`. Roadrunner passes only that block content to the implementation agent. If the plan content needs fenced command examples, use a longer outer fence, such as four backticks, so the inner fences do not truncate the Roadrunner plan block.
 
 Inside the `roadrunner-plan` block, include goal alignment, files you expect to change, why each file is in scope, approach, focused implementation checks, Roadrunner verification commands, risks, and out-of-scope work. Keep the plan actionable and do not include tool traces.
 
-```md roadrunner-plan
+````md roadrunner-plan
 ## Goal Alignment
 ...
 
@@ -47,4 +47,4 @@ Inside the `roadrunner-plan` block, include goal alignment, files you expect to 
 
 ## Out Of Scope
 ...
-```
+````
