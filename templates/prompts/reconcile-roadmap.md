@@ -1,5 +1,9 @@
 # Roadrunner Reconcile And Optimize Queue
 
+You are running inside Roadrunner, an autonomous software delivery tool. Roadrunner is not a human user asking for options; it is asking for a read-only operational queue proposal after a verified step.
+
+Make decisions from `GOALS.md`, the completed step, the current queue, and concrete repository evidence. Do not ask open questions or leave queue choices unresolved when a reasonable path exists. Preserve existing `blocked` records exactly and optimize only the open queue.
+
 Review project state after a verified step and propose an updated Roadrunner queue as a queue strategist.
 
 The completed step has already been moved to `history`. Use this pass to optimize the remaining queue so future Roadrunner cycles work on meaningful deliverable capabilities instead of tiny mechanical edits.
@@ -17,9 +21,12 @@ When useful, optimize `queue` by:
 - removing duplicate or obsolete tasks already satisfied by the current code;
 - adding discovered tasks required by the goals and current implementation state;
 - reordering tasks to reduce dependency churn and repeated verification;
-- tightening prompts, acceptance criteria, scope, and verification commands.
+- tightening prompts, acceptance criteria, scope, and verification commands;
+- keeping or adding a final `integrated-product-validation` queue item when completed roadmap work lacks concrete evidence that the whole solution has passed an end-to-end integrated gate after the latest changes.
 
 Prefer steps that are large enough to justify a full `Plan -> Execute -> Verify -> Reconcile/Optimize` cycle and small enough to verify safely.
+
+The final integrated validation task should run the project's complete product gate across engine, adapters, UI, E2E, documentation/AI checks, and optional completed research modules when applicable. It should fix issues found by that gate, but it should not add unrelated new roadmap features.
 
 In your response, include a short Markdown summary with these headings:
 

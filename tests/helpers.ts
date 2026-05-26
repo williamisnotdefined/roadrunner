@@ -118,6 +118,11 @@ function outputQueue(queue, summary = "Queue proposed") {
   console.log(summary + "\\n\\n" + fence + "json roadrunner-queue\\n" + JSON.stringify(queue, null, 2) + "\\n" + fence);
 }
 
+function outputPlan(body = "Plan: implement the requested step.") {
+  const fence = String.fromCharCode(96, 96, 96);
+  console.log("planning trace that should stay out of implementation prompts\\n\\n" + fence + "md roadrunner-plan\\n" + body + "\\n" + fence);
+}
+
 function writeRogueQueueFile(value) {
   const queuePath = path.join(".roadrunner", "state", "queue.json");
   fs.mkdirSync(path.dirname(queuePath), { recursive: true });
@@ -171,6 +176,17 @@ if (mode === "plan-fail" && prompt.includes("Roadrunner Plan Step")) {
   process.exit(6);
 }
 
+if (mode === "plan-missing-block" && prompt.includes("Roadrunner Plan Step")) {
+  console.log("Plan: missing Roadrunner block.");
+  process.exit(0);
+}
+
+if (mode === "plan-duplicate-block" && prompt.includes("Roadrunner Plan Step")) {
+  const fence = String.fromCharCode(96, 96, 96);
+  console.log(fence + "md roadrunner-plan\\nfirst\\n" + fence + "\\n" + fence + "md roadrunner-plan\\nsecond\\n" + fence);
+  process.exit(0);
+}
+
 if (mode === "fix-fail" && prompt.includes("Roadrunner Fix Failure")) {
   console.error("fix failed");
   process.exit(8);
@@ -197,7 +213,7 @@ if (mode === "slow-plan-success" && prompt.includes("Roadrunner Plan Step")) {
     console.log("tick " + ticks);
     if (ticks === 4) {
       clearInterval(interval);
-      console.log("Plan: slow success.");
+      outputPlan("Plan: slow success.");
       process.exit(0);
     }
   }, 20);
@@ -216,7 +232,7 @@ if (prompt.includes("Roadrunner Plan Step")) {
   if (mode === "plan-dirty") fs.writeFileSync("plan-dirty.txt", "nope\\n");
   if (mode === "plan-ignored-dirty") fs.writeFileSync(".env", "SECRET=changed\\n");
   if (mode === "plan-delete") fs.rmSync("delete-me.txt", { force: true });
-  console.log("Plan: implement the requested step.");
+  outputPlan();
   process.exit(0);
 }
 

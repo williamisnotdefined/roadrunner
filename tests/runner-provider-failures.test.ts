@@ -5,7 +5,7 @@ import { afterEach, describe, expect, test } from "vitest";
 import { providerFor } from "../src/infrastructure/providers/index.js";
 import { plan, run as runRoadrunner, type RoadrunnerRunEvent } from "../src/application/runner.js";
 import { removeDir, run, sampleRoadmap } from "./helpers.js";
-import { latestQueueSnapshot, setupRunnerProject } from "./runner-helpers.js";
+import { latestQueueSnapshot, logDirFor, setupRunnerProject } from "./runner-helpers.js";
 
 const originalEnv = { ...process.env };
 
@@ -139,7 +139,30 @@ describe("runner provider failures", () => {
     const project = await setupRunnerProject("fix-success");
     try {
       expect(await runRoadrunner(project.context)).toBe(1);
+      const stepLogDir = await logDirFor(project.context, "first-step");
+      const planLogDir = await logDirFor(project.context, "first-step-plan");
+      const implementPrompt = await readFile(path.join(stepLogDir, "implement.prompt.md"), "utf8");
+      const fixPrompt = await readFile(path.join(stepLogDir, "fix-failure.prompt.md"), "utf8");
+
       expect(await readFile(path.join(project.directory, "marker.txt"), "utf8")).toBe("ok\n");
+      expect(await readFile(path.join(planLogDir, "plan.clean.md"), "utf8")).toMatch(/Plan: implement the requested step/);
+      expect(implementPrompt).toContain("Plan: implement the requested step.");
+      expect(implementPrompt).not.toContain("planning trace that should stay out of implementation prompts");
+      expect(fixPrompt).toContain("Plan: implement the requested step.");
+      expect(fixPrompt).not.toContain("planning trace that should stay out of implementation prompts");
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
+  test("marks invalid planning output as blocked", async () => {
+    const project = await setupRunnerProject("plan-missing-block");
+    const events: RoadrunnerRunEvent[] = [];
+    try {
+      await expect(runRoadrunner(project.context, { onEvent: (event) => events.push(event) })).rejects.toThrow(/roadrunner-plan/);
+      const queue = latestQueueSnapshot(events);
+      expect(queue.blocked[0]).toMatchObject({ id: "first-step" });
+      expect(queue.blocked[0]?.blockedReason).toMatch(/Planning output invalid/);
     } finally {
       await removeDir(project.directory);
     }

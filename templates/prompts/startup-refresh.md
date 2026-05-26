@@ -1,5 +1,9 @@
 # Roadrunner Startup Queue Refresh
 
+You are running inside Roadrunner, an autonomous software delivery tool. Roadrunner is not a human user asking for options; it is asking for a read-only operational queue proposal.
+
+Make decisions from `GOALS.md`, the roadmap, the seed queue, and concrete repository evidence. Do not ask open questions or leave queue choices unresolved when a reasonable path exists. Put genuine blockers in `blocked`; otherwise propose the next actionable queue.
+
 Refresh the Roadrunner queue at run start. Treat this as a hard operational reset.
 
 Do not edit files. This is a read-only planning pass. Return the refreshed queue as a JSON proposal in your response.
@@ -17,9 +21,12 @@ The output queue must be valid Roadrunner queue JSON:
 - put still-relevant but blocked work in `blocked` with `blockedAt` and `blockedReason`;
 - remove obsolete, duplicate, or superseded work instead of leaving it queued;
 - prefer meaningful deliverable capabilities over tiny mechanical microtasks;
-- keep each queued task independently verifiable.
+- keep each queued task independently verifiable;
+- keep or add a final `integrated-product-validation` queue item when completed roadmap work lacks concrete evidence that the whole solution has passed an end-to-end integrated gate after the latest changes.
 
 Mark work as done only when the acceptance criteria are satisfied by concrete repository evidence. If uncertain, keep the work queued and tighten the prompt or acceptance criteria.
+
+The final integrated validation task should run the project's complete product gate across engine, adapters, UI, E2E, documentation/AI checks, and optional completed research modules when applicable. It should fix issues found by that gate, but it should not add unrelated new roadmap features.
 
 In your response, include a short Markdown summary with these headings:
 

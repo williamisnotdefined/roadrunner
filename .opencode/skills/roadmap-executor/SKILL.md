@@ -45,6 +45,7 @@ Use this skill when changing Roadrunner autonomous roadmap runs, plan-execute-ve
 - Mark verified work done before reconciliation.
 - Preserve `history` and `blocked` records during post-step reconciliation.
 - Let reconciliation optimize open queue items, such as grouping microtasks, splitting oversized tasks, reordering dependencies, and adding or removing obsolete future work.
+- Keep or add a final integrated product validation queue item when completed roadmap work lacks evidence that the full solution passes an end-to-end gate after the latest changes.
 - Automatically restart an idle current task attempt from planning when provider or verification activity stalls beyond the configured idle threshold.
 - Treat the run's loaded goals snapshot as immutable.
 - Stop on persistent blockers.
@@ -55,6 +56,7 @@ Use this skill when changing Roadrunner autonomous roadmap runs, plan-execute-ve
 - Do not rewrite history during post-step reconciliation.
 - Do not let startup refresh or reconciliation edit files; they must return queue JSON proposals only.
 - Do not bypass verification.
+- Do not treat a roadmap as complete solely because individual tasks passed if the whole product has not been validated together.
 - Do not reread `GOALS.md` mid-run.
 
 ## ai/rules/process-supervisor-rules.md
@@ -91,6 +93,8 @@ The autonomous run queue lives in memory for one execution. It contains `version
 Startup queue refresh seeds from operational roadmap Markdown when possible, and then asks the provider in read-only planning mode to audit the current repository state and return a full queue JSON proposal. It may move already satisfied roadmap work to `history`, keep relevant work in `queue`, put still-relevant blockers in `blocked`, and drop obsolete or superseded work. It must not edit files.
 
 After verification passes, Roadrunner marks the current step done in memory before reconciliation. Reconciliation then asks the provider in read-only planning mode for a full queue JSON proposal that optimizes open `queue` items by grouping microtasks, splitting oversized tasks, reordering dependencies, adding discovered future work, and removing obsolete work. It must preserve `version`, `model`, `variant`, `history`, and `blocked`, and it must not edit files.
+
+Startup refresh and reconciliation should keep or add a final integrated product validation task when completed roadmap work lacks concrete evidence that the full solution has passed an end-to-end gate after the latest changes. This final task should run the project's complete product gate across core libraries, adapters, UI, E2E flows, documentation or AI checks, and any completed optional research modules. It should fix issues discovered by the gate without adding unrelated roadmap features.
 
 Roadrunner does not require a clean git worktree, does not inspect git status or `HEAD` for queue control, does not restore file changes, and does not create commits. Failures update the in-memory queue state by blocking the current step when possible.
 

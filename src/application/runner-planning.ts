@@ -6,6 +6,7 @@ import type { ProviderStartEvent } from "../infrastructure/providers/index.js";
 import type { RunSnapshot } from "./run-snapshot.js";
 import { createLogDir, renderPrompt, writePrivateFile } from "../infrastructure/run-artifacts.js";
 import { runProviderRole } from "./provider-runner.js";
+import { planMarkdownFromOutput } from "./plan-output.js";
 
 export interface PlanOptions {
   deadline?: number | null;
@@ -17,6 +18,7 @@ export interface PlanOptions {
 
 export interface PlanStepResult {
   logDir: string;
+  planMarkdown: string | null;
   result: { code: number | null; output: string };
   step: QueueStep;
 }
@@ -44,6 +46,8 @@ export async function planStep(context: ProjectContext, step: QueueStep, snapsho
   });
 
   await writePrivateFile(path.join(logDir, "plan.md"), result.output);
+  const planMarkdown = result.code === 0 ? planMarkdownFromOutput(result.output) : null;
+  if (planMarkdown !== null) await writePrivateFile(path.join(logDir, "plan.clean.md"), `${planMarkdown}\n`);
 
-  return { logDir, result, step };
+  return { logDir, planMarkdown, result, step };
 }

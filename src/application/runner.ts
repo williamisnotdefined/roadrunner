@@ -4,7 +4,7 @@ import { nextStep, type QueueFile, type QueueStep } from "../domain/queue.js";
 import { cleanupProcesses } from "../infrastructure/process-registry.js";
 import { validateConfiguredProvider, type ProviderStartEvent } from "../infrastructure/providers/index.js";
 import { readRunSnapshot } from "./run-snapshot.js";
-import { planStep, type PlanOptions } from "./runner-planning.js";
+import { planStep, type PlanOptions, type PlanStepResult } from "./runner-planning.js";
 import { createRunControl, type RunControlState } from "./runner-control.js";
 import { isRunStopRequested, RunStopRequested, runStepWithRestarts } from "./runner-execution.js";
 import { reconcileQueue } from "./runner-reconciliation.js";
@@ -74,7 +74,7 @@ export async function status(context: ProjectContext): Promise<RoadrunnerStatus>
 export async function plan(
   context: ProjectContext,
   options: PlanOptions = {},
-): Promise<{ logDir: string; result: { code: number | null; output: string }; step: QueueStep } | null> {
+): Promise<PlanStepResult | null> {
   const releaseLock = await acquireProjectLock(context, "Roadrunner plan");
   try {
     const snapshot = await readRunSnapshot(context);

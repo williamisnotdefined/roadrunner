@@ -12,6 +12,7 @@ import { planStep } from "./runner-planning.js";
 import { fixFailure, verify as verifyStep } from "./runner-verification.js";
 import type { RoadrunnerRunActivityEvent, RoadrunnerRunEvent, RoadrunnerRunPhase } from "./runner.js";
 import { runProviderRole } from "./provider-runner.js";
+import { PlanOutputError } from "./plan-output.js";
 
 interface RunStepInput {
   context: ProjectContext;
@@ -57,21 +58,27 @@ export async function runStepWithRestarts({ context, controlState, deadline, emi
     try {
       setAttemptPhase(attemptState, "plan");
       emitEvent({ step: attemptStep, type: "plan" });
-      const planResult = await withControlCheck(
-        () =>
-          planStep(context, attemptStep, snapshot, {
-            deadline,
-            onOutput: activityEmitter(attemptState, emitActivity, attemptStep, "plan"),
-            onProviderStart: (event) => {
-              recordAttemptActivity(attemptState);
-              emitEvent({ ...event, step: attemptStep, type: "provider-start" });
-            },
-            signal: attemptState.abortController.signal,
-            streamProviderOutput,
-          }),
-        controlState,
-        attemptState,
-      );
+      let planResult: Awaited<ReturnType<typeof planStep>>;
+      try {
+        planResult = await withControlCheck(
+          () =>
+            planStep(context, attemptStep, snapshot, {
+              deadline,
+              onOutput: activityEmitter(attemptState, emitActivity, attemptStep, "plan"),
+              onProviderStart: (event) => {
+                recordAttemptActivity(attemptState);
+                emitEvent({ ...event, step: attemptStep, type: "provider-start" });
+              },
+              signal: attemptState.abortController.signal,
+              streamProviderOutput,
+            }),
+          controlState,
+          attemptState,
+        );
+      } catch (error) {
+        if (error instanceof PlanOutputError) emitEvent({ queueFile: blockedQueue(originalQueueFile, step, `Planning output invalid: ${error.message}`), type: "queue-updated" });
+        throw error;
+      }
       if (planResult.result.code !== 0) {
         emitEvent({ queueFile: blockedQueue(originalQueueFile, step, `Planning exited ${String(planResult.result.code)}`), type: "queue-updated" });
         throw new Error(`Planning failed for ${attemptStep.id} (exit ${String(planResult.result.code)}). See ${path.join(planResult.logDir, "plan.opencode.log")}.`);
@@ -80,7 +87,7 @@ export async function runStepWithRestarts({ context, controlState, deadline, emi
       const logDir = await createLogDir(context, attemptStep.id);
       const prompt = await renderPrompt(context, "implement-step.md", {
         GOALS_MD: snapshot.goalsMarkdown,
-        PLAN_MD: planResult.result.output,
+        PLAN_MD: planResult.planMarkdown!,
         ROADMAP_STATUS: formatStep(attemptStep),
         STEP_JSON: JSON.stringify(attemptStep, null, 2),
       });
@@ -131,7 +138,7 @@ export async function runStepWithRestarts({ context, controlState, deadline, emi
         emitEvent({ step: attemptStep, type: "fix" });
         const fix = await withControlCheck(
           () =>
-            fixFailure(context, attemptStep, snapshot, planResult.result.output, verification.output, logDir, {
+            fixFailure(context, attemptStep, snapshot, planResult.planMarkdown!, verification.output, logDir, {
               deadline,
               onOutput: activityEmitter(attemptState, emitActivity, attemptStep, "fix"),
               onProviderStart: (event) => {
