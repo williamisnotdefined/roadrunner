@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import type { Dirent } from "node:fs";
-import { lstat, readdir, readFile, readlink } from "node:fs/promises";
+import { createReadStream, type Dirent } from "node:fs";
+import { lstat, readdir, readlink } from "node:fs/promises";
 import path from "node:path";
 
 import type { ProjectContext } from "./config.js";
@@ -49,7 +49,7 @@ async function fingerprintDirectory(root: string, directory: string, ignored: st
       entries.set(relative, `${stat.mode}:${stat.size}:${stat.mtimeMs}`);
       continue;
     }
-    entries.set(relative, `${stat.mode}:${hash(await readFile(entryPath))}`);
+    entries.set(relative, `${stat.mode}:${await hashFile(entryPath)}`);
   }
 
   return entries;
@@ -74,6 +74,8 @@ function mergeEntries(target: Map<string, string>, source: Map<string, string>):
   for (const [key, value] of source) target.set(key, value);
 }
 
-function hash(content: Buffer): string {
-  return createHash("sha256").update(content).digest("hex");
+async function hashFile(filePath: string): Promise<string> {
+  const hasher = createHash("sha256");
+  for await (const chunk of createReadStream(filePath)) hasher.update(chunk);
+  return hasher.digest("hex");
 }

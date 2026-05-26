@@ -14,6 +14,8 @@ describe("process tree helpers", () => {
     const kill = vi.spyOn(process, "kill");
     try {
       expect(signalProcessTree(undefined, "SIGTERM")).toBe(false);
+      expect(signalProcessTree(0, "SIGTERM")).toBe(false);
+      expect(signalProcessTree(-123, "SIGTERM")).toBe(false);
 
       kill.mockImplementationOnce(() => true);
       expect(signalProcessTree(123, "SIGTERM")).toBe(true);
@@ -41,6 +43,8 @@ describe("process tree helpers", () => {
     const kill = vi.spyOn(process, "kill");
     try {
       expect(processTreeExists(undefined)).toBe(false);
+      expect(processTreeExists(0)).toBe(false);
+      expect(processTreeExists(-456)).toBe(false);
 
       kill.mockImplementationOnce(() => true);
       expect(processTreeExists(456)).toBe(true);

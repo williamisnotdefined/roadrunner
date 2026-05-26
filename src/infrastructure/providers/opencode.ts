@@ -9,6 +9,7 @@ import { registerProcess, unregisterProcessIfProcessGroupExited } from "../proce
 import { processTreeExists, signalProcessTree } from "../process-tree.js";
 import { createPrivateWriteStream, writePrivateFile } from "../run-artifacts.js";
 import { providerChildEnv } from "../child-env.js";
+import { createCapturedOutputBuffer } from "../captured-output.js";
 import { defaultModel, defaultVariant } from "../../domain/provider-defaults.js";
 import { openCodeCheckTimeoutMs, providerTimeoutMs } from "../../domain/timeouts.js";
 import type { Provider, ProviderRunInput, ProviderRunResult } from "./provider.js";
@@ -30,6 +31,7 @@ export class OpenCodeProvider implements Provider {
 
   async run({ agent, bypassProviderPermissions = false, context, env = {}, logPath, onOutput, onStart, prompt, role, signal, streamOutput = true, workspaceAccess }: ProviderRunInput): Promise<ProviderRunResult> {
     const childEnv = openCodeRunEnv({ context, env, model: this.model, variant: this.variant, workspaceAccess, bypassProviderPermissions });
+    const output = createCapturedOutputBuffer(childEnv.ROADRUNNER_MAX_CAPTURED_OUTPUT_BYTES);
     await mkdir(path.dirname(logPath), { recursive: true });
     const promptFilePath = await writePromptFile(logPath, prompt);
     const logStream = await createPrivateWriteStream(logPath);
@@ -45,7 +47,6 @@ export class OpenCodeProvider implements Provider {
       stdio: ["ignore", "pipe", "pipe"],
     });
 
-    let output = "";
     let registeredPid: number | null = child.pid ?? null;
     let aborted = false;
     let registrationFailed = false;
@@ -58,7 +59,7 @@ export class OpenCodeProvider implements Provider {
 
     const appendOutput = (text: string) => {
       writeProviderOutput(logStream, text, (value) => {
-        output += value;
+        output.append(value);
       });
     };
 
@@ -130,7 +131,7 @@ export class OpenCodeProvider implements Provider {
         await registrationDone;
         await unregisterRegisteredProcess(registeredPid, context);
         await closeLogStream(logStream);
-        resolve({ code: registrationFailed ? 1 : timedOut ? 124 : aborted ? 130 : code, output });
+        resolve({ code: registrationFailed ? 1 : timedOut ? 124 : aborted ? 130 : code, output: output.value() });
       };
 
       child.on("error", async (error: Error) => {
@@ -142,7 +143,7 @@ export class OpenCodeProvider implements Provider {
         await registrationDone;
         await unregisterRegisteredProcess(registeredPid, context);
         await closeLogStream(logStream);
-        resolve({ code: 1, output });
+        resolve({ code: 1, output: output.value() });
       });
       child.on("close", onClose);
     });

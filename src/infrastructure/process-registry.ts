@@ -32,7 +32,8 @@ const registryLockTimeoutMs = 5_000;
 export async function readProcesses(context: ProjectContext): Promise<ProcessRecord[]> {
   if (!(await pathExists(context.paths.processRegistry))) return [];
   try {
-    return (JSON.parse(await readFile(context.paths.processRegistry, "utf8")) as ProcessRegistry).processes ?? [];
+    const value = JSON.parse(await readFile(context.paths.processRegistry, "utf8")) as Partial<ProcessRegistry> | null;
+    return Array.isArray(value?.processes) ? value.processes.filter(isProcessRecord) : [];
   } catch {
     return [];
   }
@@ -40,6 +41,7 @@ export async function readProcesses(context: ProjectContext): Promise<ProcessRec
 
 export async function registerProcess(record: ProcessRecord, context: ProjectContext): Promise<void> {
   await withProcessRegistryLock(context, async () => {
+    if (!isPositiveSafeInteger(record.pid)) throw new Error(`Cannot register pid ${record.pid}.`);
     const info = await readProcessInfo(record.pid);
     if (!info) throw new Error(`Cannot register pid ${record.pid}.`);
     const processes = (await readProcesses(context)).filter((processRecord) => processRecord.pid !== record.pid);
@@ -179,7 +181,7 @@ async function releaseProcessRegistryLock(lockPath: string, lock: ProcessRegistr
 async function removeStaleProcessRegistryLock(lockPath: string): Promise<boolean> {
   try {
     const value = JSON.parse(await readFile(lockPath, "utf8")) as Partial<ProcessRegistryLock>;
-    if (typeof value.pid !== "number") return false;
+    if (!isPositiveSafeInteger(value.pid)) return removeLockFileIfUnchanged(lockPath, value);
 
     const status = await processIdentityStatus({ pid: value.pid, startTimeTicks: typeof value.startTimeTicks === "string" ? value.startTimeTicks : undefined });
     if (status !== "missing" && status !== "different") return false;
@@ -232,8 +234,9 @@ async function signalableProcessGroup(record: ProcessRecord, processGroupId: num
 }
 
 function safeProcessGroupId(record: ProcessRecord): number | null {
+  if (!isPositiveSafeInteger(record.pid)) return null;
   if (record.processGroupId === undefined) return record.pid;
-  return record.processGroupId === record.pid ? record.processGroupId : null;
+  return isPositiveSafeInteger(record.processGroupId) && record.processGroupId === record.pid ? record.processGroupId : null;
 }
 
 function signalProcessGroup(pid: number, signal: NodeJS.Signals): boolean {
@@ -242,4 +245,28 @@ function signalProcessGroup(pid: number, signal: NodeJS.Signals): boolean {
 
 function processGroupExists(pid: number): boolean {
   return processTreeExists(pid);
+}
+
+function isProcessRecord(value: unknown): value is ProcessRecord {
+  if (!isRecord(value)) return false;
+  if (!Array.isArray(value.command) || !value.command.every((item) => typeof item === "string")) return false;
+  if (typeof value.cwd !== "string" || value.cwd.length === 0) return false;
+  if (!isPositiveSafeInteger(value.pid)) return false;
+  if (value.processGroupId !== undefined && !isPositiveSafeInteger(value.processGroupId)) return false;
+  if (typeof value.role !== "string" || value.role.length === 0) return false;
+  if (!isOptionalString(value.startTimeTicks)) return false;
+  if (!isOptionalString(value.startedAt)) return false;
+  return true;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isPositiveSafeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+}
+
+function isOptionalString(value: unknown): value is string | undefined {
+  return value === undefined || (typeof value === "string" && value.length > 0);
 }

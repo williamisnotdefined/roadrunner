@@ -62,6 +62,10 @@ export function startAutoRestartWatchdog({ current, emitEvent, incrementRestartC
 
   const checkIdle = () => {
     if (stopped || current.restartRequested) return;
+    if (!isProviderPhase(current.phase)) {
+      schedule(policy.idleMs);
+      return;
+    }
     const idleMs = Date.now() - current.lastActivityAt;
     if (idleMs >= policy.idleMs) {
       requestAutoRestart(idleMs);
@@ -72,4 +76,8 @@ export function startAutoRestartWatchdog({ current, emitEvent, incrementRestartC
 
   schedule(policy.idleMs);
   return stop;
+}
+
+function isProviderPhase(phase: RoadrunnerRunPhase | null): boolean {
+  return phase === "plan" || phase === "implement" || phase === "fix";
 }

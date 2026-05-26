@@ -12,6 +12,7 @@ export interface ProcessIdentity {
 export type ProcessIdentityStatus = "different" | "missing" | "same" | "unverifiable";
 
 export async function readProcessInfo(pid: number): Promise<{ startTimeTicks?: string } | null> {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return null;
   if (process.platform === "linux") return readLinuxProcessInfo(pid);
   /* v8 ignore next -- exercised only on macOS/BSD hosts. */
   if (process.platform === "darwin" || process.platform === "freebsd" || process.platform === "openbsd") return readPsProcessInfo(pid);
@@ -67,6 +68,7 @@ export async function processIdentityStatus(identity: ProcessIdentity): Promise<
 /* v8 ignore next -- non-Linux fallback helper. */
 export function processExists(pid: number): boolean {
   /* v8 ignore start -- exercised only by non-Linux process identity fallback. */
+  if (!Number.isSafeInteger(pid) || pid <= 0) return false;
   try {
     process.kill(pid, 0);
     return true;

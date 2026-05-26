@@ -16,7 +16,7 @@ The output queue must be valid Roadrunner queue JSON:
 - every item in `queue`, `history`, and `blocked` must include `id`, `phase`, `title`, `scope`, `prompt`, `acceptance`, and `verification`;
 - use `phase`, not `roadmapPhase`, and use `acceptance`, not `acceptanceCriteria`;
 - `scope`, `acceptance`, and `verification` must be non-empty string arrays;
-- put already satisfied roadmap work in `history` with `completedAt` timestamps;
+- do not put items in `history`; if work is already satisfied, remove it from the open queue instead of marking it completed;
 - put only currently relevant future work in `queue`;
 - put still-relevant but blocked work in `blocked` with `blockedAt` and `blockedReason`;
 - remove obsolete, duplicate, or superseded work instead of leaving it queued;
@@ -24,7 +24,7 @@ The output queue must be valid Roadrunner queue JSON:
 - keep each queued task independently verifiable;
 - keep or add a final `integrated-product-validation` queue item when completed roadmap work lacks durable repository evidence that the whole solution has passed an end-to-end integrated gate after the latest relevant changes.
 
-Mark work as done only when the acceptance criteria are satisfied by concrete repository evidence. If uncertain, keep the work queued and tighten the prompt or acceptance criteria.
+Do not mark work as done during startup refresh. Roadrunner only moves work to `history` after executing its verification commands. If uncertain, keep the work queued and tighten the prompt or acceptance criteria.
 
 The final integrated validation task should first audit whether the existing gate covers `GOALS.md` and the completed roadmap. If coverage is incomplete, it should add or update the missing tests, scripts, or documentation needed for a meaningful product gate before declaring success. It should then run the complete gate across engine, adapters, UI, E2E, documentation/AI checks, and optional completed research modules when applicable. It should fix issues found by that gate, but it should not add unrelated new roadmap features. Its acceptance criteria should require durable repository evidence, such as a validation report or documented product-gate command with latest results, so future startup refreshes can recognize that integrated validation already passed unless relevant files changed afterward.
 

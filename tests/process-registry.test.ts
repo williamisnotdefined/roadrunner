@@ -343,6 +343,7 @@ setInterval(() => {}, 1000);`,
       await rm(tempDir, { force: true, recursive: true });
     }
   });
+
 });
 
 async function waitForFile(filePath: string): Promise<void> {

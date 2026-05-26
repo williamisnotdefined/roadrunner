@@ -13,14 +13,23 @@ afterEach(() => {
 });
 
 describe("runner startup refresh", () => {
-  test("returns zero when startup refresh marks roadmap work already done", async () => {
+  test("returns zero when startup refresh removes obsolete roadmap work", async () => {
     const project = await setupRunnerProject("startup-refresh-inferred-done");
     const events: RoadrunnerRunEvent[] = [];
     try {
       expect(await runRoadrunner(project.context, { onEvent: (event) => events.push(event) })).toBe(0);
       const queue = latestQueueSnapshot(events);
-      expect(queue.history.map((step) => step.id)).toEqual(["first-step"]);
+      expect(queue.history).toEqual([]);
       expect(queue.queue).toEqual([]);
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
+  test("rejects startup refresh proposals that mark work as history", async () => {
+    const project = await setupRunnerProject("startup-refresh-history");
+    try {
+      await expect(runRoadrunner(project.context)).rejects.toThrow(/must not mark work as history/);
     } finally {
       await removeDir(project.directory);
     }

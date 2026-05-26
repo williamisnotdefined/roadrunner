@@ -4,7 +4,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 import { describe, expect, test } from "vitest";
 
-import { loadContext } from "../src/infrastructure/config.js";
+import { loadContext, pathExists } from "../src/infrastructure/config.js";
 import { runShell } from "../src/infrastructure/managed-process.js";
 import { cleanupProcesses, readProcesses } from "../src/infrastructure/process-registry.js";
 import { removeDir, tempDir } from "./helpers.js";
@@ -79,6 +79,43 @@ describe("managed process", () => {
     } finally {
       if (previous === undefined) delete process.env.ROADRUNNER_SHOULD_NOT_LEAK;
       else process.env.ROADRUNNER_SHOULD_NOT_LEAK = previous;
+      await removeDir(directory);
+    }
+  });
+
+  test("caps captured output while preserving full verification logs", async () => {
+    const directory = await tempDir("roadrunner-managed-process-output-cap-");
+    const previous = process.env.ROADRUNNER_MAX_CAPTURED_OUTPUT_BYTES;
+    try {
+      process.env.ROADRUNNER_MAX_CAPTURED_OUTPUT_BYTES = "20";
+      const context = await loadContext(directory, { _: [] });
+      const logPath = path.join(directory, "large.log");
+      const result = await runShell(context, `${JSON.stringify(process.execPath)} -e "process.stdout.write('a'.repeat(100))"`, logPath, "verify-1");
+
+      expect(result.output).toContain("Output truncated to last 20 bytes");
+      expect(result.output.endsWith("a".repeat(20))).toBe(true);
+      expect(await readFile(logPath, "utf8")).toBe("a".repeat(100));
+    } finally {
+      if (previous === undefined) delete process.env.ROADRUNNER_MAX_CAPTURED_OUTPUT_BYTES;
+      else process.env.ROADRUNNER_MAX_CAPTURED_OUTPUT_BYTES = previous;
+      await removeDir(directory);
+    }
+  });
+
+  test("rejects invalid output caps before starting shell commands", async () => {
+    const directory = await tempDir("roadrunner-managed-process-invalid-cap-");
+    const previous = process.env.ROADRUNNER_MAX_CAPTURED_OUTPUT_BYTES;
+    try {
+      process.env.ROADRUNNER_MAX_CAPTURED_OUTPUT_BYTES = "0";
+      const context = await loadContext(directory, { _: [] });
+      const markerPath = path.join(directory, "started.txt");
+      const script = `require("node:fs").writeFileSync(${JSON.stringify(markerPath)}, "started")`;
+
+      await expect(runShell(context, `${JSON.stringify(process.execPath)} -e ${JSON.stringify(script)}`, path.join(directory, "invalid-cap.log"), "verify-1")).rejects.toThrow(/ROADRUNNER_MAX_CAPTURED_OUTPUT_BYTES/);
+      expect(await pathExists(markerPath)).toBe(false);
+    } finally {
+      if (previous === undefined) delete process.env.ROADRUNNER_MAX_CAPTURED_OUTPUT_BYTES;
+      else process.env.ROADRUNNER_MAX_CAPTURED_OUTPUT_BYTES = previous;
       await removeDir(directory);
     }
   });

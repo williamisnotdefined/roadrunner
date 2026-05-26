@@ -75,8 +75,9 @@ describe("process registry locks", () => {
     }
   });
 
-  test("rejects malformed process registry locks", async () => {
-    await expectRegistrationBlockedByLock({ pid: "not-a-pid", startedAt: new Date().toISOString() });
+  test("removes malformed process registry locks", async () => {
+    await expectRegistrationAllowedAfterStaleLock({ pid: "not-a-pid", startedAt: new Date().toISOString() });
+    await expectRegistrationAllowedAfterStaleLock({ pid: -1, startedAt: new Date().toISOString() });
   });
 
   test("does not steal an active process registry lock", async () => {
@@ -104,6 +105,27 @@ async function expectRegistrationBlockedByLock(lock: unknown): Promise<void> {
     await expect(registerProcess({ command: ["sleep", "60"], cwd: tempDir, pid: child.pid!, role: "test" }, context)).rejects.toThrow(/Process registry lock already exists/);
   } finally {
     now.mockRestore();
+    killProcessGroup(child.pid);
+    await rm(tempDir, { force: true, recursive: true });
+  }
+}
+
+async function expectRegistrationAllowedAfterStaleLock(lock: unknown): Promise<void> {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "roadrunner-process-stale-invalid-lock-"));
+  const child = spawn("sleep", ["60"], { detached: true, stdio: "ignore" });
+
+  try {
+    const context = await loadContext(tempDir, { _: [] });
+    const lockPath = `${context.paths.processRegistry}.lock`;
+    await mkdir(path.dirname(lockPath), { recursive: true });
+    await writeFile(lockPath, `${JSON.stringify(lock, null, 2)}\n`);
+
+    expect(child.pid).toBeTruthy();
+    await registerProcess({ command: ["sleep", "60"], cwd: tempDir, pid: child.pid!, role: "test" }, context);
+
+    expect(await readProcesses(context)).toEqual([expect.objectContaining({ pid: child.pid, role: "test" })]);
+    await expect(readFile(lockPath, "utf8")).rejects.toThrow();
+  } finally {
     killProcessGroup(child.pid);
     await rm(tempDir, { force: true, recursive: true });
   }

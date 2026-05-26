@@ -183,4 +183,17 @@ describe("runner reconciliation", () => {
       await removeDir(project.directory);
     }
   });
+
+  test.each([
+    ["reconcile-wrong-model", /queue.model/],
+    ["reconcile-wrong-variant", /queue.variant/],
+    ["reconcile-empty-scope", /scope must be a non-empty array/],
+  ])("rejects invalid local reconcile proposals from %s", async (mode, message) => {
+    const project = await setupRunnerProject(mode, mode === "reconcile-empty-scope" ? twoStepRoadmap() : undefined);
+    try {
+      await expect(runRoadrunner(project.context)).rejects.toThrow(message);
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
 });

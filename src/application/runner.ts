@@ -1,8 +1,9 @@
 import type { ProjectContext } from "../infrastructure/config.js";
 import { acquireProjectLock } from "../infrastructure/lock.js";
-import { nextStep, type QueueFile, type QueueStep } from "../domain/queue.js";
+import { nextStep, normalizeQueueFile, type QueueFile, type QueueStep, validateQueueFile } from "../domain/queue.js";
 import { cleanupProcesses } from "../infrastructure/process-registry.js";
 import { validateConfiguredProvider, type ProviderStartEvent } from "../infrastructure/providers/index.js";
+import { trustedVerificationCommands, validateVerificationPolicy } from "../domain/verification-policy.js";
 import { readRunSnapshot } from "./run-snapshot.js";
 import { planStep, type PlanOptions, type PlanStepResult } from "./runner-planning.js";
 import { createRunControl, type RunControlState } from "./runner-control.js";
@@ -122,7 +123,7 @@ export async function run(context: ProjectContext, options: RunOptions = {}): Pr
         emitRunEvent(options, { type: "startup-refresh" });
         await ensureProviderAvailable(context);
         if (options.initialQueueFile) {
-          queueFile = options.initialQueueFile;
+          queueFile = await prepareInitialQueueFile(context, options.initialQueueFile);
         } else {
           const startup = await runAbortableOperation(controlState, (signal) =>
             refreshQueueAtRunStart(context, snapshot, {
@@ -225,6 +226,22 @@ export async function run(context: ProjectContext, options: RunOptions = {}): Pr
   } finally {
     await releaseLock();
   }
+}
+
+async function prepareInitialQueueFile(context: ProjectContext, queueFile: QueueFile): Promise<QueueFile> {
+  const seedQueue = await seedQueueAtRunStart(context);
+  const errors = validateQueueFile(queueFile, { model: context.config.model, variant: context.config.variant });
+  if (errors.length > 0) throw new Error(errors.join("\n"));
+
+  const normalizedQueueFile = normalizeQueueFile(queueFile);
+  const verificationErrors = validateVerificationPolicy({
+    allowedCommands: context.config.allowedVerificationCommands,
+    proposed: normalizedQueueFile,
+    trustedCommands: trustedVerificationCommands(seedQueue),
+  });
+  if (verificationErrors.length > 0) throw new Error(verificationErrors.join("\n"));
+
+  return normalizedQueueFile;
 }
 
 async function runAbortableOperation<T>(state: RunControlState, operation: (signal: AbortSignal) => Promise<T>): Promise<T> {

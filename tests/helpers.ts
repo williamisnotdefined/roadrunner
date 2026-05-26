@@ -86,7 +86,7 @@ if (process.env.ROADRUNNER_FAKE_OPENCODE_ARGS_FILE) {
   fs.writeFileSync(process.env.ROADRUNNER_FAKE_OPENCODE_ARGS_FILE, JSON.stringify(process.argv.slice(2)) + "\\n");
 }
 if (process.env.ROADRUNNER_FAKE_OPENCODE_ENV_FILE) {
-  fs.writeFileSync(process.env.ROADRUNNER_FAKE_OPENCODE_ENV_FILE, JSON.stringify({ ROADRUNNER_PROVIDER_TIMEOUT_MS: process.env.ROADRUNNER_PROVIDER_TIMEOUT_MS ?? null }) + "\\n");
+  fs.writeFileSync(process.env.ROADRUNNER_FAKE_OPENCODE_ENV_FILE, JSON.stringify({ ROADRUNNER_MAX_CAPTURED_OUTPUT_BYTES: process.env.ROADRUNNER_MAX_CAPTURED_OUTPUT_BYTES ?? null, ROADRUNNER_PROVIDER_TIMEOUT_MS: process.env.ROADRUNNER_PROVIDER_TIMEOUT_MS ?? null, ROADRUNNER_SECRET: process.env.ROADRUNNER_SECRET ?? null }) + "\\n");
 }
 if (process.env.ROADRUNNER_FAKE_OPENCODE_NESTED_ENV_FILE) {
   fs.writeFileSync(process.env.ROADRUNNER_FAKE_OPENCODE_NESTED_ENV_FILE, JSON.stringify({ OPENCODE_SESSION: process.env.OPENCODE_SESSION ?? null, OPENCODE_SERVER: process.env.OPENCODE_SERVER ?? null }) + "\\n");
@@ -96,6 +96,8 @@ if (process.argv.includes("--help")) {
   console.log("--model --variant --agent --file --dangerously-skip-permissions");
   process.exit(0);
 }
+
+if (mode === "large-output") { process.stdout.write("b".repeat(100)); process.exit(0); }
 
 function runChecked(command, args) {
   try {
@@ -133,14 +135,9 @@ if (prompt.includes("Roadrunner Startup Queue Refresh") || prompt.includes("## S
   if (mode === "startup-refresh-extra") fs.writeFileSync("unexpected-startup.txt", "nope\\n");
   const queue = queueFromPrompt("Seed Queue");
   if (mode === "startup-refresh-invalid") queue.version = 99;
-  if (mode === "startup-refresh-fail") {
-    console.error("startup refresh failed");
-    process.exit(9);
-  }
-  if (mode === "startup-refresh-inferred-done") {
-    const completed = queue.queue.shift();
-    if (completed) queue.history.push({ ...completed, completedAt: "2026-01-01T00:00:00.000Z" });
-  }
+  if (mode === "startup-refresh-fail") { console.error("startup refresh failed"); process.exit(9); }
+  if (mode === "startup-refresh-inferred-done") queue.queue.shift();
+  if (mode === "startup-refresh-history") { const completed = queue.queue.shift(); if (completed) queue.history.push({ ...completed, completedAt: "2026-01-01T00:00:00.000Z" }); }
   if (mode === "startup-refresh-from-strategic") {
     queue.queue = [{ id: "strategic-step", phase: "Strategy", title: "Build strategic step", scope: ["marker.txt"], prompt: "Create marker.txt with ok content.", acceptance: ["marker exists"], verification: ["node -e \\"require('node:fs').readFileSync('marker.txt', 'utf8').includes('ok') || process.exit(1)\\""] }];
   }

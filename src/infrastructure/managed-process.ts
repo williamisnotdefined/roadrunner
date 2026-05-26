@@ -1,12 +1,14 @@
 import { spawn } from "node:child_process";
+import type { WriteStream } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 
 import type { ProjectContext } from "./config.js";
 import { registerProcess, unregisterProcessIfProcessGroupExited } from "./process-registry.js";
 import { processTreeExists, signalProcessTree as signalRegisteredProcessTree } from "./process-tree.js";
-import { writePrivateFile } from "./run-artifacts.js";
+import { createPrivateWriteStream } from "./run-artifacts.js";
 import { verificationChildEnv } from "./child-env.js";
+import { createCapturedOutputBuffer } from "./captured-output.js";
 
 const forceKillDelayMs = 1_000;
 
@@ -23,10 +25,15 @@ export async function runShell(
   role: string,
   { onOutput, signal, timeoutMs = 0 }: RunShellOptions = {},
 ): Promise<{ code: number | null; output: string }> {
+  const output = createCapturedOutputBuffer();
   await mkdir(path.dirname(logPath), { recursive: true });
+  const logStream = await createPrivateWriteStream(logPath);
+  logStream.on("error", Function.prototype as (error: Error) => void);
   const child = spawn(command, [], { cwd: context.root, detached: process.platform !== "win32", env: verificationChildEnv(), shell: true });
-  let output = "";
-  if (!child.pid) throw new Error("Failed to start shell process.");
+  if (!child.pid) {
+    await closeLogStream(logStream);
+    throw new Error("Failed to start shell process.");
+  }
   let registeredPid: number | null = child.pid;
   let aborted = false;
   let registrationFailed = false;
@@ -35,13 +42,19 @@ export async function runShell(
   let killTimeout: NodeJS.Timeout | undefined;
   let forceKillDone: Promise<void> | undefined;
   let settled = false;
+  const appendOutput = (text: string) => {
+    output.append(text);
+    try {
+      logStream.write(text);
+    } catch {
+      /* Verification logging is best-effort once the command is running. */
+    }
+  };
   const terminateProcess = (message: string) => {
     if (forceKillDone) return;
-    output += message;
+    appendOutput(message);
     signalShellProcessTree(child.pid, "SIGTERM");
-    ({ done: forceKillDone, timeout: killTimeout } = scheduleProcessTreeKill(child.pid, (text) => {
-      output += text;
-    }));
+    ({ done: forceKillDone, timeout: killTimeout } = scheduleProcessTreeKill(child.pid, appendOutput));
   };
 
   const abortRun = () => {
@@ -69,11 +82,11 @@ export async function runShell(
 
   child.stdout.on("data", (chunk: Buffer) => {
     onOutput?.();
-    output += chunk.toString();
+    appendOutput(chunk.toString());
   });
   child.stderr.on("data", (chunk: Buffer) => {
     onOutput?.();
-    output += chunk.toString();
+    appendOutput(chunk.toString());
   });
 
   return new Promise((resolve) => {
@@ -84,11 +97,11 @@ export async function runShell(
       signal?.removeEventListener("abort", abortRun);
       clearTimeout(timeout);
       await finishScheduledProcessTreeKill(child.pid, forceKillDone, killTimeout);
-      output += `${error.message}\n`;
+      appendOutput(`${error.message}\n`);
       await registrationDone;
       await unregisterRegisteredProcess(registeredPid, context);
-      await writePrivateFile(logPath, output);
-      resolve({ code: 1, output });
+      await closeLogStream(logStream);
+      resolve({ code: 1, output: output.value() });
     });
     /* v8 ignore stop */
     child.on("close", async (code: number | null) => {
@@ -99,8 +112,8 @@ export async function runShell(
       await finishScheduledProcessTreeKill(child.pid, forceKillDone, killTimeout);
       await registrationDone;
       await unregisterRegisteredProcess(registeredPid, context);
-      await writePrivateFile(logPath, output);
-      resolve({ code: registrationFailed ? 1 : timedOut ? 124 : aborted ? 130 : code, output });
+      await closeLogStream(logStream);
+      resolve({ code: registrationFailed ? 1 : timedOut ? 124 : aborted ? 130 : code, output: output.value() });
     });
   });
 }
@@ -136,4 +149,14 @@ function signalShellProcessTree(pid: number | undefined, signal: NodeJS.Signals)
   } catch {
     /* Cleanup is best-effort after timeout or registration failure. */
   }
+}
+
+function closeLogStream(logStream: WriteStream): Promise<void> {
+  return new Promise((resolve) => {
+    logStream.once("error", resolve);
+    logStream.end(() => {
+      logStream.off("error", resolve);
+      resolve();
+    });
+  });
 }

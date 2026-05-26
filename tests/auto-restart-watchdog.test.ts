@@ -74,6 +74,21 @@ describe("auto restart watchdog", () => {
 
     expect(events).toEqual([]);
   });
+
+  test("does not restart local verification phases", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const state = attemptState();
+    state.phase = "verify";
+    const events: RoadrunnerRunEvent[] = [];
+    const stop = startAutoRestartWatchdog({ current: state, emitEvent: (event) => events.push(event), incrementRestartCount: () => 1, policy: { enabled: true, idleMs: 10, maxRestarts: 1 }, restartCount: () => 0 });
+
+    vi.advanceTimersByTime(100);
+    stop();
+
+    expect(state.restartRequested).toBe(false);
+    expect(events).toEqual([]);
+  });
 });
 
 function attemptState(): RestartableAttemptState {

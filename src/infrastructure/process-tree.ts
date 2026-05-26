@@ -1,14 +1,14 @@
 import { spawnSync } from "node:child_process";
 
 export function signalProcessTree(pid: number | undefined, signal: NodeJS.Signals): boolean {
-  if (!pid) return false;
+  if (!isPositiveSafeInteger(pid)) return false;
   /* v8 ignore next -- Windows tree cleanup depends on taskkill availability. */
   if (process.platform === "win32") return signalWindowsProcessTree(pid, signal);
   return signalPosixProcessGroup(pid, signal);
 }
 
 export function processTreeExists(pid: number | undefined): boolean {
-  if (!pid) return false;
+  if (!isPositiveSafeInteger(pid)) return false;
 
   try {
     process.kill(process.platform === "win32" ? pid : -pid, 0);
@@ -42,3 +42,7 @@ function signalWindowsProcessTree(pid: number, signal: NodeJS.Signals): boolean 
   return spawnSync("taskkill", windowsTaskkillArgs(pid, signal), { stdio: "ignore" }).status === 0;
 }
 /* v8 ignore stop */
+
+function isPositiveSafeInteger(pid: number | undefined): pid is number {
+  return typeof pid === "number" && Number.isSafeInteger(pid) && pid > 0;
+}

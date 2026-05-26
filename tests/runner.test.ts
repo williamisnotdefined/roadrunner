@@ -126,7 +126,7 @@ describe("runner", () => {
       process.env.ROADRUNNER_FAKE_OPENCODE_ENV_FILE = envFile;
 
       expect(await runRoadrunner(project.context, { maxHours: 1, maxSteps: 1 })).toBe(1);
-      expect(JSON.parse(await readFile(envFile, "utf8"))).toEqual({ ROADRUNNER_PROVIDER_TIMEOUT_MS: "1800000" });
+      expect(JSON.parse(await readFile(envFile, "utf8"))).toMatchObject({ ROADRUNNER_PROVIDER_TIMEOUT_MS: "1800000" });
     } finally {
       await removeDir(project.directory);
     }

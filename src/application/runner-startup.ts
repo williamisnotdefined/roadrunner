@@ -59,14 +59,21 @@ export async function refreshQueueAtRunStart(context: ProjectContext, snapshot: 
   if (result.code !== 0) throw new Error(`Startup refresh failed (exit ${String(result.code)}).`);
 
   const queueFile = queueProposalFromOutput(result.output, context);
-  const verificationErrors = validateVerificationPolicy({
-    allowedCommands: context.config.allowedVerificationCommands,
-    proposed: queueFile,
-    trustedCommands: trustedVerificationCommands(seed.queueFile),
-  });
-  if (verificationErrors.length > 0) throw new Error(verificationErrors.join("\n"));
+  const validationErrors = [
+    ...validateStartupQueueScope(queueFile),
+    ...validateVerificationPolicy({
+      allowedCommands: context.config.allowedVerificationCommands,
+      proposed: queueFile,
+      trustedCommands: trustedVerificationCommands(seed.queueFile),
+    }),
+  ];
+  if (validationErrors.length > 0) throw new Error(validationErrors.join("\n"));
 
   return { logDir, queueFile };
+}
+
+function validateStartupQueueScope(queueFile: QueueFile): string[] {
+  return queueFile.history.length > 0 ? ["Startup refresh must not mark work as history; keep uncertain work queued or remove obsolete work from the open queue."] : [];
 }
 
 async function readRoadmapMarkdown(context: ProjectContext): Promise<string> {
