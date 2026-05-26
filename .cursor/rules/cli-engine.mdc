@@ -33,7 +33,7 @@ Use this skill when changing Roadrunner CLI commands, queue logic, init template
 
 ## Always
 
-- Keep commands explicit: `init`, `check`, `status`, `next`, `import-roadmap`, `plan`, `run`, and `cleanup`.
+- Keep commands explicit: `init`, `check`, `status`, `next`, `plan`, `run`, and `cleanup`.
 - Keep target project state under `.roadrunner`.
 - Avoid dependencies until there is a clear need.
 
@@ -84,7 +84,7 @@ Core modules by layer:
 - `src/cli/args.ts`: CLI argument parsing.
 - `src/cli/validation.ts`: CLI invocation validation.
 - `src/domain/queue.ts`: queue validation and mutation.
-- `src/domain/roadmap.ts`: Markdown roadmap parsing and import helpers.
+- `src/domain/roadmap.ts`: Markdown roadmap parsing and queue seed creation.
 - `src/domain/restart-policy.ts`: automatic restart defaults and environment overrides.
 - `src/domain/timeouts.ts`: provider, verification, and OpenCode check timeout resolution.
 - `src/domain/duration.ts`: shared duration formatting.
@@ -126,8 +126,6 @@ The autonomous run queue lives in memory for one execution. It contains `version
 `GOALS.md` is loaded once at the start of a run and used as an immutable in-memory goal snapshot for all prompts in that run. The configured roadmap file is also read at run start. Roadrunner does not use a persisted queue file as autonomous run state.
 
 Startup queue refresh seeds from operational roadmap Markdown when possible, and then asks the provider in read-only planning mode to audit the current repository state and return a full queue JSON proposal. It may move already satisfied roadmap work to `history`, keep relevant work in `queue`, put still-relevant blockers in `blocked`, and drop obsolete or superseded work. It must not edit files.
-
-Roadmaps may still be imported manually from Markdown into the queue with `import-roadmap`, but autonomous `run` does not depend on pre-imported queue state.
 
 After verification passes, Roadrunner marks the current step done in memory before reconciliation. Reconciliation then asks the provider in read-only planning mode for a full queue JSON proposal that optimizes open `queue` items by grouping microtasks, splitting oversized tasks, reordering dependencies, adding discovered future work, and removing obsolete work. It must preserve `version`, `model`, `variant`, `history`, and `blocked`, and it must not edit files.
 

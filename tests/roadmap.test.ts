@@ -1,11 +1,10 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
 
 import { defaultModel, defaultVariant, loadContext, writeJson } from "../src/infrastructure/config.js";
-import { importRoadmap, queueFileFromRoadmap, queueFileFromRoadmapFile } from "../src/domain/roadmap.js";
-import type { QueueFile } from "../src/domain/queue.js";
+import { queueFileFromRoadmap, queueFileFromRoadmapFile } from "../src/domain/roadmap.js";
 
 describe("roadmap", () => {
   test("parses roadmap markdown into queue file", () => {
@@ -102,117 +101,17 @@ Verification:
     expect(() => queueFileFromRoadmap(`${sampleRoadmap()}\n${sampleRoadmap()}`, {})).toThrow(/duplicate roadmap step id/);
   });
 
-  test("importRoadmap preserves closed queue records", async () => {
-    const tempDir = await mkdtemp(path.join(os.tmpdir(), "roadrunner-roadmap-"));
-    try {
-      await writeFile(
-        path.join(tempDir, "ROADMAP.md"),
-        `${sampleRoadmap()}\n\n## completed-step: Completed\n\nPhase: Done\nScope: README.md\nPrompt: Already done.\nAcceptance:\n- done\nVerification:\n- npm test\n`,
-      );
-      const context = await loadContext(tempDir, { _: [] });
-      const existing: QueueFile = {
-        version: 2,
-        model: defaultModel,
-        variant: defaultVariant,
-        queue: [],
-        history: [
-          {
-            id: "completed-step",
-            phase: "Done",
-            title: "Completed",
-            scope: ["README.md"],
-            prompt: "Already done.",
-            acceptance: ["done"],
-            verification: ["npm test"],
-          },
-        ],
-        blocked: [],
-      };
-      await writeJson(context.paths.queue, existing);
-
-      const imported = await importRoadmap(context);
-      const written = JSON.parse(await readFile(context.paths.queue, "utf8")) as QueueFile;
-
-      expect(imported.queue.map((step) => step.id)).toEqual(["first-step"]);
-      expect(written.queue.map((step) => step.id)).toEqual(["first-step"]);
-      expect(written.history.length).toBe(1);
-    } finally {
-      await rm(tempDir, { force: true, recursive: true });
-    }
-  });
-
-  test("importRoadmap replaces existing open steps absent from the roadmap", async () => {
-    const tempDir = await mkdtemp(path.join(os.tmpdir(), "roadrunner-roadmap-open-"));
-    try {
-      await writeFile(path.join(tempDir, "ROADMAP.md"), sampleRoadmap());
-      const context = await loadContext(tempDir, { _: [] });
-      const existing: QueueFile = {
-        version: 2,
-        model: defaultModel,
-        variant: defaultVariant,
-        queue: [
-          {
-            id: "manual-step",
-            phase: "Manual",
-            title: "Manual step",
-            scope: ["README.md"],
-            prompt: "Keep this manually queued step.",
-            acceptance: ["still queued"],
-            verification: ["npm test"],
-          },
-        ],
-        history: [],
-        blocked: [],
-      };
-      await writeJson(context.paths.queue, existing);
-
-      const imported = await importRoadmap(context);
-
-      expect(imported.queue.map((step) => step.id)).toEqual(["first-step"]);
-    } finally {
-      await rm(tempDir, { force: true, recursive: true });
-    }
-  });
-
-  test("importRoadmap writes a queue when no existing queue is present", async () => {
-    const tempDir = await mkdtemp(path.join(os.tmpdir(), "roadrunner-roadmap-new-"));
-    try {
-      await writeFile(path.join(tempDir, "ROADMAP.md"), sampleRoadmap());
-      const context = await loadContext(tempDir, { _: [] });
-
-      const imported = await importRoadmap(context);
-
-      expect(imported.queue.map((step) => step.id)).toEqual(["first-step"]);
-      expect(JSON.parse(await readFile(context.paths.queue, "utf8")).queue).toHaveLength(1);
-    } finally {
-      await rm(tempDir, { force: true, recursive: true });
-    }
-  });
-
-  test("importRoadmap accepts configured model and variant", async () => {
+  test("queueFileFromRoadmapFile accepts configured model and variant", async () => {
     const tempDir = await mkdtemp(path.join(os.tmpdir(), "roadrunner-roadmap-custom-model-"));
     try {
       await writeFile(path.join(tempDir, "ROADMAP.md"), sampleRoadmap());
       await writeJson(path.join(tempDir, ".roadrunner/config.json"), { model: "custom-model", variant: "low" });
       const context = await loadContext(tempDir, { _: [] });
 
-      const imported = await importRoadmap(context);
+      const imported = await queueFileFromRoadmapFile(context);
 
       expect(imported.model).toBe("custom-model");
       expect(imported.variant).toBe("low");
-    } finally {
-      await rm(tempDir, { force: true, recursive: true });
-    }
-  });
-
-  test("importRoadmap rejects invalid existing queues", async () => {
-    const tempDir = await mkdtemp(path.join(os.tmpdir(), "roadrunner-roadmap-invalid-existing-"));
-    try {
-      await writeFile(path.join(tempDir, "ROADMAP.md"), sampleRoadmap());
-      const context = await loadContext(tempDir, { _: [] });
-      await writeJson(context.paths.queue, { version: 1 });
-
-      await expect(importRoadmap(context)).rejects.toThrow(/queue.version must be 2/);
     } finally {
       await rm(tempDir, { force: true, recursive: true });
     }
@@ -237,19 +136,6 @@ Verification:
     }
   });
 
-  test("importRoadmap rejects active Roadrunner locks", async () => {
-    const tempDir = await mkdtemp(path.join(os.tmpdir(), "roadrunner-roadmap-locked-"));
-    try {
-      await writeFile(path.join(tempDir, "ROADMAP.md"), sampleRoadmap());
-      const context = await loadContext(tempDir, { _: [] });
-      await mkdir(path.dirname(context.paths.lock), { recursive: true });
-      await writeFile(context.paths.lock, `${JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }, null, 2)}\n`);
-
-      await expect(importRoadmap(context)).rejects.toThrow(/import-roadmap lock already exists/);
-    } finally {
-      await rm(tempDir, { force: true, recursive: true });
-    }
-  });
 });
 
 function sampleRoadmap(): string {

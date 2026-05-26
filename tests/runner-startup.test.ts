@@ -17,8 +17,6 @@ describe("runner startup refresh", () => {
     const project = await setupRunnerProject("startup-refresh-inferred-done");
     const events: RoadrunnerRunEvent[] = [];
     try {
-      await rm(project.context.paths.queue, { force: true });
-
       expect(await runRoadrunner(project.context, { onEvent: (event) => events.push(event) })).toBe(0);
       const queue = latestQueueSnapshot(events);
       expect(queue.history.map((step) => step.id)).toEqual(["first-step"]);
@@ -32,8 +30,6 @@ describe("runner startup refresh", () => {
     const project = await setupRunnerProject("success");
     const events: RoadrunnerRunEvent[] = [];
     try {
-      await rm(project.context.paths.queue, { force: true });
-
       expect(await runRoadrunner(project.context, { maxSteps: 1, onEvent: (event) => events.push(event) })).toBe(1);
       const queue = latestQueueSnapshot(events);
       expect(queue.history.map((step) => step.id)).toEqual(["first-step"]);
@@ -92,7 +88,6 @@ describe("runner startup refresh", () => {
     const events: RoadrunnerRunEvent[] = [];
     try {
       await rm(project.context.paths.roadmap, { force: true });
-      await rm(project.context.paths.queue, { force: true });
 
       expect(await runRoadrunner(project.context, { maxSteps: 1, onEvent: (event) => events.push(event) })).toBe(0);
       const queue = latestQueueSnapshot(events);

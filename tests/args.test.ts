@@ -4,16 +4,16 @@ import { integerOption, numberOption, optionalNumberOption, parseArgs, stringOpt
 
 describe("args", () => {
   test("parses positional args, inline values, separated values, and booleans", () => {
-    expect(parseArgs(["run", "--max-steps=3", "--queue", "queue.json", "--force"])).toEqual({
+    expect(parseArgs(["run", "--max-steps=3", "--goals", "GOALS.md", "--force"])).toEqual({
       _: ["run"],
       force: true,
+      goals: "GOALS.md",
       "max-steps": "3",
-      queue: "queue.json",
     });
   });
 
   test("keeps next flag as boolean when value is absent", () => {
-    expect(parseArgs(["--force", "--queue"])).toEqual({ _: [], force: true, queue: true });
+    expect(parseArgs(["--force", "--goals"])).toEqual({ _: [], force: true, goals: true });
   });
 
   test("ignores empty flag names", () => {

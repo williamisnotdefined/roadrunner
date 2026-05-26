@@ -71,8 +71,6 @@ export async function main(argv = process.argv.slice(2), { cwd = process.cwd(), 
       if (errors.length === 0) errors.push(...(await validateProvider(context)));
       if (errors.length > 0) throw new Error(errors.join("\n"));
       out(formatCliSuccess("Roadrunner project is valid."));
-    } else if (command === "import-roadmap") {
-      out(formatCliInfo("import-roadmap is no longer required; run rebuilds an in-memory queue from the roadmap each time."));
     } else if (command === "plan") {
       out(formatCliStep("Planning next queued step"));
       const result = await plan(context, { onProviderStart: (event) => out(formatProviderStartEvent(event)) });
@@ -172,11 +170,10 @@ export function helpText(): string {
   return `Roadrunner
 
 Commands:
-  roadrunner init [--queue path] [--goals path] [--roadmap path]
+  roadrunner init [--goals path] [--roadmap path]
   roadrunner check [--config path]
   roadrunner status [--config path]
   roadrunner next [--config path]
-  roadrunner import-roadmap [--roadmap path] [--queue path]
   roadrunner plan [--config path]
   roadrunner run [--config path] [--max-steps 1] [--max-hours n]
   roadrunner cleanup [--config path] [--force]
@@ -191,7 +188,6 @@ Run UI controls:
 Path overrides:
   --goals path        Path to GOALS.md
   --goal path         Alias for --goals
-  --queue path        Legacy queue JSON path for import-roadmap
   --roadmap path      Path to roadmap Markdown
   --prompts dir       Prompt templates directory
   --logs dir          Logs directory

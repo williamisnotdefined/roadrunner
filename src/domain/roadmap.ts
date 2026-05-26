@@ -1,8 +1,7 @@
 import { readFile } from "node:fs/promises";
 
-import { defaultModel, defaultVariant, pathExists, type ProjectContext } from "../infrastructure/config.js";
-import { acquireProjectLock } from "../infrastructure/lock.js";
-import { normalizeQueueFile, readQueue, validateQueueFile, writeQueue, type QueueFile, type QueueStep } from "./queue.js";
+import { defaultModel, defaultVariant, type ProjectContext } from "../infrastructure/config.js";
+import { validateQueueFile, type QueueFile, type QueueStep } from "./queue.js";
 
 interface RoadmapSection {
   body: string[];
@@ -23,28 +22,6 @@ const fieldAliases: ReadonlyMap<string, string> = new Map([
   ["acceptance", "acceptance"],
   ["verification", "verification"],
 ]);
-
-export async function importRoadmap(context: ProjectContext): Promise<QueueFile> {
-  const releaseLock = await acquireProjectLock(context, "Roadrunner import-roadmap");
-  try {
-    const parsed = await queueFileFromRoadmapFile(context);
-    const existingRaw = (await pathExists(context.paths.queue)) ? await readQueue(context) : null;
-    if (existingRaw) {
-      const errors = validateQueueFile(existingRaw, { model: context.config.model, variant: context.config.variant });
-      if (errors.length > 0) throw new Error(errors.join("\n"));
-    }
-    const existing = existingRaw ? normalizeQueueFile(existingRaw) : null;
-
-    const queueFile = mergeQueueState(parsed, existing);
-    const errors = validateQueueFile(queueFile, { model: context.config.model, variant: context.config.variant });
-    if (errors.length > 0) throw new Error(errors.join("\n"));
-
-    await writeQueue(queueFile, context);
-    return queueFile;
-  } finally {
-    await releaseLock();
-  }
-}
 
 export async function queueFileFromRoadmapFile(context: ProjectContext): Promise<QueueFile> {
   const markdown = await readFile(context.paths.roadmap, "utf8");
@@ -81,19 +58,6 @@ export function queueFileFromRoadmap(markdown: string, options: RoadmapOptions):
   if (validationErrors.length > 0) throw new Error(validationErrors.join("\n"));
 
   return queueFile;
-}
-
-function mergeQueueState(parsed: QueueFile, existing: QueueFile | null): QueueFile {
-  if (!existing) return parsed;
-
-  const closed = new Set([...existing.history, ...existing.blocked].map((step) => step.id));
-  const importedOpen = parsed.queue.filter((step) => !closed.has(step.id));
-  return {
-    ...parsed,
-    queue: importedOpen,
-    history: existing.history,
-    blocked: existing.blocked,
-  };
 }
 
 function roadmapSections(markdown: string): RoadmapSection[] {

@@ -8,7 +8,7 @@ Core modules by layer:
 - `src/cli/args.ts`: CLI argument parsing.
 - `src/cli/validation.ts`: CLI invocation validation.
 - `src/domain/queue.ts`: queue validation and mutation.
-- `src/domain/roadmap.ts`: Markdown roadmap parsing and import helpers.
+- `src/domain/roadmap.ts`: Markdown roadmap parsing and queue seed creation.
 - `src/domain/restart-policy.ts`: automatic restart defaults and environment overrides.
 - `src/domain/timeouts.ts`: provider, verification, and OpenCode check timeout resolution.
 - `src/domain/duration.ts`: shared duration formatting.

@@ -7,8 +7,6 @@ import { defaultAutoRestartIdleMs, defaultMaxAutoRestartsPerStep } from "../doma
 
 export const defaultModel = "openai/gpt-5.5";
 export const defaultVariant = "xhigh";
-export const defaultQueuePath = ".roadrunner/state/queue.json";
-export const legacyDefaultQueuePath = ".roadrunner/queue.json";
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 const sourceRoot = path.resolve(moduleDir, "../..");
@@ -26,6 +24,7 @@ export interface PathOverrides {
   logs?: string;
   processes?: string;
   prompts?: string;
+  /** @deprecated Autonomous run queues are in-memory; retained only to tolerate older config files. */
   queue?: string;
   roadmap?: string;
 }
@@ -37,7 +36,6 @@ export interface ProjectPaths {
   logs: string;
   processRegistry: string;
   prompts: string;
-  queue: string;
   roadmap: string;
 }
 
@@ -72,7 +70,6 @@ export function projectPaths(projectRoot = process.cwd(), overrides: PathOverrid
     logs: resolveProjectPath(projectRoot, overrides.logs ?? ".roadrunner/logs"),
     processRegistry: resolveProjectPath(projectRoot, overrides.processes ?? ".roadrunner/processes.json"),
     prompts: resolveProjectPath(projectRoot, overrides.prompts ?? ".roadrunner/prompts"),
-    queue: resolveProjectPath(projectRoot, overrides.queue ?? defaultQueuePath),
     roadmap: resolveProjectPath(projectRoot, overrides.roadmap ?? "ROADMAP.md"),
   };
 }
@@ -82,7 +79,6 @@ export async function loadContext(projectRoot = process.cwd(), args: CliArgs = {
   const configPath = flagOverrides.config ? resolveProjectPath(projectRoot, flagOverrides.config) : await defaultConfigPath(projectRoot);
   const fileConfig = (await pathExists(configPath)) ? await readConfig(configPath) : {};
   const configOverrides = { ...fileConfig.paths };
-  if (flagOverrides.queue === undefined && configOverrides.queue === legacyDefaultQueuePath) configOverrides.queue = defaultQueuePath;
   const paths = projectPaths(projectRoot, { ...configOverrides, ...flagOverrides, config: configPath });
 
   return {
@@ -111,7 +107,6 @@ export function pathOverridesFromArgs(args: CliArgs): PathOverrides {
     ["logs", args.logs],
     ["processes", args.processes],
     ["prompts", args.prompts],
-    ["queue", args.queue],
     ["roadmap", args.roadmap],
   ];
 

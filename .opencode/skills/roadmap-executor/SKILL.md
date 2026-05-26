@@ -90,8 +90,6 @@ The autonomous run queue lives in memory for one execution. It contains `version
 
 Startup queue refresh seeds from operational roadmap Markdown when possible, and then asks the provider in read-only planning mode to audit the current repository state and return a full queue JSON proposal. It may move already satisfied roadmap work to `history`, keep relevant work in `queue`, put still-relevant blockers in `blocked`, and drop obsolete or superseded work. It must not edit files.
 
-Roadmaps may still be imported manually from Markdown into the queue with `import-roadmap`, but autonomous `run` does not depend on pre-imported queue state.
-
 After verification passes, Roadrunner marks the current step done in memory before reconciliation. Reconciliation then asks the provider in read-only planning mode for a full queue JSON proposal that optimizes open `queue` items by grouping microtasks, splitting oversized tasks, reordering dependencies, adding discovered future work, and removing obsolete work. It must preserve `version`, `model`, `variant`, `history`, and `blocked`, and it must not edit files.
 
 Roadrunner does not require a clean git worktree, does not inspect git status or `HEAD` for queue control, does not restore file changes, and does not create commits. Failures update the in-memory queue state by blocking the current step when possible.

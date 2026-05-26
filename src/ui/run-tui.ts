@@ -37,7 +37,7 @@ export async function runWithTui(context: ProjectContext, options: RunTuiOptions
 
   try {
     app = await appFactory(context, session, { input, now: options.now ?? (() => Date.now()), output });
-    session.event("run-start", `run started root=${context.root} queue=${context.paths.queue}`, { queuePath: context.paths.queue, root: context.root });
+    session.event("run-start", `run started root=${context.root}`, { root: context.root });
     const completed = await (options.runner ?? run)(context, {
       maxHours: options.maxHours,
       maxSteps: options.maxSteps,

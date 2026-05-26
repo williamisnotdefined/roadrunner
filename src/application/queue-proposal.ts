@@ -16,13 +16,12 @@ export function queueProposalFromOutput(output: string, context: ProjectContext)
 export function parseQueueProposalJson(output: string): unknown {
   const blocks = fencedBlocks(output);
   const namedBlocks = blocks.filter((block) => block.info.split(/\s+/).includes("roadrunner-queue"));
-  const candidates = namedBlocks.length > 0 ? namedBlocks : blocks.filter((block) => block.info.split(/\s+/)[0] === "json");
 
-  if (candidates.length === 0) throw new Error("Provider output must include a fenced JSON block tagged roadrunner-queue.");
-  if (candidates.length > 1) throw new Error("Provider output must include exactly one Roadrunner queue JSON proposal.");
+  if (namedBlocks.length === 0) throw new Error("Provider output must include a fenced JSON block tagged roadrunner-queue.");
+  if (namedBlocks.length > 1) throw new Error("Provider output must include exactly one Roadrunner queue JSON proposal.");
 
   try {
-    return JSON.parse(candidates[0]!.content);
+    return JSON.parse(namedBlocks[0]!.content);
   } catch (error) {
     throw new Error(`Roadrunner queue JSON proposal is invalid: ${(error as Error).message}`);
   }

@@ -234,7 +234,7 @@ describe("runner", () => {
   test("status ignores stale runtime queue files", async () => {
     const project = await setupRunnerProject("success");
     try {
-      await writeJson(project.context.paths.queue, { version: 1 });
+      await writeJson(staleQueuePath(project.directory), { version: 1 });
 
       expect((await status(project.context)).queued).toBe(1);
     } finally {
@@ -291,7 +291,7 @@ describe("runner", () => {
     const project = await setupRunnerProject("success");
     const events: RoadrunnerRunEvent[] = [];
     try {
-      await writeJson(project.context.paths.queue, { version: 1 });
+      await writeJson(staleQueuePath(project.directory), { version: 1 });
 
       expect(await runRoadrunner(project.context, { onEvent: (event) => events.push(event) })).toBe(1);
       const queue = latestQueueSnapshot(events);
@@ -362,3 +362,7 @@ describe("runner", () => {
   });
 
 });
+
+function staleQueuePath(directory: string): string {
+  return path.join(directory, ".roadrunner/state/queue.json");
+}

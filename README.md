@@ -17,7 +17,6 @@ tsx src/cli/index.ts init --goals GOALS.md --roadmap ROADMAP.md
 tsx src/cli/index.ts check
 tsx src/cli/index.ts status
 tsx src/cli/index.ts next
-tsx src/cli/index.ts import-roadmap --roadmap ROADMAP.md
 tsx src/cli/index.ts plan
 tsx src/cli/index.ts run --max-steps 1
 tsx src/cli/index.ts run --max-steps 999 --max-hours 72
@@ -28,7 +27,7 @@ tsx src/cli/index.ts cleanup
 
 Roadrunner always treats the current working directory as the target project. Run the CLI from the project you want it to modify, not from the Roadrunner repository.
 
-If you run it from `~/git/rubiks-cube-solver`, Roadrunner reads and writes files in `~/git/rubiks-cube-solver` and stores its queue state under that project's `.roadrunner/` directory. Roadrunner does not require a clean git worktree and does not create its own commits; provider agents and verification commands still run in the target project and may execute git commands if your prompts, roadmap, or scripts ask them to.
+If you run it from `~/git/rubiks-cube-solver`, Roadrunner reads and writes files in `~/git/rubiks-cube-solver` and stores logs, locks, prompts, and process records under that project's `.roadrunner/` directory. Roadrunner does not require a clean git worktree and does not create its own commits; provider agents and verification commands still run in the target project and may execute git commands if your prompts, roadmap, or scripts ask them to.
 
 Example: work on `~/git/rubiks-cube-solver` using this local Roadrunner checkout.
 
@@ -124,12 +123,6 @@ By default it creates:
 - `.roadrunner/logs/` for run logs.
 
 If the configured roadmap path exists, defaulting to `ROADMAP.md` or set with `--roadmap path`, `run` reads it at startup. `init` does not persist a queue.
-
-### `import-roadmap`
-
-Deprecated. `run` rebuilds the queue in memory at startup, so manual import is no longer required.
-
-The command currently prints an informational message and leaves project files unchanged.
 
 ### `check`
 

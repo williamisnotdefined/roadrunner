@@ -103,7 +103,7 @@ describe("cli", () => {
     const directory = await tempDir("roadrunner-cli-help-");
     const output: string[] = [];
     try {
-      expect(helpText()).toMatch(/import-roadmap/);
+      expect(helpText()).not.toMatch(/import-roadmap/);
       expect(await main([], { cwd: directory, io: { stdout: (message) => output.push(message) } })).toBe(0);
       expect(output.join("\n")).toMatch(/Roadrunner/);
     } finally {
@@ -124,7 +124,7 @@ describe("cli", () => {
     }
   });
 
-  test("runs init, check, status, next, import-roadmap, and cleanup commands", async () => {
+  test("runs init, check, status, next, and cleanup commands", async () => {
     const directory = await tempDir("roadrunner-cli-project-");
     const output: string[] = [];
     const io = { stderr: (message: string) => output.push(`ERR:${message}`), stdout: (message: string) => output.push(message) };
@@ -138,7 +138,6 @@ describe("cli", () => {
       expect(await main(["check"], { cwd: directory, io })).toBe(0);
       expect(await main(["status"], { cwd: directory, io })).toBe(0);
       expect(await main(["next"], { cwd: directory, io })).toBe(0);
-      expect(await main(["import-roadmap"], { cwd: directory, io })).toBe(0);
       expect(await main(["cleanup"], { cwd: directory, io })).toBe(0);
 
       expect(output.join("\n")).toMatch(/Roadrunner initialized/);
@@ -148,6 +147,19 @@ describe("cli", () => {
       expect(output.join("\n")).toMatch(/No Roadrunner-owned processes/);
     } finally {
       process.env.PATH = originalPath;
+      await removeDir(directory);
+    }
+  });
+
+  test("rejects removed import-roadmap command", async () => {
+    const directory = await tempDir("roadrunner-cli-import-removed-");
+    const errors: string[] = [];
+    try {
+      await createInitializedProject(directory);
+
+      expect(await main(["import-roadmap"], { cwd: directory, io: { stderr: (message) => errors.push(message) } })).toBe(1);
+      expect(errors.join("\n")).toMatch(/Unknown command: import-roadmap/);
+    } finally {
       await removeDir(directory);
     }
   });
@@ -175,8 +187,8 @@ describe("cli", () => {
     try {
       const binDir = await createFakeOpenCodeBin(directory);
       process.env.PATH = withPath(binDir);
-      const context = await createInitializedProject(directory);
-      await writeJson(context.paths.queue, { version: 1 });
+      await createInitializedProject(directory);
+      await writeJson(path.join(directory, ".roadrunner/state/queue.json"), { version: 1 });
 
       expect(await main(["check"], { cwd: directory, io: { stdout: (message) => output.push(message) } })).toBe(0);
       expect(await main(["next"], { cwd: directory, io: { stdout: (message) => output.push(message) } })).toBe(0);

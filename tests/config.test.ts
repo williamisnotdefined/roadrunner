@@ -13,22 +13,19 @@ describe("config", () => {
     expect(paths.goals).toBe("/tmp/goals.md");
     expect(paths.roadmap).toBe(path.join(root, "docs/ROADMAP.md"));
     expect(paths.config).toBe(path.join(root, ".roadrunner/config.json"));
-    expect(paths.queue).toBe(path.join(root, ".roadrunner/state/queue.json"));
     expect(packageRootFromSourceRoot(path.join(root, "dist"))).toBe(root);
     expect(packageRootFromSourceRoot(path.join(root, "src"))).toBe(path.join(root, "src"));
   });
 
-  test("loadContext remaps the generated legacy queue path", async () => {
+  test("loadContext ignores generated legacy queue paths", async () => {
     const tempDir = await import("node:fs/promises").then((fs) => fs.mkdtemp(path.join(os.tmpdir(), "roadrunner-config-legacy-")));
     try {
       await mkdir(path.join(tempDir, ".roadrunner"), { recursive: true });
       await writeFile(path.join(tempDir, ".roadrunner/config.json"), `${JSON.stringify({ paths: { queue: ".roadrunner/queue.json" } }, null, 2)}\n`);
 
       const context = await loadContext(tempDir, { _: [] });
-      const explicit = await loadContext(tempDir, { _: [], queue: ".roadrunner/queue.json" });
 
-      expect(context.paths.queue).toBe(path.join(tempDir, ".roadrunner/state/queue.json"));
-      expect(explicit.paths.queue).toBe(path.join(tempDir, ".roadrunner/queue.json"));
+      expect(context.paths.config).toBe(path.join(tempDir, ".roadrunner/config.json"));
     } finally {
       await rm(tempDir, { force: true, recursive: true });
     }
@@ -56,7 +53,6 @@ describe("config", () => {
       logs: "logs",
       processes: "processes.json",
       prompts: "prompts",
-      queue: "queue.json",
       roadmap: "ROADMAP.md",
     });
   });
@@ -67,7 +63,7 @@ describe("config", () => {
       await mkdir(path.join(tempDir, ".roadrunner"), { recursive: true });
       await writeFile(
         path.join(tempDir, ".roadrunner/config.json"),
-        `${JSON.stringify({ allowNestedOpenCode: true, paths: { queue: "state/queue.json" }, provider: "opencode" }, null, 2)}\n`,
+        `${JSON.stringify({ allowNestedOpenCode: true, paths: { logs: "logs" }, provider: "opencode" }, null, 2)}\n`,
       );
 
       const context = await loadContext(tempDir, { _: [] });
@@ -81,7 +77,7 @@ describe("config", () => {
         provider: "opencode",
         variant: defaultVariant,
       });
-      expect(context.paths.queue).toBe(path.join(tempDir, "state/queue.json"));
+      expect(context.paths.logs).toBe(path.join(tempDir, "logs"));
     } finally {
       await rm(tempDir, { force: true, recursive: true });
     }
@@ -93,13 +89,13 @@ describe("config", () => {
       await mkdir(path.join(tempDir, "config"), { recursive: true });
       await writeFile(
         path.join(tempDir, "config/roadrunner.json"),
-        `${JSON.stringify({ allowNestedOpenCode: true, autoRestartIdleMs: 42, dangerouslySkipPermissions: true, maxAutoRestartsPerStep: 5, paths: { queue: "state/queue.json" } }, null, 2)}\n`,
+        `${JSON.stringify({ allowNestedOpenCode: true, autoRestartIdleMs: 42, dangerouslySkipPermissions: true, maxAutoRestartsPerStep: 5, paths: { logs: "logs" } }, null, 2)}\n`,
       );
 
       const context = await loadContext(tempDir, { _: [], config: "config/roadrunner.json" });
 
       expect(context.paths.config).toBe(path.join(tempDir, "config/roadrunner.json"));
-      expect(context.paths.queue).toBe(path.join(tempDir, "state/queue.json"));
+      expect(context.paths.logs).toBe(path.join(tempDir, "logs"));
       expect(context.config.allowNestedOpenCode).toBe(true);
       expect(context.config.autoRestartIdleMs).toBe(42);
       expect(context.config.dangerouslySkipPermissions).toBe(true);

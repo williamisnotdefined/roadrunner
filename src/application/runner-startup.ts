@@ -35,7 +35,6 @@ export async function refreshQueueAtRunStart(context: ProjectContext, snapshot: 
   const prompt = await renderPrompt(context, "startup-refresh.md", {
     GOALS_MD: snapshot.goalsMarkdown,
     QUEUE_JSON: JSON.stringify(seed.queueFile, null, 2),
-    QUEUE_PATH: path.relative(context.root, context.paths.queue).split(path.sep).join(path.posix.sep),
     ROADMAP_MD: roadmapMarkdown,
     ROADMAP_PARSE_STATUS: seed.parseStatus,
   });

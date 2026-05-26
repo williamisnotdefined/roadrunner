@@ -58,7 +58,7 @@ describe("run TUI", () => {
       expect(runnerOptions).toMatchObject({ streamProviderOutput: false });
       expect(statuses).toEqual(["Completed 2 step(s). Session log: session.log"]);
       expect(stopped).toBe(true);
-      expect(events).toContain("run-start:run started root=" + directory + " queue=" + context.paths.queue);
+      expect(events).toContain("run-start:run started root=" + directory);
       expect(events).toContain("run-end:run ended completed=2");
     } finally {
       await removeDir(directory);

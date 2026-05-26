@@ -16,11 +16,9 @@ describe("init", () => {
 
       expect(await pathExists(paths.goals)).toBe(true);
       expect(await pathExists(paths.config)).toBe(true);
-      expect(await pathExists(paths.queue)).toBe(false);
       expect(await pathExists(path.join(path.dirname(paths.config), ".gitignore"))).toBe(true);
       expect(await pathExists(path.join(paths.prompts, "plan-step.md"))).toBe(true);
       expect(await readFile(paths.goals, "utf8")).toMatch(/Plan -> Execute -> Verify -> Reconcile/);
-      expect(paths.queue).toBe(path.join(tempDir, ".roadrunner/state/queue.json"));
       expect(await readFile(path.join(path.dirname(paths.config), ".gitignore"), "utf8")).toMatch(/logs\//);
     } finally {
       await rm(tempDir, { force: true, recursive: true });
@@ -30,12 +28,11 @@ describe("init", () => {
   test("initProject creates nested goal paths without runtime queue files", async () => {
     const tempDir = await mkdtemp(path.join(os.tmpdir(), "roadrunner-init-nested-"));
     try {
-      const context = await loadContext(tempDir, { _: [], goals: "docs/GOALS.md", queue: "state/queue.json" });
+      const context = await loadContext(tempDir, { _: [], goals: "docs/GOALS.md" });
 
       await initProject(context);
 
       expect(await pathExists(path.join(tempDir, "docs/GOALS.md"))).toBe(true);
-      expect(await pathExists(path.join(tempDir, "state/queue.json"))).toBe(false);
     } finally {
       await rm(tempDir, { force: true, recursive: true });
     }
@@ -81,7 +78,7 @@ Verification:
 
       await initProject(context);
 
-      expect(await pathExists(context.paths.queue)).toBe(false);
+      expect(await pathExists(path.join(tempDir, ".roadrunner/state/queue.json"))).toBe(false);
     } finally {
       await rm(tempDir, { force: true, recursive: true });
     }
@@ -106,12 +103,12 @@ Verification:
   test("loadContext reads root Roadrunner config by default", async () => {
     const tempDir = await mkdtemp(path.join(os.tmpdir(), "roadrunner-config-"));
     try {
-      await writeFile(path.join(tempDir, "roadrunner.config.json"), `${JSON.stringify({ paths: { queue: "ai/roadmap/queue.json" } }, null, 2)}\n`);
+      await writeFile(path.join(tempDir, "roadrunner.config.json"), `${JSON.stringify({ paths: { logs: "ai/logs" } }, null, 2)}\n`);
 
       const context = await loadContext(tempDir, { _: [] });
 
       expect(context.paths.config).toBe(path.join(tempDir, "roadrunner.config.json"));
-      expect(context.paths.queue).toBe(path.join(tempDir, "ai/roadmap/queue.json"));
+      expect(context.paths.logs).toBe(path.join(tempDir, "ai/logs"));
     } finally {
       await rm(tempDir, { force: true, recursive: true });
     }

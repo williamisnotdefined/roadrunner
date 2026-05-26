@@ -1,12 +1,11 @@
 import type { CliArgs } from "./args.js";
 
-export const projectCommands = new Set(["check", "cleanup", "import-roadmap", "init", "next", "plan", "run", "status"]);
+export const projectCommands = new Set(["check", "cleanup", "init", "next", "plan", "run", "status"]);
 
-const pathOptions = ["config", "goals", "goal", "lock", "logs", "processes", "prompts", "queue", "roadmap"];
+const pathOptions = ["config", "goals", "goal", "lock", "logs", "processes", "prompts", "roadmap"];
 const commandOptions: Record<string, string[]> = {
   check: [],
   cleanup: ["force"],
-  "import-roadmap": [],
   init: [],
   next: [],
   plan: [],
