@@ -1,4 +1,5 @@
 import type { QueueFile, QueueStep } from "../domain/queue.js";
+import { escapeBlessedMarkup } from "./blessed-markup.js";
 
 export type TaskRowStatus = "blocked" | "current" | "done" | "next";
 
@@ -57,7 +58,12 @@ export function taskTableData(rows: TaskRow[], selectedTaskId: string | null): s
     ["Status", "ID", "Phase", "Title"],
     ...rows.map((row) => {
       const marker = row.id === selectedTaskId ? "›" : " ";
-      return [`${marker} ${row.icon} ${row.statusLabel}`, row.id, row.phase, row.title];
+      return [
+        `${marker} ${escapeBlessedMarkup(row.icon)} ${escapeBlessedMarkup(row.statusLabel)}`,
+        escapeBlessedMarkup(row.id),
+        escapeBlessedMarkup(row.phase),
+        escapeBlessedMarkup(row.title),
+      ];
     }),
   ];
 }

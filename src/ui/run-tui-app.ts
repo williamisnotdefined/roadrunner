@@ -6,6 +6,7 @@ import type { Widgets } from "blessed";
 import type { ProjectContext } from "../infrastructure/config.js";
 import type { QueueFile } from "../domain/queue.js";
 import { readValidatedQueue } from "../application/queue-service.js";
+import { escapeBlessedMarkup } from "./blessed-markup.js";
 import { selectedTaskIndex, taskRowsFromQueue, taskStats, taskTableData, type TaskRow, type TaskStats } from "./run-dashboard-model.js";
 import { discoverTaskLogs, readLogTail, type TaskLogFile } from "./run-log-discovery.js";
 import { updateProgressForActivity, updateProgressForEvent, type RunProgressState } from "./run-progress.js";
@@ -152,11 +153,11 @@ export async function createTuiApp(context: ProjectContext, session: RunSessionL
     const taskIndex = selectedTaskIndex(rows, selectedTaskId);
     if (taskIndex >= 0) table.select(taskIndex + 1);
     details.setContent(detailsText(selectedRow(), progress, currentTaskObservation, options.now(), session));
-    logs.setItems(logFiles.map((file, index) => `${index === selectedLogIndex ? "›" : " "} ${file.label}`));
+    logs.setItems(logFiles.map((file, index) => `${index === selectedLogIndex ? "›" : " "} ${escapeBlessedMarkup(file.label)}`));
     if (logFiles.length > 0) logs.select(selectedLogIndex);
-    log.setContent(logText || "Log is empty.");
+    log.setContent(escapeBlessedMarkup(logText || "Log is empty."));
     actions.setContent(actionText(progress, pendingRestart, stopping));
-    footer.setContent(` ${status}`);
+    footer.setContent(` ${escapeBlessedMarkup(status)}`);
     setBorders();
     screen.render();
   }

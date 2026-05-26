@@ -13,7 +13,7 @@
   "scripts": {
     "ai:check": "tsx scripts/ai/sync-routes.ts --check",
     "ai:sync": "tsx scripts/ai/sync-routes.ts",
-    "build": "node -e \"require('node:fs').rmSync('dist', { force: true, recursive: true })\" && tsc -p tsconfig.build.json",
+    "build": "node -e \"require('node:fs').rmSync('dist', { force: true, recursive: true })\" && tsc -p tsconfig.build.json && node -e \"require('node:fs').chmodSync('dist/src/cli/index.js', 0o755)\"",
     "check": "npm run lint && npm run size:check && npm run typecheck && npm run coverage && npm run build && npm run smoke:dist && npm run smoke:pack",
     "coverage": "vitest run --coverage",
     "e2e:real": "tsx scripts/e2e-real.ts",

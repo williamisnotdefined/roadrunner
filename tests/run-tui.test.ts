@@ -1,4 +1,6 @@
 import { describe, expect, test } from "vitest";
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { PassThrough } from "node:stream";
 
 import { loadContext } from "../src/infrastructure/config.js";
@@ -133,6 +135,24 @@ describe("run TUI", () => {
       app.setStatus("ready");
       app.stop();
     } finally {
+      await removeDir(directory);
+    }
+  });
+
+  test("renders provider logs that look like blessed markup", async () => {
+    const directory = await tempDir("roadrunner-tui-raw-log-");
+    let app: Awaited<ReturnType<typeof createTuiApp>> | null = null;
+    try {
+      const context = await createInitializedProject(directory);
+      const logDir = path.join(context.paths.logs, "001-first-step");
+      await mkdir(logDir, { recursive: true });
+      await writeFile(path.join(logDir, "provider.log"), "provider output\n{foo,bar}\n{/foo,bar}\n");
+
+      app = await createTuiApp(context, fakeLogger([]), { input: ttyStream(), now: () => 1_000, output: ttyStream() });
+
+      expect(() => app?.setStatus("ready")).not.toThrow();
+    } finally {
+      app?.stop();
       await removeDir(directory);
     }
   });

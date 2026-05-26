@@ -28,6 +28,21 @@ describe("run dashboard model", () => {
     expect(taskTableData(rows, "current-step")[2]).toEqual(["› ▶ Now", "current-step", "Bootstrap", "Current Step"]);
   });
 
+  test("escapes blessed markup in task table fields", () => {
+    const queueFile: QueueFile = {
+      blocked: [],
+      history: [],
+      model: "openai/gpt-5.5",
+      queue: [{ ...step("{current,step}"), phase: "{phase,tag}", title: "{title,tag}" }],
+      variant: "xhigh",
+      version: 2,
+    };
+
+    const rows = taskRowsFromQueue(queueFile);
+
+    expect(taskTableData(rows, "{current,step}")[1]).toEqual(["› ▶ Now", "{open}current,step{close}", "{open}phase,tag{close}", "{open}title,tag{close}"]);
+  });
+
   test("handles empty queues and queues without a current task", () => {
     const empty: QueueFile = { blocked: [], history: [], model: "openai/gpt-5.5", queue: [], variant: "xhigh", version: 2 };
     expect(taskRowsFromQueue(empty)).toEqual([]);
