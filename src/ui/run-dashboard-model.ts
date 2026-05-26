@@ -1,4 +1,4 @@
-import type { QueueFile, QueueStep } from "./queue.js";
+import type { QueueFile, QueueStep } from "../domain/queue.js";
 
 export type TaskRowStatus = "blocked" | "current" | "done" | "next";
 

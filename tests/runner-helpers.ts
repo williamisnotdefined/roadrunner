@@ -1,7 +1,7 @@
 import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 
-import { loadContext, type ProjectContext } from "../src/config.js";
+import { loadContext, type ProjectContext } from "../src/infrastructure/config.js";
 import { commitAll, createFakeOpenCodeBin, createInitializedProject, initGit, sampleRoadmap, tempDir, withPath } from "./helpers.js";
 
 export async function setupRunnerProject(mode: string, roadmap = sampleRoadmap()): Promise<{ context: ProjectContext; directory: string }> {

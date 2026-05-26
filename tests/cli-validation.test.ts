@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
-import { main } from "../src/cli.js";
-import { shouldPrintHelp, validateCliInvocation } from "../src/cli-validation.js";
+import { main } from "../src/cli/index.js";
+import { shouldPrintHelp, validateCliInvocation } from "../src/cli/validation.js";
 import { createInitializedProject, removeDir, tempDir } from "./helpers.js";
 
 describe("cli validation", () => {

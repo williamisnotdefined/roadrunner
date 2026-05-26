@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "bin": {
-    "roadrunner": "dist/src/cli.js"
+    "roadrunner": "dist/src/cli/index.js"
   },
   "files": [
     "dist/src",
@@ -13,14 +13,14 @@
   "scripts": {
     "ai:check": "tsx scripts/ai/sync-routes.ts --check",
     "ai:sync": "tsx scripts/ai/sync-routes.ts",
-    "build": "tsc -p tsconfig.build.json",
+    "build": "node -e \"require('node:fs').rmSync('dist', { force: true, recursive: true })\" && tsc -p tsconfig.build.json",
     "check": "npm run lint && npm run size:check && npm run typecheck && npm run coverage && npm run build && npm run smoke:dist && npm run smoke:pack",
     "coverage": "vitest run --coverage",
     "e2e:real": "tsx scripts/e2e-real.ts",
     "format": "npm run ai:sync && biome format --write .",
     "lint": "biome lint . && npm run ai:check",
     "prepack": "npm run build",
-    "smoke:dist": "node dist/src/cli.js help",
+    "smoke:dist": "node dist/src/cli/index.js help",
     "smoke:pack": "tsx scripts/smoke-pack.ts",
     "size:check": "tsx scripts/check-file-size.ts",
     "test": "vitest run",

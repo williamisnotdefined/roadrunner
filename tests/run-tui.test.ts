@@ -1,12 +1,13 @@
 import { describe, expect, test } from "vitest";
 import { PassThrough } from "node:stream";
 
-import { loadContext } from "../src/config.js";
-import type { QueueStep } from "../src/queue.js";
-import { runWithTui } from "../src/run-tui.js";
-import { createTuiApp } from "../src/run-tui-app.js";
-import { actionText, detailsText, headerText } from "../src/run-tui-view.js";
-import type { RoadrunnerRunControl, RunOptions } from "../src/runner.js";
+import { loadContext } from "../src/infrastructure/config.js";
+import type { QueueStep } from "../src/domain/queue.js";
+import { runWithTui } from "../src/ui/run-tui.js";
+import { createTuiApp } from "../src/ui/run-tui-app.js";
+import { nextFocus, previousFocus } from "../src/ui/run-tui-navigation.js";
+import { actionText, detailsText, headerText } from "../src/ui/run-tui-view.js";
+import type { RoadrunnerRunControl, RunOptions } from "../src/application/runner.js";
 import { createInitializedProject, removeDir, tempDir } from "./helpers.js";
 
 describe("run TUI", () => {
@@ -166,6 +167,16 @@ describe("run TUI", () => {
     expect(actionText(null, true, false)).toContain("Restart current task? y/N");
     expect(actionText(null, false, true)).toContain("Stopping run and cleaning");
     expect(actionText(null, false, false)).toContain("Restart unavailable");
+    expect(actionText(null, false, false)).toContain("Tab/Shift+Tab");
+  });
+
+  test("cycles focus forward and backward", () => {
+    expect(nextFocus("tasks")).toBe("logs");
+    expect(nextFocus("logs")).toBe("log");
+    expect(nextFocus("log")).toBe("tasks");
+    expect(previousFocus("tasks")).toBe("log");
+    expect(previousFocus("log")).toBe("logs");
+    expect(previousFocus("logs")).toBe("tasks");
   });
 
   test("creates a real session log when no logger is injected", async () => {

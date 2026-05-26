@@ -3,9 +3,9 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
 
-import { defaultModel, defaultVariant, loadContext, writeJson } from "../src/config.js";
-import { importRoadmap, queueFileFromRoadmap, queueFileFromRoadmapFile } from "../src/roadmap.js";
-import type { QueueFile } from "../src/queue.js";
+import { defaultModel, defaultVariant, loadContext, writeJson } from "../src/infrastructure/config.js";
+import { importRoadmap, queueFileFromRoadmap, queueFileFromRoadmapFile } from "../src/domain/roadmap.js";
+import type { QueueFile } from "../src/domain/queue.js";
 
 describe("roadmap", () => {
   test("parses roadmap markdown into queue file", () => {

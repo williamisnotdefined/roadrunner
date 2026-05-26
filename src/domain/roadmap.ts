@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 
-import { defaultModel, defaultVariant, pathExists, type ProjectContext } from "./config.js";
-import { acquireProjectLock } from "./lock.js";
+import { defaultModel, defaultVariant, pathExists, type ProjectContext } from "../infrastructure/config.js";
+import { acquireProjectLock } from "../infrastructure/lock.js";
 import { normalizeQueueFile, readQueue, validateQueueFile, writeQueue, type QueueFile, type QueueStep } from "./queue.js";
 
 interface RoadmapSection {

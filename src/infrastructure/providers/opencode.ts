@@ -8,7 +8,7 @@ import { defaultModel, defaultVariant, type ProjectContext } from "../config.js"
 import { registerProcess, unregisterProcess } from "../process-registry.js";
 import { processTreeExists, signalProcessTree } from "../process-tree.js";
 import { createPrivateWriteStream, writePrivateFile } from "../run-artifacts.js";
-import { openCodeCheckTimeoutMs, providerTimeoutMs } from "../timeouts.js";
+import { openCodeCheckTimeoutMs, providerTimeoutMs } from "../../domain/timeouts.js";
 import type { Provider, ProviderRunInput, ProviderRunResult } from "./provider.js";
 
 const nestedOpenCodeEnvKeys = ["OPENCODE_SESSION", "OPENCODE_SESSION_ID", "OPENCODE_SERVER", "OPENCODE_WORKSPACE", "OPENCODE_APP_INFO"];

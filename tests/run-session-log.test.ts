@@ -2,8 +2,8 @@ import { readFile } from "node:fs/promises";
 
 import { describe, expect, test } from "vitest";
 
-import { loadContext } from "../src/config.js";
-import { createRunSessionLogger } from "../src/run-session-log.js";
+import { loadContext } from "../src/infrastructure/config.js";
+import { createRunSessionLogger } from "../src/ui/run-session-log.js";
 import { removeDir, tempDir } from "./helpers.js";
 
 describe("run session log", () => {

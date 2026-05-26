@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 
-import { processTreeExists, signalProcessTree, windowsTaskkillArgs } from "../src/process-tree.js";
+import { processTreeExists, signalProcessTree, windowsTaskkillArgs } from "../src/infrastructure/process-tree.js";
 
 const testPosix = process.platform === "win32" ? test.skip : test;
 

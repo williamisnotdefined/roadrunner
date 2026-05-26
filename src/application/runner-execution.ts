@@ -1,19 +1,19 @@
 import path from "node:path";
 
 import { recordAttemptActivity, startAutoRestartWatchdog } from "./auto-restart-watchdog.js";
-import type { ProjectContext } from "./config.js";
-import { cleanupProcesses } from "./process-registry.js";
+import type { ProjectContext } from "../infrastructure/config.js";
+import { cleanupProcesses } from "../infrastructure/process-registry.js";
 import { assertQueueUnchanged, readUnchangedCurrentQueue } from "./queue-guard.js";
-import { formatStep, markDone, type QueueFile, type QueueStep, writeQueue } from "./queue.js";
+import { formatStep, markDone, type QueueFile, type QueueStep, writeQueue } from "../domain/queue.js";
 import { blockStep } from "./queue-service.js";
-import { providerFor } from "./providers/index.js";
-import { automaticRestartBlockedReason, resolveAutoRestartPolicy } from "./restart-policy.js";
+import { providerFor } from "../infrastructure/providers/index.js";
+import { automaticRestartBlockedReason, resolveAutoRestartPolicy } from "../domain/restart-policy.js";
 import type { RunSnapshot } from "./run-snapshot.js";
-import { createLogDir, renderPrompt, writePrivateFile } from "./run-artifacts.js";
+import { createLogDir, renderPrompt, writePrivateFile } from "../infrastructure/run-artifacts.js";
 import type { CurrentAttemptState, RunControlState } from "./runner-control.js";
 import { planStep } from "./runner-planning.js";
 import { fixFailure, verify as verifyStep } from "./runner-verification.js";
-import { providerEnvForDeadline } from "./timeouts.js";
+import { providerEnvForDeadline } from "../domain/timeouts.js";
 import type { RoadrunnerRunActivityEvent, RoadrunnerRunEvent, RoadrunnerRunPhase } from "./runner.js";
 
 interface RunStepInput {

@@ -1,9 +1,9 @@
 import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { defaultModel, defaultVariant, packageRoot, pathExists, type ProjectContext, writeJson } from "./config.js";
-import { writeQueue, type QueueFile } from "./queue.js";
-import { queueFileFromRoadmapFile } from "./roadmap.js";
+import { defaultModel, defaultVariant, packageRoot, pathExists, type ProjectContext, writeJson } from "../infrastructure/config.js";
+import { writeQueue, type QueueFile } from "../domain/queue.js";
+import { queueFileFromRoadmapFile } from "../domain/roadmap.js";
 
 export async function initProject(context: ProjectContext): Promise<void> {
   const templateRoot = path.join(packageRoot, "templates");

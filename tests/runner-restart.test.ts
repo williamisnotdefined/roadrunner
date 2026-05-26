@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, test } from "vitest";
 
-import { readJson } from "../src/config.js";
-import type { QueueFile, QueueStep } from "../src/queue.js";
-import { createRunControl, type CurrentAttemptState, type RunControlState } from "../src/runner-control.js";
-import { run as runRoadrunner, type RoadrunnerRunControl, type RoadrunnerRunEvent } from "../src/runner.js";
+import { readJson } from "../src/infrastructure/config.js";
+import type { QueueFile, QueueStep } from "../src/domain/queue.js";
+import { createRunControl, type CurrentAttemptState, type RunControlState } from "../src/application/runner-control.js";
+import { run as runRoadrunner, type RoadrunnerRunControl, type RoadrunnerRunEvent } from "../src/application/runner.js";
 import { removeDir } from "./helpers.js";
 import { setupRunnerProject } from "./runner-helpers.js";
 

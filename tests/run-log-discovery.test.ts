@@ -3,8 +3,8 @@ import path from "node:path";
 
 import { describe, expect, test } from "vitest";
 
-import { loadContext } from "../src/config.js";
-import { discoverTaskLogs, readLogTail, relativeLogLabel } from "../src/run-log-discovery.js";
+import { loadContext } from "../src/infrastructure/config.js";
+import { discoverTaskLogs, readLogTail, relativeLogLabel } from "../src/ui/run-log-discovery.js";
 import { removeDir, tempDir } from "./helpers.js";
 
 describe("run log discovery", () => {

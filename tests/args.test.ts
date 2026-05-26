@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { integerOption, numberOption, optionalNumberOption, parseArgs, stringOption } from "../src/args.js";
+import { integerOption, numberOption, optionalNumberOption, parseArgs, stringOption } from "../src/cli/args.js";
 
 describe("args", () => {
   test("parses positional args, inline values, separated values, and booleans", () => {

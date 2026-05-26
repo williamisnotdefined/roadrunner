@@ -1,9 +1,9 @@
-import type { ProjectContext } from "./config.js";
-import { acquireProjectLock } from "./lock.js";
-import { nextStep, type QueueStep } from "./queue.js";
+import type { ProjectContext } from "../infrastructure/config.js";
+import { acquireProjectLock } from "../infrastructure/lock.js";
+import { nextStep, type QueueStep } from "../domain/queue.js";
 import { readValidatedQueue } from "./queue-service.js";
-import { cleanupProcesses } from "./process-registry.js";
-import { validateConfiguredProvider, type ProviderStartEvent } from "./providers/index.js";
+import { cleanupProcesses } from "../infrastructure/process-registry.js";
+import { validateConfiguredProvider, type ProviderStartEvent } from "../infrastructure/providers/index.js";
 import { readRunSnapshot } from "./run-snapshot.js";
 import { planStep, type PlanOptions } from "./runner-planning.js";
 import { createRunControl, type RunControlState } from "./runner-control.js";

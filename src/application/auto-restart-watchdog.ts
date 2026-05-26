@@ -1,5 +1,5 @@
-import type { QueueStep } from "./queue.js";
-import type { AutoRestartPolicy } from "./restart-policy.js";
+import type { QueueStep } from "../domain/queue.js";
+import type { AutoRestartPolicy } from "../domain/restart-policy.js";
 import type { RoadrunnerRunEvent, RoadrunnerRunPhase } from "./runner.js";
 
 export type AttemptRestartReason =

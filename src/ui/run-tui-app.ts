@@ -3,15 +3,16 @@ import type { Readable, Writable } from "node:stream";
 
 import type { Widgets } from "blessed";
 
-import type { ProjectContext } from "./config.js";
-import type { QueueFile } from "./queue.js";
-import { readValidatedQueue } from "./queue-service.js";
+import type { ProjectContext } from "../infrastructure/config.js";
+import type { QueueFile } from "../domain/queue.js";
+import { readValidatedQueue } from "../application/queue-service.js";
 import { selectedTaskIndex, taskRowsFromQueue, taskStats, taskTableData, type TaskRow, type TaskStats } from "./run-dashboard-model.js";
 import { discoverTaskLogs, readLogTail, type TaskLogFile } from "./run-log-discovery.js";
 import { updateProgressForActivity, updateProgressForEvent, type RunProgressState } from "./run-progress.js";
 import type { RunSessionLogger } from "./run-session-log.js";
+import { nextFocus, previousFocus, type FocusPanel } from "./run-tui-navigation.js";
 import { actionText, detailsText, headerText, type CurrentTaskObservation } from "./run-tui-view.js";
-import type { RoadrunnerRunActivityEvent, RoadrunnerRunControl, RoadrunnerRunEvent } from "./runner.js";
+import type { RoadrunnerRunActivityEvent, RoadrunnerRunControl, RoadrunnerRunEvent } from "../application/runner.js";
 
 export interface RunTuiApp {
   onActivity(event: RoadrunnerRunActivityEvent): void;
@@ -22,8 +23,6 @@ export interface RunTuiApp {
 }
 
 export type RunTuiAppFactory = (context: ProjectContext, session: RunSessionLogger, options: { input: Readable; now: () => number; output: Writable }) => Promise<RunTuiApp>;
-
-type FocusPanel = "log" | "logs" | "tasks";
 
 const require = createRequire(import.meta.url);
 const blessed = require("blessed") as typeof import("blessed");
@@ -56,7 +55,8 @@ export async function createTuiApp(context: ProjectContext, session: RunSessionL
 
   for (const element of [header, table, details, logs, log, actions, footer]) screen.append(element);
   screen.enableMouse();
-  screen.key(["tab"], () => setFocus(focus === "tasks" ? "logs" : focus === "logs" ? "log" : "tasks"));
+  screen.key(["tab"], () => setFocus(nextFocus(focus)));
+  screen.key(["S-tab", "backtab"], () => setFocus(previousFocus(focus)));
   screen.key(["up", "k"], () => (focus === "logs" ? moveLog(-1) : focus === "log" ? scrollLog(-1) : moveTask(-1)));
   screen.key(["down", "j"], () => (focus === "logs" ? moveLog(1) : focus === "log" ? scrollLog(1) : moveTask(1)));
   screen.key(["pageup"], () => scrollLog(-10));

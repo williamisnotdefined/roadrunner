@@ -3,8 +3,8 @@ import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { afterEach, describe, expect, test } from "vitest";
 
-import { defaultModel, defaultVariant, loadContext } from "../src/config.js";
-import { OpenCodeProvider, validateOpenCodeCli } from "../src/providers/opencode.js";
+import { defaultModel, defaultVariant, loadContext } from "../src/infrastructure/config.js";
+import { OpenCodeProvider, validateOpenCodeCli } from "../src/infrastructure/providers/opencode.js";
 import { createFakeOpenCodeBin, removeDir, tempDir, withPath } from "./helpers.js";
 
 const oldEnv = { ...process.env };

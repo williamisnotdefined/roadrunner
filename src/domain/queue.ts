@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-import { defaultModel, defaultVariant, type ProjectContext, readJson, writeJson } from "./config.js";
+import { defaultModel, defaultVariant, type ProjectContext, readJson, writeJson } from "../infrastructure/config.js";
 
 export interface QueueStep {
   acceptance: string[];

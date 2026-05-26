@@ -1,7 +1,7 @@
 import { open, readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
-import type { ProjectContext } from "./config.js";
+import type { ProjectContext } from "../infrastructure/config.js";
 
 export interface TaskLogFile {
   label: string;

@@ -1,6 +1,6 @@
 ---
 description: "Use when changing Roadrunner autonomous roadmap runs, plan-execute-verify-reconcile behavior, or queue semantics."
-globs: "src/runner*.ts,src/queue.ts,src/process-registry.ts,templates/prompts/*.md"
+globs: "src/application/**/*.ts,src/domain/queue.ts,src/infrastructure/process-registry.ts,templates/prompts/*.md"
 alwaysApply: false
 ---
 

@@ -7,16 +7,16 @@ import { fileURLToPath } from "node:url";
 
 import chalk from "chalk";
 
-import { cleanupProcesses } from "./process-registry.js";
-import { formatStep, nextStep, normalizeQueueFile, readQueue, validateGoals, validateQueueFile } from "./queue.js";
-import { initProject } from "./init.js";
-import { loadContext, type ProjectContext } from "./config.js";
+import { cleanupProcesses } from "../infrastructure/process-registry.js";
+import { formatStep, nextStep, normalizeQueueFile, readQueue, validateGoals, validateQueueFile } from "../domain/queue.js";
+import { initProject } from "../application/init.js";
+import { loadContext, type ProjectContext } from "../infrastructure/config.js";
 import { integerOption, optionalNumberOption, parseArgs } from "./args.js";
-import { shouldPrintHelp, validateCliInvocation } from "./cli-validation.js";
-import { plan, status, validateProvider, type RoadrunnerRunEvent } from "./runner.js";
-import { importRoadmap } from "./roadmap.js";
-import { formatDuration } from "./duration.js";
-import { runWithTui, type RunTuiOptions } from "./run-tui.js";
+import { shouldPrintHelp, validateCliInvocation } from "./validation.js";
+import { plan, status, validateProvider, type RoadrunnerRunEvent } from "../application/runner.js";
+import { importRoadmap } from "../domain/roadmap.js";
+import { formatDuration } from "../domain/duration.js";
+import { runWithTui, type RunTuiOptions } from "../ui/run-tui.js";
 
 export interface CliIo {
   stderr?: (message: string) => void;
@@ -191,7 +191,7 @@ Commands:
 
 Run UI controls:
   Up/Down            Select tasks or logs
-  Tab                Switch between task, logs, and log viewer panels
+  Tab/Shift+Tab      Switch between task, logs, and log viewer panels
   Enter              Open the selected task log
   r                  Restart the current task attempt from planning
   q, Ctrl+C, Ctrl+Q  Stop the run and clean Roadrunner-owned subprocesses

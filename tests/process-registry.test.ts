@@ -5,8 +5,8 @@ import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { describe, expect, test, vi } from "vitest";
 
-import { cleanupProcesses, readProcesses, registerProcess, unregisterProcess } from "../src/process-registry.js";
-import { loadContext, writeJson } from "../src/config.js";
+import { cleanupProcesses, readProcesses, registerProcess, unregisterProcess } from "../src/infrastructure/process-registry.js";
+import { loadContext, writeJson } from "../src/infrastructure/config.js";
 
 describe("process registry", () => {
   test("cleanup only targets registered child process", async () => {

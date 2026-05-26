@@ -2,9 +2,9 @@ import { readFile, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
-import { loadContext, readJson } from "../src/config.js";
-import type { QueueFile } from "../src/queue.js";
-import { plan, run as runRoadrunner } from "../src/runner.js";
+import { loadContext, readJson } from "../src/infrastructure/config.js";
+import type { QueueFile } from "../src/domain/queue.js";
+import { plan, run as runRoadrunner } from "../src/application/runner.js";
 import { commitAll, createFakeOpenCodeBin, createInitializedProject, initGit, removeDir, tempDir, withPath } from "./helpers.js";
 import { setupRunnerProject } from "./runner-helpers.js";
 

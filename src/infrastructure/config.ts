@@ -2,14 +2,14 @@ import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { type CliArgs, stringOption } from "./args.js";
-import { defaultAutoRestartIdleMs, defaultMaxAutoRestartsPerStep } from "./restart-policy.js";
+import { type CliArgs, stringOption } from "../cli/args.js";
+import { defaultAutoRestartIdleMs, defaultMaxAutoRestartsPerStep } from "../domain/restart-policy.js";
 
 export const defaultModel = "openai/gpt-5.5";
 export const defaultVariant = "xhigh";
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
-const sourceRoot = path.resolve(moduleDir, "..");
+const sourceRoot = path.resolve(moduleDir, "../..");
 export const packageRoot = packageRootFromSourceRoot(sourceRoot);
 
 export function packageRootFromSourceRoot(sourceRootPath: string): string {

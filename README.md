@@ -13,15 +13,15 @@ It is designed to run coding agents over roadmap-derived steps, with explicit pl
 ## Commands
 
 ```bash
-tsx src/cli.ts init --goals GOALS.md --roadmap ROADMAP.md
-tsx src/cli.ts check
-tsx src/cli.ts status
-tsx src/cli.ts next
-tsx src/cli.ts import-roadmap --roadmap ROADMAP.md
-tsx src/cli.ts plan
-tsx src/cli.ts run --max-steps 1
-tsx src/cli.ts run --max-steps 999 --max-hours 72
-tsx src/cli.ts cleanup
+tsx src/cli/index.ts init --goals GOALS.md --roadmap ROADMAP.md
+tsx src/cli/index.ts check
+tsx src/cli/index.ts status
+tsx src/cli/index.ts next
+tsx src/cli/index.ts import-roadmap --roadmap ROADMAP.md
+tsx src/cli/index.ts plan
+tsx src/cli/index.ts run --max-steps 1
+tsx src/cli/index.ts run --max-steps 999 --max-hours 72
+tsx src/cli/index.ts cleanup
 ```
 
 ## Running Roadrunner On Another Project
@@ -49,7 +49,7 @@ Initialize Roadrunner state in the target project:
 
 ```bash
 cd ~/git/rubiks-cube-solver
-node /home/wozzp/git/roadrunner/dist/src/cli.js init --goals GOALS.md --roadmap ROADMAP.md
+node /home/wozzp/git/roadrunner/dist/src/cli/index.js init --goals GOALS.md --roadmap ROADMAP.md
 ```
 
 `init` creates `.roadrunner/config.json`, `.roadrunner/queue.json`, `.roadrunner/prompts/`, and `.roadrunner/logs/`. If `ROADMAP.md` exists, it imports roadmap steps into the initial `.roadrunner/queue.json`; otherwise the queue starts empty. Autonomous `run` refreshes this queue again at every run start.
@@ -57,8 +57,8 @@ node /home/wozzp/git/roadrunner/dist/src/cli.js init --goals GOALS.md --roadmap 
 Validate and inspect the target project before running:
 
 ```bash
-node /home/wozzp/git/roadrunner/dist/src/cli.js check
-node /home/wozzp/git/roadrunner/dist/src/cli.js status
+node /home/wozzp/git/roadrunner/dist/src/cli/index.js check
+node /home/wozzp/git/roadrunner/dist/src/cli/index.js status
 ```
 
 `check` validates `GOALS.md`, `.roadrunner/queue.json`, and the configured provider CLI. `status` shows how many steps are queued, done, blocked, and which step is currently `queue[0]`.
@@ -66,14 +66,14 @@ node /home/wozzp/git/roadrunner/dist/src/cli.js status
 Run one step first if you want a safe smoke test:
 
 ```bash
-node /home/wozzp/git/roadrunner/dist/src/cli.js run --max-steps 1
+node /home/wozzp/git/roadrunner/dist/src/cli/index.js run --max-steps 1
 ```
 
 Run the autonomous loop until the queue finishes or a limit/blocker is reached:
 
 ```bash
 cd ~/git/rubiks-cube-solver
-node /home/wozzp/git/roadrunner/dist/src/cli.js run --max-steps 999 --max-hours 72
+node /home/wozzp/git/roadrunner/dist/src/cli/index.js run --max-steps 999 --max-hours 72
 ```
 
 At run start, `run` cleans registered Roadrunner-owned subprocesses, reads `GOALS.md`, reads the configured roadmap, ignores stale queue state, and refreshes `.roadrunner/queue.json` from roadmap plus current repository state. For each remaining queued step, `run` performs:
@@ -164,7 +164,7 @@ After a step verifies successfully, Roadrunner moves it to `history` before runn
 
 Provider runs default to `ROADRUNNER_PROVIDER_TIMEOUT_MS=1800000`, verification commands default to `ROADRUNNER_VERIFY_TIMEOUT_MS=600000`, automatic idle restarts default to `ROADRUNNER_AUTO_RESTART_IDLE_MS=600000` and `ROADRUNNER_MAX_AUTO_RESTARTS_PER_STEP=3`, and OpenCode CLI validation defaults to `ROADRUNNER_OPENCODE_CHECK_TIMEOUT_MS=10000`. Set provider, verification, automatic restart idle, or max automatic restart variables to `0` to disable that timeout/restart path. `--max-hours` caps provider and verification timeouts for the current step.
 
-`run` requires an interactive terminal and opens a full-screen task dashboard. The dashboard shows done, current, next, and blocked tasks; task details; available log files; and a scrollable log viewer. Use Up/Down to select tasks or logs, Tab to switch panels, Enter to open the selected log, `r` to restart the current `queue[0]` task from planning after confirmation, and `q`, `Ctrl+C`, or `Ctrl+Q` to stop the run and clean Roadrunner-owned subprocesses. Provider output is captured to log files instead of being streamed over the UI.
+`run` requires an interactive terminal and opens a full-screen task dashboard. The dashboard shows done, current, next, and blocked tasks; task details; available log files; and a scrollable log viewer. Use Up/Down to select tasks or logs, Tab/Shift+Tab to switch panels, Enter to open the selected log, `r` to restart the current `queue[0]` task from planning after confirmation, and `q`, `Ctrl+C`, or `Ctrl+Q` to stop the run and clean Roadrunner-owned subprocesses. Provider output is captured to log files instead of being streamed over the UI.
 
 Each run also writes a debug session directory under `.roadrunner/logs/` with `session.log` for human-readable events and `events.ndjson` for machine-readable events. Roadrunner also auto-restarts idle task attempts from planning when no provider or verification activity arrives before the configured idle threshold. Restarting or stopping does not reset or revert project files; it only stops registered Roadrunner subprocesses and, for restarts, repeats the task attempt.
 

@@ -3,8 +3,8 @@ import { chmod, readFile, stat, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
 
-import { loadContext } from "../src/config.js";
-import { createPrivateWriteStream, renderPrompt, writePrivateFile } from "../src/run-artifacts.js";
+import { loadContext } from "../src/infrastructure/config.js";
+import { createPrivateWriteStream, renderPrompt, writePrivateFile } from "../src/infrastructure/run-artifacts.js";
 import { removeDir, tempDir } from "./helpers.js";
 
 const testSymlink = process.platform === "win32" ? test.skip : test;

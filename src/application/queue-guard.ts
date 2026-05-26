@@ -1,5 +1,5 @@
-import type { ProjectContext } from "./config.js";
-import { normalizeQueueFile, type QueueFile, type QueueStep } from "./queue.js";
+import type { ProjectContext } from "../infrastructure/config.js";
+import { normalizeQueueFile, type QueueFile, type QueueStep } from "../domain/queue.js";
 import { readValidatedQueue } from "./queue-service.js";
 
 export class QueueMutationError extends Error {}

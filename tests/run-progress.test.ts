@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
-import type { QueueStep } from "../src/queue.js";
-import { formatRunProgress, updateProgressForActivity, updateProgressForEvent, type RunProgressState } from "../src/run-progress.js";
+import type { QueueStep } from "../src/domain/queue.js";
+import { formatRunProgress, updateProgressForActivity, updateProgressForEvent, type RunProgressState } from "../src/ui/run-progress.js";
 
 describe("run progress", () => {
   test("tracks active task phases and provider logs", () => {

@@ -2,9 +2,9 @@ import { rmSync, writeFileSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { afterEach, describe, expect, test } from "vitest";
 
-import { pathExists, readJson, writeJson } from "../src/config.js";
-import type { QueueFile } from "../src/queue.js";
-import { plan, run as runRoadrunner } from "../src/runner.js";
+import { pathExists, readJson, writeJson } from "../src/infrastructure/config.js";
+import type { QueueFile } from "../src/domain/queue.js";
+import { plan, run as runRoadrunner } from "../src/application/runner.js";
 import { removeDir } from "./helpers.js";
 import { setupRunnerProject } from "./runner-helpers.js";
 

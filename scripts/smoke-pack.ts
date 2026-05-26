@@ -5,11 +5,12 @@ import { readFile } from "node:fs/promises";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
-const requiredFiles = ["README.md", "dist/src/cli.js", "package.json", "templates/GOALS.md", "templates/prompts/plan-step.md", "templates/prompts/startup-refresh.md", "templates/queue.json"];
+const binPath = "dist/src/cli/index.js";
+const requiredFiles = ["README.md", binPath, "package.json", "templates/GOALS.md", "templates/prompts/plan-step.md", "templates/prompts/startup-refresh.md", "templates/queue.json"];
 
 try {
   const packageJson = JSON.parse(await readFile("package.json", "utf8")) as { bin?: Record<string, string> };
-  if (packageJson.bin?.roadrunner !== "dist/src/cli.js") throw new Error("package.json bin.roadrunner must point to dist/src/cli.js.");
+  if (packageJson.bin?.roadrunner !== binPath) throw new Error(`package.json bin.roadrunner must point to ${binPath}.`);
 
   const result = await execFileAsync("npm", ["pack", "--dry-run", "--json"], { maxBuffer: 10 * 1024 * 1024 });
   const packs = JSON.parse(result.stdout) as Array<{ files?: Array<{ path: string }> }>;

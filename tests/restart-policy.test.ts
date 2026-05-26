@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { automaticRestartBlockedReason, resolveAutoRestartPolicy } from "../src/restart-policy.js";
+import { automaticRestartBlockedReason, resolveAutoRestartPolicy } from "../src/domain/restart-policy.js";
 
 describe("restart policy", () => {
   test("resolves config defaults, env overrides, and disabled values", () => {

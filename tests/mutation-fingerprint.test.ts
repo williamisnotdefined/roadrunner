@@ -3,8 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
 
-import { loadContext } from "../src/config.js";
-import { parseStatusEntries, parseStatusPaths, projectMutationFingerprint } from "../src/mutation-fingerprint.js";
+import { loadContext } from "../src/infrastructure/config.js";
+import { parseStatusEntries, parseStatusPaths, projectMutationFingerprint } from "../src/infrastructure/mutation-fingerprint.js";
 import { commitAll, initGit } from "./helpers.js";
 
 describe("mutation fingerprint", () => {

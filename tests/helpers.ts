@@ -4,8 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 
-import { loadContext, writeJson, type ProjectContext } from "../src/config.js";
-import { initProject } from "../src/init.js";
+import { loadContext, writeJson, type ProjectContext } from "../src/infrastructure/config.js";
+import { initProject } from "../src/application/init.js";
 
 const execFileAsync = promisify(execFile);
 

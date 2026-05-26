@@ -1,8 +1,8 @@
 import { appendFile } from "node:fs/promises";
 import path from "node:path";
 
-import type { ProjectContext } from "./config.js";
-import { createLogDir, writePrivateFile } from "./run-artifacts.js";
+import type { ProjectContext } from "../infrastructure/config.js";
+import { createLogDir, writePrivateFile } from "../infrastructure/run-artifacts.js";
 
 export interface RunSessionLogger {
   eventsLogPath: string;

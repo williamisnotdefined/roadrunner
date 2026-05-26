@@ -1,7 +1,7 @@
 import type { TaskRow, TaskStats } from "./run-dashboard-model.js";
 import { formatRunProgress, type RunProgressState } from "./run-progress.js";
 import type { RunSessionLogger } from "./run-session-log.js";
-import { formatDuration } from "./duration.js";
+import { formatDuration } from "../domain/duration.js";
 
 export interface CurrentTaskObservation {
   observedAt: number;
@@ -30,5 +30,5 @@ export function actionText(progress: RunProgressState | null, pendingRestart: bo
   if (stopping) return " {yellow-fg}Stopping run and cleaning Roadrunner-owned processes...{/yellow-fg}";
   if (pendingRestart) return " {yellow-fg}Restart current task? y/N{/yellow-fg}";
   const restart = progress ? "{cyan-fg}[r] ↻ Restart Task{/cyan-fg}" : "{gray-fg}[r] Restart unavailable{/gray-fg}";
-  return ` ${restart}   {red-fg}[q/Ctrl+C] Stop & Cleanup{/red-fg}   [Tab] switch panel   [Enter] open log   [PgUp/PgDn] scroll`;
+  return ` ${restart}   {red-fg}[q/Ctrl+C] Stop & Cleanup{/red-fg}   [Tab/Shift+Tab] switch panel   [Enter] open log   [PgUp/PgDn] scroll`;
 }

@@ -2,9 +2,9 @@ import { readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
-import { readJson, writeJson } from "../src/config.js";
-import { plan, run as runRoadrunner, status, verify, type RoadrunnerRunControl } from "../src/runner.js";
-import type { QueueFile } from "../src/queue.js";
+import { readJson, writeJson } from "../src/infrastructure/config.js";
+import { plan, run as runRoadrunner, status, verify, type RoadrunnerRunControl } from "../src/application/runner.js";
+import type { QueueFile } from "../src/domain/queue.js";
 import { removeDir, run, sampleRoadmap } from "./helpers.js";
 import { fileMode, logDirFor, setupRunnerProject } from "./runner-helpers.js";
 

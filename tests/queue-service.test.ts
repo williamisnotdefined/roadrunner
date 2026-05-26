@@ -1,8 +1,8 @@
 import { describe, expect, test } from "vitest";
 
-import { defaultModel, defaultVariant, loadContext, readJson, writeJson } from "../src/config.js";
-import type { QueueFile, QueueStep } from "../src/queue.js";
-import { blockStep } from "../src/queue-service.js";
+import { defaultModel, defaultVariant, loadContext, readJson, writeJson } from "../src/infrastructure/config.js";
+import type { QueueFile, QueueStep } from "../src/domain/queue.js";
+import { blockStep } from "../src/application/queue-service.js";
 import { removeDir, tempDir } from "./helpers.js";
 
 describe("queue service", () => {

@@ -5,10 +5,10 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 
-import { main } from "../../src/cli.js";
-import { readJson, writeJson } from "../../src/config.js";
-import type { QueueFile } from "../../src/queue.js";
-import { run as runRoadrunner } from "../../src/runner.js";
+import { main } from "../../src/cli/index.js";
+import { readJson, writeJson } from "../../src/infrastructure/config.js";
+import type { QueueFile } from "../../src/domain/queue.js";
+import { run as runRoadrunner } from "../../src/application/runner.js";
 import { run } from "../helpers.js";
 
 const execFileAsync = promisify(execFile);

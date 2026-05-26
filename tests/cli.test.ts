@@ -3,11 +3,11 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect, test } from "vitest";
 
-import { formatRunEvent, helpText, isCliEntrypoint, main } from "../src/cli.js";
-import { readJson, writeJson } from "../src/config.js";
-import { formatDuration } from "../src/duration.js";
-import type { QueueFile, QueueStep } from "../src/queue.js";
-import { formatRunProgress } from "../src/run-progress.js";
+import { formatRunEvent, helpText, isCliEntrypoint, main } from "../src/cli/index.js";
+import { readJson, writeJson } from "../src/infrastructure/config.js";
+import { formatDuration } from "../src/domain/duration.js";
+import type { QueueFile, QueueStep } from "../src/domain/queue.js";
+import { formatRunProgress } from "../src/ui/run-progress.js";
 import { createInitializedProject, removeDir, sampleRoadmap, tempDir } from "./helpers.js";
 import { createFakeOpenCodeBin, withPath } from "./helpers.js";
 

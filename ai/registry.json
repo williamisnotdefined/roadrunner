@@ -73,8 +73,8 @@
         "github": ".github/instructions/provider-opencode.instructions.md"
       },
       "toolConfig": {
-        "cursor": { "globs": "src/providers/**/*.ts,src/process-registry.ts,templates/prompts/*.md", "alwaysApply": false },
-        "github": { "applyTo": "src/providers/**/*.ts,src/process-registry.ts,templates/prompts/*.md" }
+        "cursor": { "globs": "src/infrastructure/providers/**/*.ts,src/infrastructure/process-registry.ts,src/infrastructure/process-tree.ts,templates/prompts/*.md", "alwaysApply": false },
+        "github": { "applyTo": "src/infrastructure/providers/**/*.ts,src/infrastructure/process-registry.ts,src/infrastructure/process-tree.ts,templates/prompts/*.md" }
       }
     },
     {
@@ -88,8 +88,8 @@
         "github": ".github/instructions/roadmap-executor.instructions.md"
       },
       "toolConfig": {
-        "cursor": { "globs": "src/runner*.ts,src/queue.ts,src/process-registry.ts,templates/prompts/*.md", "alwaysApply": false },
-        "github": { "applyTo": "src/runner*.ts,src/queue.ts,src/process-registry.ts,templates/prompts/*.md" }
+        "cursor": { "globs": "src/application/**/*.ts,src/domain/queue.ts,src/infrastructure/process-registry.ts,templates/prompts/*.md", "alwaysApply": false },
+        "github": { "applyTo": "src/application/**/*.ts,src/domain/queue.ts,src/infrastructure/process-registry.ts,templates/prompts/*.md" }
       }
     },
     {

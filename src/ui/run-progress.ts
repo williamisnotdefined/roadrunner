@@ -1,5 +1,5 @@
-import { formatDuration } from "./duration.js";
-import type { RoadrunnerRunActivityEvent, RoadrunnerRunEvent, RoadrunnerRunPhase } from "./runner.js";
+import { formatDuration } from "../domain/duration.js";
+import type { RoadrunnerRunActivityEvent, RoadrunnerRunEvent, RoadrunnerRunPhase } from "../application/runner.js";
 
 export interface RunProgressState {
   attempt: number;

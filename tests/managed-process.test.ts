@@ -3,8 +3,8 @@ import path from "node:path";
 
 import { describe, expect, test } from "vitest";
 
-import { loadContext } from "../src/config.js";
-import { runShell } from "../src/managed-process.js";
+import { loadContext } from "../src/infrastructure/config.js";
+import { runShell } from "../src/infrastructure/managed-process.js";
 import { removeDir, tempDir } from "./helpers.js";
 
 describe("managed process", () => {

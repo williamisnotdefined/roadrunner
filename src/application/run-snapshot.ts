@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 
-import type { ProjectContext } from "./config.js";
-import { goalsPathLabel, validateGoalsContent } from "./queue.js";
+import type { ProjectContext } from "../infrastructure/config.js";
+import { goalsPathLabel, validateGoalsContent } from "../domain/queue.js";
 
 export interface RunSnapshot {
   goalsMarkdown: string;

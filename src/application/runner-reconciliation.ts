@@ -1,13 +1,13 @@
 import path from "node:path";
 
-import type { ProjectContext } from "./config.js";
-import { projectMutationFingerprint } from "./mutation-fingerprint.js";
-import { type QueueFile, type QueueStep, writeQueue } from "./queue.js";
+import type { ProjectContext } from "../infrastructure/config.js";
+import { projectMutationFingerprint } from "../infrastructure/mutation-fingerprint.js";
+import { type QueueFile, type QueueStep, writeQueue } from "../domain/queue.js";
 import { readValidatedQueue } from "./queue-service.js";
-import { providerFor, type ProviderStartEvent } from "./providers/index.js";
+import { providerFor, type ProviderStartEvent } from "../infrastructure/providers/index.js";
 import type { RunSnapshot } from "./run-snapshot.js";
-import { renderPrompt, writePrivateFile } from "./run-artifacts.js";
-import { providerEnvForDeadline } from "./timeouts.js";
+import { renderPrompt, writePrivateFile } from "../infrastructure/run-artifacts.js";
+import { providerEnvForDeadline } from "../domain/timeouts.js";
 
 interface ReconcileOptions {
   deadline: number | null;

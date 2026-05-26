@@ -3,9 +3,9 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
 
-import { loadContext, pathExists, readJson } from "../src/config.js";
-import { initProject } from "../src/init.js";
-import type { QueueFile } from "../src/queue.js";
+import { loadContext, pathExists, readJson } from "../src/infrastructure/config.js";
+import { initProject } from "../src/application/init.js";
+import type { QueueFile } from "../src/domain/queue.js";
 
 describe("init", () => {
   test("initProject creates Roadrunner project files", async () => {

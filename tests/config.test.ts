@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
 
-import { defaultModel, defaultVariant, loadContext, packageRootFromSourceRoot, pathExists, pathOverridesFromArgs, projectPaths, readJson, writeJson } from "../src/config.js";
+import { defaultModel, defaultVariant, loadContext, packageRootFromSourceRoot, pathExists, pathOverridesFromArgs, projectPaths, readJson, writeJson } from "../src/infrastructure/config.js";
 
 describe("config", () => {
   test("builds default and absolute project paths", () => {

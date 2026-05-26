@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
-import { defaultModel, defaultVariant } from "../src/config.js";
-import { formatStep, markBlocked, markDone, nextStep, validateGoals, validateQueueFile, type QueueFile } from "../src/queue.js";
+import { defaultModel, defaultVariant } from "../src/infrastructure/config.js";
+import { formatStep, markBlocked, markDone, nextStep, validateGoals, validateQueueFile, type QueueFile } from "../src/domain/queue.js";
 import { tempDir, removeDir } from "./helpers.js";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";

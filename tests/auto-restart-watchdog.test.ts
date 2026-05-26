@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { recordAttemptActivity, startAutoRestartWatchdog, type RestartableAttemptState } from "../src/auto-restart-watchdog.js";
-import type { QueueStep } from "../src/queue.js";
-import type { RoadrunnerRunEvent } from "../src/runner.js";
+import { recordAttemptActivity, startAutoRestartWatchdog, type RestartableAttemptState } from "../src/application/auto-restart-watchdog.js";
+import type { QueueStep } from "../src/domain/queue.js";
+import type { RoadrunnerRunEvent } from "../src/application/runner.js";
 
 const step: QueueStep = {
   acceptance: ["works"],

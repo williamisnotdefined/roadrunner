@@ -12,6 +12,7 @@ Use this skill when changing Roadrunner source architecture, module boundaries, 
 ## Workflow
 
 - Identify the responsibility boundary before moving code.
+- Place new source files in the appropriate layer folder: `domain`, `application`, `infrastructure`, `infrastructure/providers`, `ui`, or `cli`.
 - Extract pure helpers before process, filesystem, or provider code.
 - Keep public behavior and queue semantics stable while refactoring.
 - Split tests by behavior when source modules split.

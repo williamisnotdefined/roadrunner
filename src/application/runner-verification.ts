@@ -1,12 +1,12 @@
 import path from "node:path";
 
-import type { ProjectContext } from "./config.js";
-import { runShell } from "./managed-process.js";
-import type { QueueStep } from "./queue.js";
-import { providerFor, type ProviderRunResult, type ProviderStartEvent } from "./providers/index.js";
+import type { ProjectContext } from "../infrastructure/config.js";
+import { runShell } from "../infrastructure/managed-process.js";
+import type { QueueStep } from "../domain/queue.js";
+import { providerFor, type ProviderRunResult, type ProviderStartEvent } from "../infrastructure/providers/index.js";
 import type { RunSnapshot } from "./run-snapshot.js";
-import { renderPrompt, writePrivateFile } from "./run-artifacts.js";
-import { providerEnvForDeadline, verificationTimeoutMs } from "./timeouts.js";
+import { renderPrompt, writePrivateFile } from "../infrastructure/run-artifacts.js";
+import { providerEnvForDeadline, verificationTimeoutMs } from "../domain/timeouts.js";
 
 interface FixFailureOptions {
   deadline: number | null;

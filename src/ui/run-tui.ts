@@ -1,10 +1,10 @@
 import type { Readable, Writable } from "node:stream";
 import { setTimeout as sleep } from "node:timers/promises";
 
-import type { ProjectContext } from "./config.js";
+import type { ProjectContext } from "../infrastructure/config.js";
 import { createRunSessionLogger, type RunSessionLogger } from "./run-session-log.js";
 import { createTuiApp, type RunTuiAppFactory } from "./run-tui-app.js";
-import { run, type RunOptions } from "./runner.js";
+import { run, type RunOptions } from "../application/runner.js";
 type RunTuiRunner = (context: ProjectContext, options: RunOptions) => Promise<number>;
 
 export interface RunTuiOptions {

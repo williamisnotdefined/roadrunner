@@ -2,10 +2,10 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
-import { main } from "../../src/cli.js";
-import { readJson, writeJson } from "../../src/config.js";
-import type { QueueFile } from "../../src/queue.js";
-import { run as runRoadrunner } from "../../src/runner.js";
+import { main } from "../../src/cli/index.js";
+import { readJson, writeJson } from "../../src/infrastructure/config.js";
+import type { QueueFile } from "../../src/domain/queue.js";
+import { run as runRoadrunner } from "../../src/application/runner.js";
 import { commitAll, createFakeOpenCodeBin, initGit, run, withPath } from "../helpers.js";
 
 const outputRoot = path.resolve("test-output/e2e/todo-crud");

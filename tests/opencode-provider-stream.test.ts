@@ -3,8 +3,8 @@ import path from "node:path";
 
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { loadContext } from "../src/config.js";
-import { OpenCodeProvider } from "../src/providers/opencode.js";
+import { loadContext } from "../src/infrastructure/config.js";
+import { OpenCodeProvider } from "../src/infrastructure/providers/opencode.js";
 import { createFakeOpenCodeBin, removeDir, tempDir } from "./helpers.js";
 
 const oldEnv = { ...process.env };

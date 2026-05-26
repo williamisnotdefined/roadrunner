@@ -1,6 +1,6 @@
 ---
 description: "Use when changing the OpenCode provider adapter, model/variant behavior, prompts, or nested OpenCode safety."
-globs: "src/providers/**/*.ts,src/process-registry.ts,templates/prompts/*.md"
+globs: "src/infrastructure/providers/**/*.ts,src/infrastructure/process-registry.ts,src/infrastructure/process-tree.ts,templates/prompts/*.md"
 alwaysApply: false
 ---
 

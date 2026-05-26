@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
-import type { QueueFile, QueueStep } from "../src/queue.js";
-import { selectedTaskIndex, taskRowsFromQueue, taskStats, taskTableData } from "../src/run-dashboard-model.js";
+import type { QueueFile, QueueStep } from "../src/domain/queue.js";
+import { selectedTaskIndex, taskRowsFromQueue, taskStats, taskTableData } from "../src/ui/run-dashboard-model.js";
 
 describe("run dashboard model", () => {
   test("maps queue state to task table rows", () => {

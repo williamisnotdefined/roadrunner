@@ -1,5 +1,5 @@
-import { defaultModel, defaultVariant, type ProjectContext } from "./config.js";
-import { markBlocked, normalizeQueueFile, readQueue, validateQueueFile, writeQueue, type QueueFile, type QueueStep, type QueueValidationOptions } from "./queue.js";
+import { defaultModel, defaultVariant, type ProjectContext } from "../infrastructure/config.js";
+import { markBlocked, normalizeQueueFile, readQueue, validateQueueFile, writeQueue, type QueueFile, type QueueStep, type QueueValidationOptions } from "../domain/queue.js";
 
 export function queueValidationOptions(context: ProjectContext): QueueValidationOptions {
   return { model: context.config.model ?? defaultModel, variant: context.config.variant ?? defaultVariant };
