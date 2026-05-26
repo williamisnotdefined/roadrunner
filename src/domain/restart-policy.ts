@@ -2,7 +2,7 @@ import { formatDuration } from "./duration.js";
 import { parseNonNegativeIntegerValue } from "./numeric-options.js";
 
 export const defaultAutoRestartIdleMs = 10 * 60 * 1000;
-export const defaultMaxAutoRestartsPerStep = 3;
+export const defaultMaxAutoRestartsPerStep = 10;
 
 export interface AutoRestartConfig {
   autoRestartIdleMs?: number;

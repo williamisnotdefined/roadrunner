@@ -49,6 +49,7 @@ export async function fixFailure(
 ): Promise<ProviderRunResult> {
   const prompt = await renderPrompt(context, "fix-failure.md", {
     GOALS_MD: snapshot.goalsMarkdown,
+    OPERATOR_DIRECTIVE_MD: snapshot.operatorDirectiveMarkdown,
     LAST_FAILURE: failureOutput,
     PLAN_MD: planMarkdown,
     STEP_JSON: JSON.stringify(step, null, 2),

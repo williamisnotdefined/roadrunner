@@ -13,6 +13,7 @@ import { fixFailure, verify as verifyStep } from "./runner-verification.js";
 import type { RoadrunnerRunActivityEvent, RoadrunnerRunEvent, RoadrunnerRunPhase } from "./runner.js";
 import { runProviderRole } from "./provider-runner.js";
 import { PlanOutputError } from "./plan-output.js";
+import { AutomaticRestartLimitExceededError } from "./run-errors.js";
 
 interface RunStepInput {
   context: ProjectContext;
@@ -87,6 +88,7 @@ export async function runStepWithRestarts({ context, controlState, deadline, emi
       const logDir = await createLogDir(context, attemptStep.id);
       const prompt = await renderPrompt(context, "implement-step.md", {
         GOALS_MD: snapshot.goalsMarkdown,
+        OPERATOR_DIRECTIVE_MD: snapshot.operatorDirectiveMarkdown,
         PLAN_MD: planResult.planMarkdown!,
         ROADMAP_STATUS: formatStep(attemptStep),
         STEP_JSON: JSON.stringify(attemptStep, null, 2),
@@ -189,7 +191,13 @@ export async function runStepWithRestarts({ context, controlState, deadline, emi
         if (attemptState.restartReason?.type === "auto-limit") {
           emitEvent({ queueFile: blockedQueue(originalQueueFile, step, automaticRestartBlockedReason(autoRestartPolicy)), type: "queue-updated" });
           controlState.current = null;
-          throw new Error(`Automatic restart limit exceeded for ${attemptStep.id}.`);
+          throw new AutomaticRestartLimitExceededError({
+            idleMs: attemptState.restartReason.idleMs,
+            maxRestarts: attemptState.restartReason.maxRestarts,
+            phase: attemptState.phase,
+            policy: autoRestartPolicy,
+            step: attemptStep,
+          });
         }
         await restartAttempt(context, controlState, attemptState, attempt + 1, emitEvent);
         attempt += 1;

@@ -26,6 +26,7 @@ export interface RunOptions {
   onActivity?: (event: RoadrunnerRunActivityEvent) => void;
   onControl?: (control: RoadrunnerRunControl) => void;
   onEvent?: (event: RoadrunnerRunEvent) => void;
+  operatorDirective?: string | null;
   streamProviderOutput?: boolean;
 }
 
@@ -77,7 +78,7 @@ export async function plan(
 ): Promise<PlanStepResult | null> {
   const releaseLock = await acquireProjectLock(context, "Roadrunner plan");
   try {
-    const snapshot = await readRunSnapshot(context);
+    const snapshot = await readRunSnapshot(context, { operatorDirective: options.operatorDirective });
     await ensureProviderAvailable(context);
     const startup = await refreshQueueAtRunStart(context, snapshot, {
       deadline: options.deadline ?? null,

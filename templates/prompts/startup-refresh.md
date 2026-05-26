@@ -65,6 +65,12 @@ Then include exactly one fenced JSON block tagged `roadrunner-queue` containing 
 {{GOALS_MD}}
 ```
 
+## Operator Directive
+
+```md
+{{OPERATOR_DIRECTIVE_MD}}
+```
+
 ## Roadmap
 
 Roadmap parse status: {{ROADMAP_PARSE_STATUS}}

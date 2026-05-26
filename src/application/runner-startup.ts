@@ -34,6 +34,7 @@ export async function refreshQueueAtRunStart(context: ProjectContext, snapshot: 
   const logDir = await createLogDir(context, "startup-refresh");
   const prompt = appendQueueProposalContract(await renderPrompt(context, "startup-refresh.md", {
     GOALS_MD: snapshot.goalsMarkdown,
+    OPERATOR_DIRECTIVE_MD: snapshot.operatorDirectiveMarkdown,
     QUEUE_JSON: JSON.stringify(seed.queueFile, null, 2),
     ROADMAP_MD: roadmapMarkdown,
     ROADMAP_PARSE_STATUS: seed.parseStatus,

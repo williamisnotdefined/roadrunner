@@ -1,33 +1,26 @@
 import { createRequire } from "node:module";
 import type { Readable, Writable } from "node:stream";
-
 import type { Widgets } from "blessed";
-
 import type { ProjectContext } from "../infrastructure/config.js";
 import type { QueueFile } from "../domain/queue.js";
 import { escapeBlessedMarkup } from "./blessed-markup.js";
+import type { RunTuiApp } from "./run-tui-app-types.js";
+export type { RunTuiApp, RunTuiAppFactory } from "./run-tui-app-types.js";
 import { selectedTaskIndex, taskRowsFromQueue, taskStats, taskTableData, type TaskRow, type TaskStats } from "./run-dashboard-model.js";
 import { discoverTaskLogs, readLogTail, type TaskLogFile } from "./run-log-discovery.js";
 import { updateProgressForActivity, updateProgressForEvent, type RunProgressState } from "./run-progress.js";
 import type { RunSessionLogger } from "./run-session-log.js";
+import type { RunTuiAction, RunTuiFailure } from "./run-tui-actions.js";
+import { createRunTuiActionQueue } from "./run-tui-action-queue.js";
+import { promptForDirective } from "./run-tui-directive-input.js";
+import { createRunTuiElements, setFocusBorders } from "./run-tui-elements.js";
+import { bindRunTuiKeys } from "./run-tui-keymap.js";
 import { nextFocus, previousFocus, type FocusPanel } from "./run-tui-navigation.js";
 import { eventMessage, eventPayload } from "./run-tui-events.js";
-import { actionText, detailsText, displayStateFromProgress, headerText, type RunDisplayState, type RunDisplayStatus } from "./run-tui-view.js";
+import { actionText, createDisplayState, currentDisplayState as viewDisplayState, detailsText, failureActionText, headerText, logViewerText, renderFailureModal, type RunDisplayState, type RunDisplayStatus } from "./run-tui-view.js";
 import type { RoadrunnerRunActivityEvent, RoadrunnerRunControl, RoadrunnerRunEvent } from "../application/runner.js";
-
-export interface RunTuiApp {
-  onActivity(event: RoadrunnerRunActivityEvent): void;
-  onControl(control: RoadrunnerRunControl): void;
-  onEvent(event: RoadrunnerRunEvent): void;
-  setStatus(status: string): void;
-  stop(): void;
-}
-
-export type RunTuiAppFactory = (context: ProjectContext, session: RunSessionLogger, options: { input: Readable; now: () => number; output: Writable }) => Promise<RunTuiApp>;
-
 const require = createRequire(import.meta.url);
 const blessed = require("blessed") as typeof import("blessed");
-
 /* v8 ignore start -- blessed full-screen rendering requires an interactive TTY; pure state, log, and session helpers are covered separately. */
 export async function createTuiApp(context: ProjectContext, session: RunSessionLogger, options: { input: Readable; now: () => number; output: Writable }): Promise<RunTuiApp> {
   let control: RoadrunnerRunControl | null = null;
@@ -35,6 +28,7 @@ export async function createTuiApp(context: ProjectContext, session: RunSessionL
   let logFiles: TaskLogFile[] = [];
   let logText = "Select a task log and press Enter.";
   let pendingRestart = false;
+  let activeFailure: RunTuiFailure | null = null;
   let progress: RunProgressState | null = null;
   let rows: TaskRow[] = [];
   let selectedLogIndex = 0;
@@ -45,30 +39,26 @@ export async function createTuiApp(context: ProjectContext, session: RunSessionL
   let status = `Session log: ${session.sessionLogPath}`;
   let pendingStop = false;
   let stopping = false;
-
-  const screen = blessed.screen({ fullUnicode: true, input: options.input as never, output: options.output as never, smartCSR: true, title: "Roadrunner" });
-  const header = blessed.box({ height: 3, left: 0, tags: true, top: 0, width: "100%" });
-  const table = blessed.listtable({ border: "line", height: "45%", keys: false, left: 0, mouse: true, pad: 1, tags: true, top: 3, width: "100%" });
-  const details = blessed.box({ border: "line", height: "35%", label: " Details ", left: 0, tags: true, top: "48%", width: "38%" });
-  const logs = blessed.list({ border: "line", height: "35%", keys: false, label: " Logs ", left: "38%", mouse: true, tags: true, top: "48%", width: "25%" });
-  const log = blessed.box({ alwaysScroll: true, border: "line", height: "35%", label: " Log Viewer ", left: "63%", mouse: true, scrollable: true, scrollbar: { ch: " ", track: { bg: "black" }, style: { bg: "cyan" } }, tags: true, top: "48%", vi: true, width: "37%" });
-  const actions = blessed.box({ bottom: 1, height: 1, left: 0, mouse: true, tags: true, width: "100%" });
-  const footer = blessed.box({ bottom: 0, height: 1, left: 0, tags: true, width: "100%" });
-
-  for (const element of [header, table, details, logs, log, actions, footer]) screen.append(element);
-  screen.enableMouse();
-  screen.key(["tab"], () => setFocus(nextFocus(focus)));
-  screen.key(["S-tab", "backtab"], () => setFocus(previousFocus(focus)));
-  screen.key(["up", "k"], () => (focus === "logs" ? moveLog(-1) : focus === "log" ? scrollLog(-1) : moveTask(-1)));
-  screen.key(["down", "j"], () => (focus === "logs" ? moveLog(1) : focus === "log" ? scrollLog(1) : moveTask(1)));
-  screen.key(["pageup"], () => scrollLog(-10));
-  screen.key(["pagedown"], () => scrollLog(10));
-  screen.key(["enter"], () => openSelectedLog());
-  screen.key(["r"], () => requestRestart());
-  screen.key(["q", "C-c", "C-q"], () => requestStop());
-  screen.key(["y", "Y"], () => confirmRestart(true));
-  screen.key(["n", "N", "escape"], () => confirmRestart(false));
-
+  const actionQueue = createRunTuiActionQueue();
+  const elements = createRunTuiElements(blessed, options.input, options.output);
+  const { actions, details, footer, header, log, logs, modal, screen, table } = elements;
+  bindRunTuiKeys(screen, {
+    cleanup: () => enqueueAction({ type: "cleanup" }),
+    confirmRestart: (yes) => confirmRestart(yes),
+    directive: () => promptForDirective(blessed, screen, (text) => enqueueAction({ text, type: "add-directive" })),
+    down: () => (focus === "logs" ? moveLog(1) : focus === "log" ? scrollLog(1) : moveTask(1)),
+    enter: () => openSelectedLog(),
+    exit: () => requestExit(),
+    focusBack: () => setFocus(previousFocus(focus)),
+    focusNext: () => setFocus(nextFocus(focus)),
+    pageDown: () => scrollLog(10),
+    pageUp: () => scrollLog(-10),
+    pauseOrPlay: () => requestPauseOrPlay(),
+    reconcile: () => enqueueAction({ type: "reconcile" }),
+    restart: () => (activeFailure ? chooseFailureAction("restart-task") : requestRestart()),
+    up: () => (focus === "logs" ? moveLog(-1) : focus === "log" ? scrollLog(-1) : moveTask(-1)),
+    viewLogs: () => activeFailure && chooseFailureAction("view-logs"),
+  });
   const timer = setInterval(() => {
     void refreshOpenLog(false);
     render();
@@ -76,7 +66,6 @@ export async function createTuiApp(context: ProjectContext, session: RunSessionL
 
   await refreshLogs();
   render();
-
   return {
     onActivity(event) {
       progress = updateProgressForActivity(progress, event, options.now());
@@ -110,22 +99,33 @@ export async function createTuiApp(context: ProjectContext, session: RunSessionL
     },
     setStatus(nextStatus) {
       status = nextStatus;
+      activeFailure = null;
+      pendingRestart = false;
+      pendingStop = false;
+      stopping = false;
       baseDisplay = displayState(nextStatus.startsWith("Run failed:") ? "FAILED" : nextStatus.startsWith("Completed") || nextStatus.startsWith("Stopped") ? "DONE" : baseDisplay.status, nextStatus);
+      render();
+    },
+    showFailure(failure) {
+      activeFailure = failure;
+      status = failure.message;
+      baseDisplay = displayState("FAILED", failure.message);
       render();
     },
     stop() {
       clearInterval(timer);
       screen.destroy();
     },
+    waitForAction() {
+      return actionQueue.wait();
+    },
   };
-
   function updateQueue(queueFile: QueueFile): void {
     rows = taskRowsFromQueue(queueFile);
     stats = taskStats(queueFile);
     const index = selectedTaskIndex(rows, selectedTaskId);
     selectedTaskId = index >= 0 ? rows[index]!.id : null;
   }
-
   async function refreshLogs(): Promise<void> {
     const row = selectedRow();
     const activeLogPath = progress?.logPath ?? selectedLogPath;
@@ -141,7 +141,6 @@ export async function createTuiApp(context: ProjectContext, session: RunSessionL
     selectedLogPath = logFiles[selectedLogIndex]?.path ?? null;
     await refreshOpenLog(false);
   }
-
   async function refreshOpenLog(showErrors = true): Promise<void> {
     if (!selectedLogPath) return;
     try {
@@ -150,7 +149,6 @@ export async function createTuiApp(context: ProjectContext, session: RunSessionL
       if (showErrors) status = `Log error: ${(error as Error).message}`;
     }
   }
-
   function render(): void {
     const display = currentDisplayState();
     const selectedLogFile = logFiles[selectedLogIndex] ?? null;
@@ -163,13 +161,13 @@ export async function createTuiApp(context: ProjectContext, session: RunSessionL
     details.setContent(detailsText(selectedRow(), display, stats, options.now(), session, activeLogLabel));
     logs.setItems(logFiles.map((file, index) => `${index === selectedLogIndex ? "›" : " "} ${escapeBlessedMarkup(file.label)}`));
     if (logFiles.length > 0) logs.select(selectedLogIndex);
-    log.setContent(escapeBlessedMarkup(logViewerText(selectedLogFile)));
-    actions.setContent(actionText(restartableProgress, pendingRestart, stopping));
+    log.setContent(escapeBlessedMarkup(logViewerText(selectedLogFile, logText)));
+    actions.setContent(failureActionText(activeFailure) ?? actionText(restartableProgress, pendingRestart, stopping));
     footer.setContent(` ${escapeBlessedMarkup(status)}`);
-    setBorders();
+    renderFailureModal(modal, activeFailure);
+    setFocusBorders(elements, focus);
     screen.render();
   }
-
   function moveTask(delta: number): void {
     if (rows.length === 0) return;
     const index = selectedTaskIndex(rows, selectedTaskId);
@@ -177,14 +175,12 @@ export async function createTuiApp(context: ProjectContext, session: RunSessionL
     session.event("task-selected", `selected task ${selectedTaskId}`, { taskId: selectedTaskId });
     refreshLogsAndRender(true);
   }
-
   function moveLog(delta: number): void {
     if (logFiles.length === 0) return;
     selectedLogIndex = Math.max(0, Math.min(logFiles.length - 1, selectedLogIndex + delta));
     selectedLogPath = logFiles[selectedLogIndex]!.path;
     void refreshOpenLog().then(render);
   }
-
   function openSelectedLog(): void {
     if (focus !== "logs" || logFiles.length === 0) return;
     selectedLogPath = logFiles[selectedLogIndex]!.path;
@@ -192,7 +188,6 @@ export async function createTuiApp(context: ProjectContext, session: RunSessionL
     setFocus("log");
     void refreshOpenLog().then(render);
   }
-
   function requestRestart(): void {
     if (!progress?.stepId || !control) {
       status = "No active task attempt to restart.";
@@ -204,7 +199,19 @@ export async function createTuiApp(context: ProjectContext, session: RunSessionL
     session.event("restart-requested", `restart requested for ${progress.stepId}`, { source: "tui", stepId: progress.stepId });
     render();
   }
-
+  function requestPauseOrPlay(): void {
+    if (progress || stopping) {
+      pendingRestart = false;
+      stopping = true;
+      stopFromControl();
+      enqueueAction({ type: "pause" });
+      return;
+    }
+    enqueueAction({ type: "play" });
+    status = "Starting Roadrunner run.";
+    baseDisplay = displayState("STARTING", status);
+    render();
+  }
   function confirmRestart(yes: boolean): void {
     if (!pendingRestart) return;
     pendingRestart = false;
@@ -219,7 +226,6 @@ export async function createTuiApp(context: ProjectContext, session: RunSessionL
     session.event("restart-confirmed", status, { source: "tui" });
     render();
   }
-
   function requestStop(): void {
     if (stopping && !pendingStop) return;
     pendingRestart = false;
@@ -233,7 +239,10 @@ export async function createTuiApp(context: ProjectContext, session: RunSessionL
     }
     render();
   }
-
+  function requestExit(): void {
+    if (progress || control || baseDisplay.status === "STARTING" || baseDisplay.status === "VALIDATING" || baseDisplay.status === "REFRESHING QUEUE") requestStop();
+    enqueueAction({ type: "exit" });
+  }
   function stopFromControl(): void {
     const ok = control?.stopRun() ?? false;
     pendingStop = !ok;
@@ -242,7 +251,6 @@ export async function createTuiApp(context: ProjectContext, session: RunSessionL
     baseDisplay = displayState("STOPPING", status);
     session.event("stop-requested", status, { source: "tui" });
   }
-
   function refreshLogsAndRender(showErrors = false): void {
     void refreshLogs()
       .then(render)
@@ -252,45 +260,31 @@ export async function createTuiApp(context: ProjectContext, session: RunSessionL
         render();
       });
   }
-
   function setFocus(nextFocus: FocusPanel): void {
     focus = nextFocus;
     render();
   }
-
   function scrollLog(offset: number): void {
     (log as Widgets.BoxElement & { scroll(offset: number): void }).scroll(offset);
     render();
   }
-
   function selectedRow(): TaskRow | null {
     const index = selectedTaskIndex(rows, selectedTaskId);
     return index >= 0 ? rows[index]! : null;
   }
-
-  function setBorders(): void {
-    table.style.border = { fg: focus === "tasks" ? "cyan" : "gray" };
-    logs.style.border = { fg: focus === "logs" ? "cyan" : "gray" };
-    log.style.border = { fg: focus === "log" ? "cyan" : "gray" };
+  function chooseFailureAction(type: "restart-task" | "view-logs"): void {
+    activeFailure = null;
+    enqueueAction({ type });
+    render();
   }
-
+  function enqueueAction(action: RunTuiAction): void {
+    actionQueue.enqueue(action);
+  }
   function currentDisplayState(): RunDisplayState {
-    if (baseDisplay.status === "DONE" || baseDisplay.status === "FAILED") return baseDisplay;
-    if (stopping) return baseDisplay.status === "STOPPING" ? baseDisplay : displayState("STOPPING", status);
-    const row = selectedRow();
-    if (progress) return displayStateFromProgress(progress, row);
-    return { ...baseDisplay, stepId: baseDisplay.stepId ?? row?.id ?? null, title: baseDisplay.title ?? row?.title ?? null };
+    return viewDisplayState({ baseDisplay, now: options.now(), progress, row: selectedRow(), status, stopping });
   }
-
   function displayState(nextStatus: RunDisplayStatus, message: string | null): RunDisplayState {
-    const now = options.now();
-    return { attempt: null, lastActivityAt: now, logPath: null, message, pid: null, startedAt: now, status: nextStatus, stepId: selectedRow()?.id ?? null, title: selectedRow()?.title ?? null };
-  }
-
-  function logViewerText(file: TaskLogFile | null): string {
-    if (!file) return logText || "Select a task log and press Enter.";
-    const content = logText.length > 0 ? logText : "Waiting for provider output...";
-    return `Viewing: ${file.label}\nPath: ${file.relativePath}\n\n${content}`;
+    return createDisplayState(nextStatus, message, selectedRow(), options.now());
   }
 }
 /* v8 ignore stop */

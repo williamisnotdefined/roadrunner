@@ -206,6 +206,16 @@ if (mode === "hang-once-plan" && prompt.includes("Roadrunner Plan Step")) {
   }
 }
 
+if (mode === "hang-once-plan-per-step" && prompt.includes("Roadrunner Plan Step")) {
+  const stepId = /"id":\\s*"([^"]+)"/.exec(prompt)?.[1] || "unknown";
+  const marker = ".fake-hang-once-plan-" + stepId;
+  if (!fs.existsSync(marker)) {
+    fs.writeFileSync(marker, "hung\\n");
+    console.log("hanging once for " + stepId);
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0);
+  }
+}
+
 if (mode === "slow-plan-success" && prompt.includes("Roadrunner Plan Step")) {
   let ticks = 0;
   const interval = setInterval(() => {
@@ -359,6 +369,9 @@ if (prompt.includes("Roadrunner Reconcile Queue") || prompt.includes("Roadrunner
   if (mode === "reconcile-invalid") {
     queue.version = 99;
   }
+  if (mode === "reconcile-wrong-model") queue.model = "wrong-model";
+  if (mode === "reconcile-wrong-variant") queue.variant = "wrong-variant";
+  if (mode === "reconcile-empty-scope" && queue.queue[0]) queue.queue[0].scope = [];
   if (mode === "reconcile-closed") {
     queue.history = [];
     queue.blocked = [];

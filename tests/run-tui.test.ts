@@ -39,9 +39,11 @@ describe("run TUI", () => {
           onControl: () => {},
           onEvent: () => {},
           setStatus: (status) => statuses.push(status),
+          showFailure: (failure) => statuses.push(failure.message),
           stop: () => {
             stopped = true;
           },
+          waitForAction: async () => ({ type: "exit" as const }),
         }),
         input: new PassThrough(),
         isInteractive: true,
@@ -81,7 +83,9 @@ describe("run TUI", () => {
             onControl: () => {},
             onEvent: () => {},
             setStatus: () => {},
+            showFailure: () => {},
             stop: () => {},
+            waitForAction: async () => ({ type: "exit" as const }),
           }),
           input,
           output,
@@ -107,7 +111,9 @@ describe("run TUI", () => {
           onControl: () => {},
           onEvent: () => {},
           setStatus: (status) => statuses.push(status),
+          showFailure: (failure) => statuses.push(failure.message),
           stop: () => {},
+          waitForAction: async () => ({ type: "exit" as const }),
         }),
         input: new PassThrough(),
         isInteractive: true,
@@ -283,7 +289,9 @@ describe("run TUI", () => {
             onControl: () => {},
             onEvent: () => {},
             setStatus: () => {},
+            showFailure: () => {},
             stop: () => {},
+            waitForAction: async () => ({ type: "exit" as const }),
           }),
           input: new PassThrough(),
           isInteractive: true,
@@ -310,7 +318,9 @@ describe("run TUI", () => {
             onControl: () => {},
             onEvent: () => {},
             setStatus: (status) => statuses.push(status),
+            showFailure: (failure) => statuses.push(failure.message),
             stop: () => {},
+            waitForAction: async () => ({ type: "exit" as const }),
           }),
           input: new PassThrough(),
           isInteractive: true,
@@ -323,7 +333,7 @@ describe("run TUI", () => {
         }),
       ).rejects.toThrow(/boom/);
 
-      expect(statuses).toEqual(["Run failed: boom"]);
+      expect(statuses).toEqual(["boom"]);
       expect(events).toContain("error:run failed: boom");
     } finally {
       await removeDir(directory);

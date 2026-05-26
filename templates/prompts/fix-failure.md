@@ -12,6 +12,12 @@ Fix the verification failure with the smallest correct change. Address the root 
 {{GOALS_MD}}
 ```
 
+## Operator Directive
+
+```md
+{{OPERATOR_DIRECTIVE_MD}}
+```
+
 ## Plan
 
 ```md

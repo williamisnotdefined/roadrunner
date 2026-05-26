@@ -14,6 +14,12 @@ Roadrunner will run the step verification commands after you exit. During implem
 {{GOALS_MD}}
 ```
 
+## Operator Directive
+
+```md
+{{OPERATOR_DIRECTIVE_MD}}
+```
+
 ## Plan
 
 ```md

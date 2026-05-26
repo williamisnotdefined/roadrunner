@@ -73,7 +73,7 @@ describe("config", () => {
         allowNestedOpenCode: true,
         autoRestartIdleMs: 600000,
         dangerouslySkipPermissions: false,
-        maxAutoRestartsPerStep: 3,
+        maxAutoRestartsPerStep: 10,
         model: defaultModel,
         provider: "opencode",
         variant: defaultVariant,

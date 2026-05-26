@@ -12,6 +12,12 @@ Plan the next implementation step. Do not edit files.
 {{GOALS_MD}}
 ```
 
+## Operator Directive
+
+```md
+{{OPERATOR_DIRECTIVE_MD}}
+```
+
 ## Step
 
 ```json

@@ -21,6 +21,7 @@ export async function reconcileQueue(context: ProjectContext, queueBeforeReconci
 
   const prompt = appendQueueProposalContract(await renderPrompt(context, "reconcile-roadmap.md", {
     GOALS_MD: snapshot.goalsMarkdown,
+    OPERATOR_DIRECTIVE_MD: snapshot.operatorDirectiveMarkdown,
     QUEUE_JSON: queueText,
     STEP_JSON: JSON.stringify(step, null, 2),
   }));

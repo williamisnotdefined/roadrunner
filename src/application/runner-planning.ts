@@ -12,6 +12,7 @@ export interface PlanOptions {
   deadline?: number | null;
   onOutput?: () => void;
   onProviderStart?: (event: ProviderStartEvent) => void;
+  operatorDirective?: string | null;
   signal?: AbortSignal;
   streamProviderOutput?: boolean;
 }
@@ -27,6 +28,7 @@ export async function planStep(context: ProjectContext, step: QueueStep, snapsho
   const logDir = await createLogDir(context, `${step.id}-plan`);
   const prompt = await renderPrompt(context, "plan-step.md", {
     GOALS_MD: snapshot.goalsMarkdown,
+    OPERATOR_DIRECTIVE_MD: snapshot.operatorDirectiveMarkdown,
     ROADMAP_STATUS: formatStep(step),
     STEP_JSON: JSON.stringify(step, null, 2),
   });

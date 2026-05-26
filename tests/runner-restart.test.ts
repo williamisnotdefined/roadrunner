@@ -4,7 +4,7 @@ import type { QueueStep } from "../src/domain/queue.js";
 import { createRunControl, type CurrentAttemptState, type RunControlState } from "../src/application/runner-control.js";
 import { run as runRoadrunner, type RoadrunnerRunControl, type RoadrunnerRunEvent } from "../src/application/runner.js";
 import { removeDir } from "./helpers.js";
-import { latestQueueSnapshot, setupRunnerProject } from "./runner-helpers.js";
+import { latestQueueSnapshot, setupRunnerProject, twoStepRoadmap } from "./runner-helpers.js";
 
 const sampleStep: QueueStep = {
   acceptance: ["works"],
@@ -208,6 +208,30 @@ describe("runner restart control", () => {
       expect(events).toContainEqual(expect.objectContaining({ restart: 1, step: expect.objectContaining({ id: "first-step" }), type: "task-auto-restart-requested" }));
       expect(events).toContainEqual(expect.objectContaining({ attempt: 2, step: expect.objectContaining({ id: "first-step" }), type: "task-restart" }));
       expect(queue.history.map((step) => step.id)).toEqual(["first-step"]);
+      expect(queue.blocked).toEqual([]);
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
+  test("resets automatic restart counts after each completed task", async () => {
+    const project = await setupRunnerProject("hang-once-plan-per-step", twoStepRoadmap());
+    const events: RoadrunnerRunEvent[] = [];
+    process.env.ROADRUNNER_AUTO_RESTART_IDLE_MS = "500";
+    process.env.ROADRUNNER_MAX_AUTO_RESTARTS_PER_STEP = "1";
+
+    try {
+      const completed = await runRoadrunner(project.context, { maxSteps: 2, onEvent: (event) => events.push(event) });
+      const restarts = events.filter((event) => event.type === "task-auto-restart-requested");
+      const queue = latestQueueSnapshot(events);
+
+      expect(completed).toBe(2);
+      expect(restarts).toHaveLength(2);
+      expect(restarts).toEqual([
+        expect.objectContaining({ restart: 1, step: expect.objectContaining({ id: "first-step" }) }),
+        expect.objectContaining({ restart: 1, step: expect.objectContaining({ id: "second-step" }) }),
+      ]);
+      expect(queue.history.map((step) => step.id)).toEqual(["first-step", "second-step"]);
       expect(queue.blocked).toEqual([]);
     } finally {
       await removeDir(project.directory);
