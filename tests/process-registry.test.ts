@@ -7,6 +7,7 @@ import { describe, expect, test, vi } from "vitest";
 
 import { cleanupProcesses, readProcesses, registerProcess, unregisterProcess } from "../src/infrastructure/process-registry.js";
 import { loadContext, writeJson } from "../src/infrastructure/config.js";
+import { processTreeOwnerEnvKey } from "../src/infrastructure/process-tree.js";
 
 describe("process registry", () => {
   test("cleanup only targets registered child process", async () => {
@@ -64,6 +65,7 @@ describe("process registry", () => {
   test("force cleanup kills remaining process group descendants after leader exits", async () => {
     const tempDir = await mkdtemp(path.join(os.tmpdir(), "roadrunner-process-descendant-"));
     const childPidFile = path.join(tempDir, "child.pid");
+    const ownerToken = "roadrunner-registry-descendant";
     const leader = spawn(
       process.execPath,
       [
@@ -73,7 +75,7 @@ const child = spawn(process.execPath, ["-e", ${JSON.stringify(`process.on("SIGTE
 process.on("SIGTERM", () => process.exit(0));
 setInterval(() => {}, 1000);`,
       ],
-      { detached: true, stdio: "ignore" },
+      { detached: true, env: { ...process.env, [processTreeOwnerEnvKey]: ownerToken }, stdio: "ignore" },
     );
     const context = await loadContext(tempDir, { _: [] });
     let childPid: number | null = null;
@@ -82,7 +84,7 @@ setInterval(() => {}, 1000);`,
       expect(leader.pid).toBeTruthy();
       await waitForFile(childPidFile);
       childPid = Number(await readFile(childPidFile, "utf8"));
-      await registerProcess({ command: [process.execPath], cwd: tempDir, pid: leader.pid!, role: "leader" }, context);
+      await registerProcess({ command: [process.execPath], cwd: tempDir, ownerToken, pid: leader.pid!, role: "leader" }, context);
 
       const results = await cleanupProcesses(context, { force: true });
       await sleep(50);

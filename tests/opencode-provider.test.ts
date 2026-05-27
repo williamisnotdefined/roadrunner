@@ -74,6 +74,7 @@ describe("OpenCodeProvider", () => {
           debug: false,
           logPath,
           pid: expect.any(Number),
+          processTreeRoot: expect.objectContaining({ ownerToken: expect.any(String), pid: expect.any(Number), processGroupId: expect.any(Number), startTimeTicks: expect.any(String) }),
           role: "plan",
         },
       ]);

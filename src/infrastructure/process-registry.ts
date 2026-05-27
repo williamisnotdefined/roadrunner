@@ -4,11 +4,12 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 import { type ProjectContext, pathExists } from "./config.js";
 import { processIdentityStatus, readProcessInfo } from "./process-info.js";
-import { processTreeExists, signalProcessTree } from "./process-tree.js";
+import { processTreeExists, signalProcessTree, type ProcessTreeRoot } from "./process-tree.js";
 
 export interface ProcessRecord {
   command: string[];
   cwd: string;
+  ownerToken?: string;
   pid: number;
   processGroupId?: number;
   role: string;
@@ -39,14 +40,16 @@ export async function readProcesses(context: ProjectContext): Promise<ProcessRec
   }
 }
 
-export async function registerProcess(record: ProcessRecord, context: ProjectContext): Promise<void> {
-  await withProcessRegistryLock(context, async () => {
+export async function registerProcess(record: ProcessRecord, context: ProjectContext): Promise<ProcessRecord> {
+  return withProcessRegistryLock(context, async () => {
     if (!isPositiveSafeInteger(record.pid)) throw new Error(`Cannot register pid ${record.pid}.`);
     const info = await readProcessInfo(record.pid);
     if (!info) throw new Error(`Cannot register pid ${record.pid}.`);
     const processes = (await readProcesses(context)).filter((processRecord) => processRecord.pid !== record.pid);
-    processes.push({ ...record, processGroupId: record.pid, startTimeTicks: info.startTimeTicks, startedAt: new Date().toISOString() });
+    const registered = { ...record, processGroupId: info.processGroupId ?? record.pid, startTimeTicks: info.startTimeTicks, startedAt: new Date().toISOString() };
+    processes.push(registered);
     await writeProcesses(processes, context);
+    return registered;
   });
 }
 
@@ -65,8 +68,8 @@ export async function unregisterProcessIfProcessGroupExited(pid: number, context
     const record = processes.find((processRecord) => processRecord.pid === pid);
     if (!record) return true;
 
-    const processGroupId = safeProcessGroupId(record);
-    if (processGroupId !== null && processGroupExists(processGroupId)) return false;
+    const root = processTreeRootFromRecord(record);
+    if (root !== null && processTreeExists(root)) return false;
 
     await writeProcesses(
       processes.filter((processRecord) => processRecord.pid !== pid),
@@ -93,23 +96,28 @@ export async function cleanupProcesses(context: ProjectContext, { force = false 
         continue;
       }
 
-      const signalable = await signalableProcessGroup(record, processGroupId);
-      if (!signalable.ok) {
-        results.push({ pid: record.pid, role: record.role, status: signalable.status });
+      const root = processTreeRootFromRecord(record, processGroupId);
+      if (root === null) {
+        results.push({ pid: record.pid, role: record.role, status: "stale" });
         continue;
       }
 
-      const signaled = signalProcessGroup(processGroupId, "SIGTERM");
+      if (!processTreeExists(root)) {
+        results.push({ pid: record.pid, role: record.role, status: "stale" });
+        continue;
+      }
+
+      const signaled = signalProcessTree(root, "SIGTERM");
       results.push({ pid: record.pid, role: record.role, signal: "SIGTERM", status: signaled ? "signaled" : "missing" });
       await sleep(1000);
 
-      if (force && (await signalableProcessGroup(record, processGroupId)).ok) {
-        signalProcessGroup(processGroupId, "SIGKILL");
+      if (force && processTreeExists(root)) {
+        signalProcessTree(root, "SIGKILL");
         results.push({ pid: record.pid, role: record.role, signal: "SIGKILL", status: "signaled" });
         await sleep(100);
       }
 
-      if ((await signalableProcessGroup(record, processGroupId)).ok) survivors.push(record);
+      if (processTreeExists(root)) survivors.push(record);
     }
 
     await writeProcesses(survivors, context);
@@ -226,31 +234,22 @@ function registryLockPath(context: ProjectContext): string {
   return `${context.paths.processRegistry}.lock`;
 }
 
-async function signalableProcessGroup(record: ProcessRecord, processGroupId: number): Promise<{ ok: true } | { ok: false; status: string }> {
-  const status = await processIdentityStatus(record);
-  if (status === "same") return { ok: true };
-  if (status === "missing" && record.startTimeTicks !== undefined && processGroupExists(processGroupId)) return { ok: true };
-  return { ok: false, status: "stale" };
-}
-
 function safeProcessGroupId(record: ProcessRecord): number | null {
   if (!isPositiveSafeInteger(record.pid)) return null;
   if (record.processGroupId === undefined) return record.pid;
   return isPositiveSafeInteger(record.processGroupId) && record.processGroupId === record.pid ? record.processGroupId : null;
 }
 
-function signalProcessGroup(pid: number, signal: NodeJS.Signals): boolean {
-  return signalProcessTree(pid, signal);
-}
-
-function processGroupExists(pid: number): boolean {
-  return processTreeExists(pid);
+function processTreeRootFromRecord(record: ProcessRecord, processGroupId = safeProcessGroupId(record)): ProcessTreeRoot | null {
+  if (processGroupId === null || typeof record.startTimeTicks !== "string" || record.startTimeTicks.length === 0) return null;
+  return { ownerToken: record.ownerToken, pid: record.pid, processGroupId, startTimeTicks: record.startTimeTicks };
 }
 
 function isProcessRecord(value: unknown): value is ProcessRecord {
   if (!isRecord(value)) return false;
   if (!Array.isArray(value.command) || !value.command.every((item) => typeof item === "string")) return false;
   if (typeof value.cwd !== "string" || value.cwd.length === 0) return false;
+  if (!isOptionalString(value.ownerToken)) return false;
   if (!isPositiveSafeInteger(value.pid)) return false;
   if (value.processGroupId !== undefined && !isPositiveSafeInteger(value.processGroupId)) return false;
   if (typeof value.role !== "string" || value.role.length === 0) return false;

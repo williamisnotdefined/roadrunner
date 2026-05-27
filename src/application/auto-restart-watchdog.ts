@@ -1,5 +1,6 @@
 import type { QueueStep } from "../domain/queue.js";
 import type { AutoRestartPolicy } from "../domain/restart-policy.js";
+import type { ProcessTreeRoot } from "../infrastructure/process-tree.js";
 import type { RoadrunnerRunEvent, RoadrunnerRunPhase } from "./runner.js";
 
 export type AttemptRestartReason =
@@ -11,6 +12,7 @@ export interface RestartableAttemptState {
   abortController: AbortController;
   lastActivityAt: number;
   phase: RoadrunnerRunPhase | null;
+  providerProcess: ProcessTreeRoot | null;
   restartReason: AttemptRestartReason | null;
   restartRequested: boolean;
   startedAt: number;

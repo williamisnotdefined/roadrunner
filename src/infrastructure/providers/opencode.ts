@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 
 import type { ProjectContext } from "../config.js";
 import { registerProcess, unregisterProcessIfProcessGroupExited } from "../process-registry.js";
-import { processTreeExists, signalProcessTree } from "../process-tree.js";
+import { createProcessTreeOwnerToken, processTreeExists, processTreeOwnerEnvKey, readCurrentProcessTreeRoot, signalProcessTree, type ProcessTreeRoot } from "../process-tree.js";
 import { createPrivateWriteStream, writePrivateFile } from "../run-artifacts.js";
 import { providerChildEnv } from "../child-env.js";
 import { createCapturedOutputBuffer } from "../captured-output.js";
@@ -31,7 +31,9 @@ export class OpenCodeProvider implements Provider {
   }
 
   async run({ agent, bypassProviderPermissions = false, context, env = {}, logPath, onOutput, onStart, prompt, role, signal, streamOutput = true, workspaceAccess }: ProviderRunInput): Promise<ProviderRunResult> {
+    const ownerToken = createProcessTreeOwnerToken();
     const childEnv = openCodeRunEnv({ context, env, model: this.model, variant: this.variant, workspaceAccess, bypassProviderPermissions });
+    childEnv[processTreeOwnerEnvKey] = ownerToken;
     const output = createCapturedOutputBuffer(childEnv.ROADRUNNER_MAX_CAPTURED_OUTPUT_BYTES);
     await mkdir(path.dirname(logPath), { recursive: true });
     const promptFilePath = await writePromptFile(logPath, prompt);
@@ -49,6 +51,7 @@ export class OpenCodeProvider implements Provider {
     });
 
     let registeredPid: number | null = child.pid ?? null;
+    let processTreeRoot = readCurrentProcessTreeRoot(child.pid, ownerToken);
     let aborted = false;
     let registrationFailed = false;
     let timedOut = false;
@@ -68,8 +71,8 @@ export class OpenCodeProvider implements Provider {
       if (forceKillDone) return;
       appendOutput(message);
       if (streamOutput) process.stderr.write(message);
-      signalProviderProcessTree(child.pid, "SIGTERM");
-      ({ done: forceKillDone, timeout: killTimeout } = scheduleChildProcessGroupKill(child.pid));
+      signalProviderProcessTree(processTreeRoot, "SIGTERM");
+      ({ done: forceKillDone, timeout: killTimeout } = scheduleChildProcessGroupKill(processTreeRoot));
     };
 
     const abortRun = () => {
@@ -83,23 +86,28 @@ export class OpenCodeProvider implements Provider {
           {
             command,
             cwd: context.root,
+            ownerToken,
             pid: child.pid,
             role,
           },
           context,
-        ).catch((error: Error) => {
-          registeredPid = null;
-          /* v8 ignore next -- registration settling after close is a nondeterministic process race. */
-          if (settled) return;
-          registrationFailed = true;
-          terminateChild(`Failed to register provider process: ${error.message}\n`);
-        })
+        )
+          .then((record) => {
+            if (!processTreeRoot && record.processGroupId && record.startTimeTicks) processTreeRoot = { ownerToken, pid: record.pid, processGroupId: record.processGroupId, startTimeTicks: record.startTimeTicks };
+          })
+          .catch((error: Error) => {
+            registeredPid = null;
+            /* v8 ignore next -- registration settling after close is a nondeterministic process race. */
+            if (settled) return;
+            registrationFailed = true;
+            terminateChild(`Failed to register provider process: ${error.message}\n`);
+          })
       : Promise.resolve();
 
     if (signal?.aborted) abortRun();
     else signal?.addEventListener("abort", abortRun, { once: true });
 
-    onStart?.({ command, debug, logPath, pid: child.pid ?? null, role });
+    onStart?.({ command, debug, logPath, pid: child.pid ?? null, processTreeRoot, role });
 
     if (timeoutMs > 0) {
       timeout = setTimeout(() => {
@@ -128,7 +136,7 @@ export class OpenCodeProvider implements Provider {
         settled = true;
         signal?.removeEventListener("abort", abortRun);
         clearTimeout(timeout);
-        await finishScheduledChildProcessGroupKill(child.pid, forceKillDone, killTimeout);
+        await finishScheduledChildProcessGroupKill(processTreeRoot, forceKillDone, killTimeout);
         await registrationDone;
         await unregisterRegisteredProcess(registeredPid, context);
         await closeLogStream(logStream);
@@ -139,7 +147,7 @@ export class OpenCodeProvider implements Provider {
         child.off("close", onClose);
         signal?.removeEventListener("abort", abortRun);
         clearTimeout(timeout);
-        await finishScheduledChildProcessGroupKill(child.pid, forceKillDone, killTimeout);
+        await finishScheduledChildProcessGroupKill(processTreeRoot, forceKillDone, killTimeout);
         appendOutput(`${error.message}\n`);
         await registrationDone;
         await unregisterRegisteredProcess(registeredPid, context);
@@ -207,11 +215,11 @@ async function unregisterRegisteredProcess(pid: number | null, context: ProjectC
   if (pid !== null) await unregisterProcessIfProcessGroupExited(pid, context);
 }
 
-function scheduleChildProcessGroupKill(pid: number | undefined): { done: Promise<void>; timeout: NodeJS.Timeout } {
+function scheduleChildProcessGroupKill(root: ProcessTreeRoot | null): { done: Promise<void>; timeout: NodeJS.Timeout } {
   let timeout: NodeJS.Timeout;
   const done = new Promise<void>((resolve) => {
     timeout = setTimeout(() => {
-      signalProviderProcessTree(pid, "SIGKILL");
+      signalProviderProcessTree(root, "SIGKILL");
       resolve();
     }, forceKillDelayMs);
   });
@@ -220,8 +228,8 @@ function scheduleChildProcessGroupKill(pid: number | undefined): { done: Promise
 }
 
 /* v8 ignore start -- timeout cleanup timing is covered by black-box provider timeout tests. */
-async function finishScheduledChildProcessGroupKill(pid: number | undefined, forceKillDone: Promise<void> | undefined, killTimeout: NodeJS.Timeout | undefined): Promise<void> {
-  if (forceKillDone && processTreeExists(pid)) {
+async function finishScheduledChildProcessGroupKill(root: ProcessTreeRoot | null, forceKillDone: Promise<void> | undefined, killTimeout: NodeJS.Timeout | undefined): Promise<void> {
+  if (forceKillDone && processTreeExists(root)) {
     await forceKillDone;
     return;
   }
@@ -231,9 +239,9 @@ async function finishScheduledChildProcessGroupKill(pid: number | undefined, for
 
 /* v8 ignore stop */
 
-function signalProviderProcessTree(pid: number | undefined, signal: NodeJS.Signals): void {
+function signalProviderProcessTree(root: ProcessTreeRoot | null, signal: NodeJS.Signals): void {
   try {
-    signalProcessTree(pid, signal);
+    signalProcessTree(root, signal);
   } catch {
     /* Best effort: timeout cleanup is also covered by the process registry cleanup command. */
   }

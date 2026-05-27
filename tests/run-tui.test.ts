@@ -266,10 +266,10 @@ describe("run TUI", () => {
   });
 
   test("formats TUI session event messages and payloads", () => {
-    expect(eventMessage({ command: ["opencode"], debug: false, logPath: "/tmp/plan.log", pid: 123, role: "plan", type: "provider-start" })).toBe(
+    expect(eventMessage({ command: ["opencode"], debug: false, logPath: "/tmp/plan.log", pid: 123, processTreeRoot: null, role: "plan", type: "provider-start" })).toBe(
       "provider started role=plan pid=123 log=/tmp/plan.log",
     );
-    expect(eventMessage({ command: ["opencode"], debug: false, logPath: "/tmp/plan.log", pid: null, role: "plan", type: "provider-start" })).toBe(
+    expect(eventMessage({ command: ["opencode"], debug: false, logPath: "/tmp/plan.log", pid: null, processTreeRoot: null, role: "plan", type: "provider-start" })).toBe(
       "provider started role=plan pid=n/a log=/tmp/plan.log",
     );
     expect(eventMessage({ step, type: "step" })).toBe("step sample-step");

@@ -49,6 +49,42 @@ describe("managed process", () => {
     }
   });
 
+  test("force kills timed out shell commands that ignore SIGTERM", async () => {
+    const directory = await tempDir("roadrunner-managed-process-timeout-");
+    try {
+      const context = await loadContext(directory, { _: [] });
+      const script = "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);";
+
+      const result = await runShell(context, `${JSON.stringify(process.execPath)} -e ${JSON.stringify(script)}`, path.join(directory, "timeout.log"), "verify-1", { timeoutMs: 50 });
+
+      expect(result.code).toBe(124);
+      expect(result.output).toMatch(/Verification command timed out/);
+      expect(result.output).toMatch(/Process did not exit after SIGTERM/);
+    } finally {
+      await removeDir(directory);
+    }
+  });
+
+  test("waits for force kill when timed out shell leaves a descendant", async () => {
+    const directory = await tempDir("roadrunner-managed-process-timeout-child-");
+    let childPid: number | null = null;
+    try {
+      const context = await loadContext(directory, { _: [] });
+      const childPidFile = path.join(directory, "child.pid");
+      const script = `const { spawn } = require("node:child_process"); const fs = require("node:fs"); const child = spawn(process.execPath, ["-e", "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);"], { stdio: "ignore" }); fs.writeFileSync(${JSON.stringify(childPidFile)}, String(child.pid)); process.on("SIGTERM", () => process.exit(0)); setInterval(() => {}, 1000);`;
+
+      const result = await runShell(context, `${JSON.stringify(process.execPath)} -e ${JSON.stringify(script)}`, path.join(directory, "timeout-child.log"), "verify-1", { timeoutMs: 50 });
+      childPid = Number(await readFile(childPidFile, "utf8"));
+
+      expect(result.code).toBe(124);
+      expect(result.output).toMatch(/Process did not exit after SIGTERM/);
+      await waitForProcessExit(childPid);
+    } finally {
+      if (childPid !== null) killIfRunning(childPid);
+      await removeDir(directory);
+    }
+  });
+
   test("returns code 1 when shell process registration fails", async () => {
     const directory = await tempDir("roadrunner-managed-process-register-error-");
     try {

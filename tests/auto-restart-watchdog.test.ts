@@ -36,6 +36,7 @@ describe("auto restart watchdog", () => {
     vi.useFakeTimers();
     vi.setSystemTime(0);
     const state = attemptState();
+    state.providerProcess = { pid: 123, processGroupId: 123, startTimeTicks: "1" };
     const events: RoadrunnerRunEvent[] = [];
     let restarts = 0;
 
@@ -89,6 +90,26 @@ describe("auto restart watchdog", () => {
     expect(state.restartRequested).toBe(false);
     expect(events).toEqual([]);
   });
+
+  test("restarts when a provider subprocess remains alive without activity", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const state = attemptState();
+    const events: RoadrunnerRunEvent[] = [];
+    const stop = startAutoRestartWatchdog({
+      current: state,
+      emitEvent: (event) => events.push(event),
+      incrementRestartCount: () => 1,
+      policy: { enabled: true, idleMs: 10, maxRestarts: 1 },
+      restartCount: () => 0,
+    });
+
+    vi.advanceTimersByTime(10);
+    stop();
+
+    expect(state.restartRequested).toBe(true);
+    expect(events).toEqual([expect.objectContaining({ restart: 1, type: "task-auto-restart-requested" })]);
+  });
 });
 
 function attemptState(): RestartableAttemptState {
@@ -96,6 +117,7 @@ function attemptState(): RestartableAttemptState {
     abortController: new AbortController(),
     lastActivityAt: Date.now(),
     phase: "plan",
+    providerProcess: null,
     restartReason: null,
     restartRequested: false,
     startedAt: Date.now(),

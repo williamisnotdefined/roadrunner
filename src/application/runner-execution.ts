@@ -15,6 +15,7 @@ import { runProviderRole } from "./provider-runner.js";
 import { PlanOutputError } from "./plan-output.js";
 import { AutomaticRestartLimitExceededError } from "./run-errors.js";
 import { formatContextualError } from "./error-message.js";
+import { createAttemptActivityTracker } from "./attempt-activity.js";
 
 interface RunStepInput {
   context: ProjectContext;
@@ -46,6 +47,7 @@ export async function runStepWithRestarts({ context, controlState, deadline, emi
     if (!attemptStep || attemptStep.id !== step.id) throw new Error(`Roadrunner queue changed before retrying ${step.id}.`);
 
     const attemptState = startAttempt(controlState, attemptStep);
+    const activityTracker = createAttemptActivityTracker({ current: attemptState, emitActivity, emitEvent, idleMs: autoRestartPolicy.idleMs, step: attemptStep });
     const stopAutoRestartWatchdog = startAutoRestartWatchdog({
       current: attemptState,
       emitEvent,
@@ -58,7 +60,7 @@ export async function runStepWithRestarts({ context, controlState, deadline, emi
     });
 
     try {
-      setAttemptPhase(attemptState, "plan");
+      activityTracker.setPhase("plan");
       emitEvent({ step: attemptStep, type: "plan" });
       let planResult: Awaited<ReturnType<typeof planStep>>;
       try {
@@ -67,10 +69,7 @@ export async function runStepWithRestarts({ context, controlState, deadline, emi
             planStep(context, attemptStep, snapshot, {
               deadline,
               onOutput: activityEmitter(attemptState, emitActivity, attemptStep, "plan"),
-              onProviderStart: (event) => {
-                recordAttemptActivity(attemptState);
-                emitEvent({ ...event, step: attemptStep, type: "provider-start" });
-              },
+              onProviderStart: activityTracker.recordProviderStart,
               signal: attemptState.abortController.signal,
               streamProviderOutput,
             }),
@@ -96,7 +95,7 @@ export async function runStepWithRestarts({ context, controlState, deadline, emi
       });
       await writePrivateFile(path.join(logDir, "implement.prompt.md"), prompt);
 
-      setAttemptPhase(attemptState, "implement");
+      activityTracker.setPhase("implement");
       emitEvent({ step: attemptStep, type: "implement" });
       const result = await withControlCheck(
         () =>
@@ -105,10 +104,7 @@ export async function runStepWithRestarts({ context, controlState, deadline, emi
             deadline,
             logPath: path.join(logDir, "implement.opencode.log"),
             onOutput: activityEmitter(attemptState, emitActivity, attemptStep, "implement"),
-            onProviderStart: (event) => {
-              recordAttemptActivity(attemptState);
-              emitEvent({ ...event, step: attemptStep, type: "provider-start" });
-            },
+            onProviderStart: activityTracker.recordProviderStart,
             prompt,
             role: "implement",
             signal: attemptState.abortController.signal,
@@ -124,7 +120,7 @@ export async function runStepWithRestarts({ context, controlState, deadline, emi
         throw new Error(formatContextualError(`Implementation provider failed for ${attemptStep.id}.`, [`Exit code: ${String(result.code)}.`], path.join(logDir, "implement.opencode.log")));
       }
 
-      setAttemptPhase(attemptState, "verify");
+      activityTracker.setPhase("verify");
       emitEvent({ attempt: "initial", step: attemptStep, type: "verify" });
       let verification = await withControlCheck(
         () =>
@@ -138,17 +134,14 @@ export async function runStepWithRestarts({ context, controlState, deadline, emi
       );
       let fixExitCode: number | null | undefined;
       if (!verification.ok) {
-        setAttemptPhase(attemptState, "fix");
+        activityTracker.setPhase("fix");
         emitEvent({ step: attemptStep, type: "fix" });
         const fix = await withControlCheck(
           () =>
             fixFailure(context, attemptStep, snapshot, planResult.planMarkdown!, verification.output, logDir, {
               deadline,
               onOutput: activityEmitter(attemptState, emitActivity, attemptStep, "fix"),
-              onProviderStart: (event) => {
-                recordAttemptActivity(attemptState);
-                emitEvent({ ...event, step: attemptStep, type: "provider-start" });
-              },
+              onProviderStart: activityTracker.recordProviderStart,
               signal: attemptState.abortController.signal,
               streamProviderOutput,
             }),
@@ -156,7 +149,7 @@ export async function runStepWithRestarts({ context, controlState, deadline, emi
           attemptState,
         );
         if (fix.code === 0) {
-          setAttemptPhase(attemptState, "verify-fixed");
+          activityTracker.setPhase("verify-fixed");
           emitEvent({ attempt: "fixed", step: attemptStep, type: "verify" });
           verification = await withControlCheck(
             () =>
@@ -210,6 +203,7 @@ export async function runStepWithRestarts({ context, controlState, deadline, emi
       controlState.current = null;
       throw error;
     } finally {
+      activityTracker.stop();
       stopAutoRestartWatchdog();
     }
   }
@@ -234,6 +228,7 @@ function startAttempt(state: RunControlState, step: QueueStep): CurrentAttemptSt
     abortController: new AbortController(),
     lastActivityAt: now,
     phase: null,
+    providerProcess: null,
     restartReason: null,
     restartRequested: false,
     startedAt: now,
@@ -241,11 +236,6 @@ function startAttempt(state: RunControlState, step: QueueStep): CurrentAttemptSt
   };
   state.current = current;
   return current;
-}
-
-function setAttemptPhase(current: CurrentAttemptState, phase: RoadrunnerRunPhase): void {
-  current.phase = phase;
-  recordAttemptActivity(current);
 }
 
 export class RunStopRequested extends Error {}

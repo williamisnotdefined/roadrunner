@@ -35,6 +35,7 @@ describe("runner restart control", () => {
       abortController,
       lastActivityAt: Date.now() - 1000,
       phase: "implement",
+      providerProcess: null,
       restartReason: null,
       restartRequested: false,
       startedAt: Date.now() - 1000,
@@ -58,6 +59,7 @@ describe("runner restart control", () => {
       abortController,
       lastActivityAt: Date.now() - 1000,
       phase: "implement",
+      providerProcess: null,
       restartReason: null,
       restartRequested: false,
       startedAt: Date.now() - 1000,
@@ -283,6 +285,38 @@ describe("runner restart control", () => {
       expect(await runRoadrunner(project.context, { maxSteps: 1, onEvent: (event) => events.push(event) })).toBe(1);
 
       expect(events.some((event) => event.type === "task-auto-restart-requested")).toBe(false);
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
+  test("treats provider subprocess tree changes as activity", async () => {
+    const project = await setupRunnerProject("sequential-children-plan");
+    const events: RoadrunnerRunEvent[] = [];
+    process.env.ROADRUNNER_AUTO_RESTART_IDLE_MS = "600";
+    process.env.ROADRUNNER_MAX_AUTO_RESTARTS_PER_STEP = "1";
+
+    try {
+      expect(await runRoadrunner(project.context, { maxSteps: 1, onEvent: (event) => events.push(event) })).toBe(1);
+
+      expect(events.some((event) => event.type === "task-auto-restart-requested")).toBe(false);
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
+  test("restarts when a provider child remains alive without activity", async () => {
+    const project = await setupRunnerProject("child-hang-plan");
+    const events: RoadrunnerRunEvent[] = [];
+    process.env.ROADRUNNER_AUTO_RESTART_IDLE_MS = "500";
+    process.env.ROADRUNNER_MAX_AUTO_RESTARTS_PER_STEP = "1";
+    process.env.ROADRUNNER_PROVIDER_TIMEOUT_MS = "0";
+
+    try {
+      await expect(runRoadrunner(project.context, { maxSteps: 1, onEvent: (event) => events.push(event) })).rejects.toThrow(/Automatic restart limit exceeded/);
+
+      expect(events).toContainEqual(expect.objectContaining({ restart: 1, type: "task-auto-restart-requested" }));
+      expect(events).toContainEqual(expect.objectContaining({ maxRestarts: 1, type: "task-auto-restart-limit-exceeded" }));
     } finally {
       await removeDir(project.directory);
     }

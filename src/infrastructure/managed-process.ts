@@ -5,7 +5,7 @@ import path from "node:path";
 
 import type { ProjectContext } from "./config.js";
 import { registerProcess, unregisterProcessIfProcessGroupExited } from "./process-registry.js";
-import { processTreeExists, signalProcessTree as signalRegisteredProcessTree } from "./process-tree.js";
+import { createProcessTreeOwnerToken, processTreeExists, processTreeOwnerEnvKey, readCurrentProcessTreeRoot, signalProcessTree as signalRegisteredProcessTree, type ProcessTreeRoot } from "./process-tree.js";
 import { createPrivateWriteStream } from "./run-artifacts.js";
 import { verificationChildEnv } from "./child-env.js";
 import { createCapturedOutputBuffer } from "./captured-output.js";
@@ -30,11 +30,13 @@ export async function runShell(
   await mkdir(path.dirname(logPath), { recursive: true });
   const logStream = await createPrivateWriteStream(logPath);
   logStream.on("error", Function.prototype as (error: Error) => void);
-  const child = spawn(command, [], { cwd: context.root, detached: process.platform !== "win32", env: verificationChildEnv(), shell: true });
+  const ownerToken = createProcessTreeOwnerToken();
+  const child = spawn(command, [], { cwd: context.root, detached: true, env: { ...verificationChildEnv(), [processTreeOwnerEnvKey]: ownerToken }, shell: true });
   if (!child.pid) {
     await closeLogStream(logStream);
     throw new Error("Failed to start shell process for verification command.");
   }
+  let processTreeRoot = readCurrentProcessTreeRoot(child.pid, ownerToken);
   let registeredPid: number | null = child.pid;
   let aborted = false;
   let registrationFailed = false;
@@ -54,8 +56,8 @@ export async function runShell(
   const terminateProcess = (message: string) => {
     if (forceKillDone) return;
     appendOutput(message);
-    signalShellProcessTree(child.pid, "SIGTERM");
-    ({ done: forceKillDone, timeout: killTimeout } = scheduleProcessTreeKill(child.pid, appendOutput));
+    signalShellProcessTree(processTreeRoot, "SIGTERM");
+    ({ done: forceKillDone, timeout: killTimeout } = scheduleProcessTreeKill(processTreeRoot, appendOutput));
   };
 
   const abortRun = () => {
@@ -64,12 +66,16 @@ export async function runShell(
     terminateProcess("Command aborted by Roadrunner control. Sending SIGTERM.\n");
   };
 
-  const registrationDone = registerProcess({ command: [command], cwd: context.root, pid: child.pid, role }, context).catch((error: Error) => {
-    registeredPid = null;
-    if (settled) return;
-    registrationFailed = true;
-    terminateProcess(`Failed to register shell process: ${error.message}\n`);
-  });
+  const registrationDone = registerProcess({ command: [command], cwd: context.root, ownerToken, pid: child.pid, role }, context)
+    .then((record) => {
+      if (!processTreeRoot && record.processGroupId && record.startTimeTicks) processTreeRoot = { ownerToken, pid: record.pid, processGroupId: record.processGroupId, startTimeTicks: record.startTimeTicks };
+    })
+    .catch((error: Error) => {
+      registeredPid = null;
+      if (settled) return;
+      registrationFailed = true;
+      terminateProcess(`Failed to register shell process: ${error.message}\n`);
+    });
 
   if (signal?.aborted) abortRun();
   else signal?.addEventListener("abort", abortRun, { once: true });
@@ -97,7 +103,7 @@ export async function runShell(
       settled = true;
       signal?.removeEventListener("abort", abortRun);
       clearTimeout(timeout);
-      await finishScheduledProcessTreeKill(child.pid, forceKillDone, killTimeout);
+      await finishScheduledProcessTreeKill(processTreeRoot, forceKillDone, killTimeout);
       appendOutput(`${error.message}\n`);
       await registrationDone;
       await unregisterRegisteredProcess(registeredPid, context);
@@ -110,7 +116,7 @@ export async function runShell(
       settled = true;
       signal?.removeEventListener("abort", abortRun);
       clearTimeout(timeout);
-      await finishScheduledProcessTreeKill(child.pid, forceKillDone, killTimeout);
+      await finishScheduledProcessTreeKill(processTreeRoot, forceKillDone, killTimeout);
       await registrationDone;
       await unregisterRegisteredProcess(registeredPid, context);
       await closeLogStream(logStream);
@@ -123,8 +129,8 @@ async function unregisterRegisteredProcess(pid: number | null, context: ProjectC
   if (pid !== null) await unregisterProcessIfProcessGroupExited(pid, context);
 }
 
-async function finishScheduledProcessTreeKill(pid: number | undefined, forceKillDone: Promise<void> | undefined, killTimeout: NodeJS.Timeout | undefined): Promise<void> {
-  if (forceKillDone && processTreeExists(pid)) {
+async function finishScheduledProcessTreeKill(root: ProcessTreeRoot | null, forceKillDone: Promise<void> | undefined, killTimeout: NodeJS.Timeout | undefined): Promise<void> {
+  if (forceKillDone && processTreeExists(root)) {
     await forceKillDone;
     return;
   }
@@ -132,21 +138,21 @@ async function finishScheduledProcessTreeKill(pid: number | undefined, forceKill
   clearTimeout(killTimeout);
 }
 
-function scheduleProcessTreeKill(pid: number | undefined, appendOutput: (text: string) => void): { done: Promise<void>; timeout: NodeJS.Timeout } {
+function scheduleProcessTreeKill(root: ProcessTreeRoot | null, appendOutput: (text: string) => void): { done: Promise<void>; timeout: NodeJS.Timeout } {
   let timeout: NodeJS.Timeout;
   const done = new Promise<void>((resolve) => {
     timeout = setTimeout(() => {
       appendOutput("Process did not exit after SIGTERM. Sending SIGKILL.\n");
-      signalShellProcessTree(pid, "SIGKILL");
+      signalShellProcessTree(root, "SIGKILL");
       resolve();
     }, forceKillDelayMs);
   });
   return { done, timeout: timeout! };
 }
 
-function signalShellProcessTree(pid: number | undefined, signal: NodeJS.Signals): void {
+function signalShellProcessTree(root: ProcessTreeRoot | null, signal: NodeJS.Signals): void {
   try {
-    signalRegisteredProcessTree(pid, signal);
+    signalRegisteredProcessTree(root, signal);
   } catch {
     /* Cleanup is best-effort after timeout or registration failure. */
   }

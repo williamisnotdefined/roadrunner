@@ -1,4 +1,5 @@
 import type { ProjectContext } from "../config.js";
+import type { ProcessTreeRoot } from "../process-tree.js";
 
 export type WorkspaceAccess = "read-only" | "write";
 
@@ -22,6 +23,7 @@ export interface ProviderStartEvent {
   debug: boolean;
   logPath: string;
   pid: number | null;
+  processTreeRoot: ProcessTreeRoot | null;
   role: string;
 }
 

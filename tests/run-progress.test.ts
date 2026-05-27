@@ -13,7 +13,7 @@ describe("run progress", () => {
     progress = updateProgressForEvent(progress, { step, type: "implement" }, 1_000);
     expect(progress).toMatchObject({ lastActivityAt: 1_000, logPath: null, phase: "implement", phaseStartedAt: 1_000, pid: null });
 
-    progress = updateProgressForEvent(progress, { command: ["opencode"], debug: false, logPath: "/tmp/implement.log", pid: 123, role: "implement", step, type: "provider-start" }, 2_000);
+    progress = updateProgressForEvent(progress, { command: ["opencode"], debug: false, logPath: "/tmp/implement.log", pid: 123, processTreeRoot: null, role: "implement", step, type: "provider-start" }, 2_000);
     expect(progress).toMatchObject({ lastActivityAt: 2_000, logPath: "/tmp/implement.log", pid: 123 });
 
     progress = updateProgressForActivity(progress, { phase: "implement", step }, 3_000);
@@ -44,7 +44,7 @@ describe("run progress", () => {
     expect(progress).toMatchObject({ attempt: 2, phase: "plan", taskStartedAt: 4_000 });
 
     const otherStep = { ...step, id: "other-step" };
-    progress = updateProgressForEvent(progress, { command: ["opencode"], debug: false, logPath: "/tmp/other.log", pid: 456, role: "plan", step: otherStep, type: "provider-start" }, 5_000);
+    progress = updateProgressForEvent(progress, { command: ["opencode"], debug: false, logPath: "/tmp/other.log", pid: 456, processTreeRoot: null, role: "plan", step: otherStep, type: "provider-start" }, 5_000);
     expect(progress?.logPath).toBeNull();
     progress = updateProgressForActivity(progress, { phase: "plan", step: otherStep }, 5_500);
     expect(progress?.lastActivityAt).toBe(4_000);
@@ -62,7 +62,7 @@ describe("run progress", () => {
     expect(progress).toMatchObject({ phase: "startup-refresh", stepId: null });
     progress = updateProgressForActivity(progress, { phase: "startup-refresh" }, 1_000);
     expect(progress?.lastActivityAt).toBe(1_000);
-    progress = updateProgressForEvent(progress, { command: ["opencode"], debug: false, logPath: "/tmp/startup.log", pid: null, role: "startup-refresh", type: "provider-start" }, 2_000);
+    progress = updateProgressForEvent(progress, { command: ["opencode"], debug: false, logPath: "/tmp/startup.log", pid: null, processTreeRoot: null, role: "startup-refresh", type: "provider-start" }, 2_000);
     expect(formatRunProgress(progress!, 3_000)).toContain("startup-refresh attempt=1 elapsed=3s phase=3s idle=1s log=/tmp/startup.log");
 
     expect(updateProgressForActivity(null, { phase: "startup-refresh" }, 4_000)).toBeNull();
