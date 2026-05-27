@@ -10,6 +10,9 @@
     "templates",
     "README.md"
   ],
+  "os": [
+    "linux"
+  ],
   "scripts": {
     "ai:check": "tsx scripts/ai/sync-routes.ts --check",
     "ai:sync": "tsx scripts/ai/sync-routes.ts",

@@ -10,6 +10,10 @@ Startup Queue Refresh -> Plan -> Execute -> Verify -> Mark Done -> Reconcile/Opt
 
 It is designed to run coding agents over roadmap-derived steps, with explicit planning, verification, process cleanup, startup queue refresh, and queue reconciliation that can optimize future work.
 
+## Platform Support
+
+Roadrunner supports Linux only. Process supervision relies on Linux `/proc`, POSIX signals, and process groups; other platforms are intentionally unsupported.
+
 ## Commands
 
 ```bash

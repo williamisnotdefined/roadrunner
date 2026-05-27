@@ -7,8 +7,6 @@ import { loadContext } from "../src/infrastructure/config.js";
 import { createLogDir, createPrivateWriteStream, renderPrompt, writePrivateFile } from "../src/infrastructure/run-artifacts.js";
 import { removeDir, tempDir } from "./helpers.js";
 
-const testSymlink = process.platform === "win32" ? test.skip : test;
-
 describe("run artifacts", () => {
   test("creates unique log directories with the task suffix", async () => {
     const directory = await tempDir("roadrunner-artifacts-log-dir-");
@@ -44,7 +42,7 @@ describe("run artifacts", () => {
     }
   });
 
-  testSymlink("refuses to write private files through symlinks", async () => {
+  test("refuses to write private files through symlinks", async () => {
     const directory = await tempDir("roadrunner-artifacts-symlink-");
     try {
       const target = path.join(directory, "target.txt");

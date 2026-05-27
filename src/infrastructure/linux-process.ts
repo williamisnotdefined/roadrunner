@@ -5,6 +5,8 @@ export interface LinuxProcessSnapshot {
   pid: number;
   processGroupId: number;
   startTimeTicks: string;
+  systemTimeTicks: string;
+  userTimeTicks: string;
 }
 
 export function linuxProcessSnapshotFromStat(pid: number, stat: string): LinuxProcessSnapshot | null {
@@ -13,9 +15,11 @@ export function linuxProcessSnapshotFromStat(pid: number, stat: string): LinuxPr
   if (!fields) return null;
   const parentPid = Number(fields[1]);
   const processGroupId = Number(fields[2]);
+  const userTimeTicks = fields[11];
+  const systemTimeTicks = fields[12];
   const startTimeTicks = fields[19];
-  if (!isPositiveSafeInteger(parentPid) || !isPositiveSafeInteger(processGroupId) || startTimeTicks === undefined || startTimeTicks.length === 0) return null;
-  return { parentPid, pid, processGroupId, startTimeTicks };
+  if (!isPositiveSafeInteger(parentPid) || !isPositiveSafeInteger(processGroupId) || !isLinuxTickValue(userTimeTicks) || !isLinuxTickValue(systemTimeTicks) || !isLinuxTickValue(startTimeTicks)) return null;
+  return { parentPid, pid, processGroupId, startTimeTicks, systemTimeTicks, userTimeTicks };
 }
 
 export function readLinuxProcessSnapshot(pid: number): LinuxProcessSnapshot | null {
@@ -68,6 +72,10 @@ export function linuxProcessKey(process: { pid: number; startTimeTicks: string }
   return `${process.pid}:${process.startTimeTicks}`;
 }
 
+export function linuxProcessActivityKey(process: { pid: number; startTimeTicks: string; systemTimeTicks: string; userTimeTicks: string }): string {
+  return `${linuxProcessKey(process)}:${process.userTimeTicks}:${process.systemTimeTicks}`;
+}
+
 export function isPositiveSafeInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
 }
@@ -77,4 +85,8 @@ function linuxStatFields(stat: string): string[] | null {
   if (close < 0 || stat.length <= close + 2 || stat[close + 1] !== " ") return null;
   const fields = stat.slice(close + 2).trim().split(/\s+/);
   return fields.length >= 20 ? fields : null;
+}
+
+function isLinuxTickValue(value: string | undefined): value is string {
+  return value !== undefined && /^\d+$/.test(value);
 }

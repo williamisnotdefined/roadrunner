@@ -305,6 +305,23 @@ describe("runner restart control", () => {
     }
   });
 
+  test("treats silent CPU-bound provider children as activity", async () => {
+    const project = await setupRunnerProject("silent-cpu-child-plan");
+    const events: RoadrunnerRunEvent[] = [];
+    process.env.ROADRUNNER_AUTO_RESTART_IDLE_MS = "200";
+    process.env.ROADRUNNER_MAX_AUTO_RESTARTS_PER_STEP = "1";
+
+    try {
+      expect(await runRoadrunner(project.context, { maxSteps: 1, onEvent: (event) => events.push(event) })).toBe(1);
+      const queue = latestQueueSnapshot(events);
+
+      expect(events.some((event) => event.type === "task-auto-restart-requested")).toBe(false);
+      expect(queue.history.map((step) => step.id)).toEqual(["first-step"]);
+    } finally {
+      await removeDir(project.directory);
+    }
+  });
+
   test("restarts when a provider child remains alive without activity", async () => {
     const project = await setupRunnerProject("child-hang-plan");
     const events: RoadrunnerRunEvent[] = [];

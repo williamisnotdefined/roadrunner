@@ -37,7 +37,7 @@ export async function acquireProjectLock(context: ProjectContext, label = "Roadr
 async function currentLock(): Promise<RoadrunnerLock> {
   const info = await readProcessInfo(process.pid);
   const lock: RoadrunnerLock = { pid: process.pid, startedAt: new Date().toISOString() };
-  /* v8 ignore next -- start-time identity is unavailable on non-Linux platforms. */
+  /* v8 ignore next -- /proc identity can be unavailable during defensive lock creation. */
   if (info?.startTimeTicks !== undefined) lock.startTimeTicks = info.startTimeTicks;
   return lock;
 }

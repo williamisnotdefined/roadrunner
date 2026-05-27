@@ -6,7 +6,6 @@ test-output/
 .env
 .env.*
 !.env.example
-.DS_Store
 .roadrunner/logs/
 .roadrunner/processes.json
 .roadrunner/roadmap.lock

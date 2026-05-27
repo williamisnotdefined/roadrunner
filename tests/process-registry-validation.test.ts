@@ -15,7 +15,7 @@ describe("process registry validation", () => {
       await writeJson(context.paths.processRegistry, {
         processes: [
           { command: ["missing"], cwd: tempDir, pid: -process.pid, processGroupId: -process.pid, role: "negative" },
-          { command: ["missing"], cwd: tempDir, pid: "1; Write-Output pwned", processGroupId: "1; Write-Output pwned", role: "string" },
+          { command: ["missing"], cwd: tempDir, pid: "1; invalid payload", processGroupId: "1; invalid payload", role: "string" },
           { command: "missing", cwd: tempDir, pid: process.pid, processGroupId: process.pid, role: "bad-command" },
         ],
       });

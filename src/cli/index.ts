@@ -25,6 +25,7 @@ export interface CliIo {
 export interface CliMainOptions {
   cwd?: string;
   io?: CliIo;
+  platform?: NodeJS.Platform;
   runTui?: (context: ProjectContext, options: RunTuiOptions) => Promise<number>;
   terminal?: {
     input?: Readable;
@@ -125,13 +126,15 @@ const runEventFormatters: { [Type in RoadrunnerRunEvent["type"]]: RunEventFormat
   verify: (event) => formatCliStep(event.attempt === "fixed" ? `Re-running verification for ${event.step.id}` : `Verifying ${event.step.id}`),
 };
 
-export async function main(argv = process.argv.slice(2), { cwd = process.cwd(), io = {}, runTui, terminal }: CliMainOptions = {}): Promise<number> {
+export async function main(argv = process.argv.slice(2), { cwd = process.cwd(), io = {}, platform = process.platform, runTui, terminal }: CliMainOptions = {}): Promise<number> {
   const out = io.stdout ?? ((message: string) => console.log(message));
   const err = io.stderr ?? ((message: string) => console.error(message));
   const args = parseArgs(argv);
   const command = args._[0] ?? "help";
 
   try {
+    assertLinuxPlatform(platform);
+
     if (shouldPrintHelp(args, command)) {
       out(helpText());
       return 0;
@@ -155,6 +158,10 @@ export async function main(argv = process.argv.slice(2), { cwd = process.cwd(), 
 
 export function formatRunEvent(event: RoadrunnerRunEvent): string {
   return (runEventFormatters[event.type] as (nextEvent: RoadrunnerRunEvent) => string)(event);
+}
+
+function assertLinuxPlatform(platform: NodeJS.Platform): void {
+  if (platform !== "linux") throw new Error("Roadrunner supports Linux only.");
 }
 
 function formatProviderStartEvent(event: { debug: boolean; logPath: string; pid: number | null; role: string }): string {

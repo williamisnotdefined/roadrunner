@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 
-import { hasLinuxAncestorPid, isPositiveSafeInteger, linuxProcessKey, type LinuxProcessSnapshot, readLinuxProcessSnapshot, readLinuxProcessSnapshots, sameLinuxProcess } from "./linux-process.js";
+import { hasLinuxAncestorPid, isPositiveSafeInteger, linuxProcessActivityKey, linuxProcessKey, type LinuxProcessSnapshot, readLinuxProcessSnapshot, readLinuxProcessSnapshots, sameLinuxProcess } from "./linux-process.js";
 
 export const processTreeOwnerEnvKey = "ROADRUNNER_PROCESS_TREE_OWNER";
 
@@ -27,6 +27,14 @@ export function processTreeExists(root: ProcessTreeRoot | null | undefined): boo
 
 export function processTreeSnapshotKeys(root: ProcessTreeRoot | null | undefined): string[] {
   return processTreeTargets(root).map(linuxProcessKey).sort();
+}
+
+export function processTreeActivityKeys(root: ProcessTreeRoot | null | undefined): string[] {
+  if (!isProcessTreeRoot(root)) return [];
+  const rootKey = linuxProcessKey(root);
+  return processTreeTargets(root)
+    .map((target) => (linuxProcessKey(target) === rootKey ? rootKey : linuxProcessActivityKey(target)))
+    .sort();
 }
 
 export function signalProcessTree(root: ProcessTreeRoot | null | undefined, signal: NodeJS.Signals): boolean {

@@ -21,6 +21,7 @@ describe("cli", () => {
       await symlink(target, linkedBin);
 
       expect(isCliEntrypoint(pathToFileURL(target).href, linkedBin)).toBe(true);
+      expect(isCliEntrypoint(pathToFileURL(target).href, "")).toBe(false);
       expect(isCliEntrypoint(pathToFileURL(target).href, path.join(directory, "other"))).toBe(false);
     } finally {
       await removeDir(directory);
@@ -126,6 +127,19 @@ describe("cli", () => {
 
       expect(await main([], { cwd: directory, io: { stdout: (message) => output.push(message) } })).toBe(0);
       expect(output.join("\n")).toMatch(/Roadrunner/);
+    } finally {
+      await removeDir(directory);
+    }
+  });
+
+  test("rejects unsupported platforms before loading project config", async () => {
+    const directory = await tempDir("roadrunner-cli-platform-");
+    const errors: string[] = [];
+    try {
+      await writeFile(path.join(directory, "roadrunner.config.json"), "not json\n");
+
+      expect(await main(["check"], { cwd: directory, io: { stderr: (message) => errors.push(message) }, platform: "aix" })).toBe(1);
+      expect(errors.join("\n")).toMatch(/Roadrunner supports Linux only/);
     } finally {
       await removeDir(directory);
     }

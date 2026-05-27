@@ -16,10 +16,10 @@ describe("process tree activity monitor", () => {
     expect(sameProcessKeySet(["1:a"], ["1:b"])).toBe(false);
   });
 
-  test("records activity only when the process tree changes", () => {
+  test("records activity when monitored process keys change", () => {
     vi.useFakeTimers();
     vi.setSystemTime(0);
-    const snapshots = [["1:root"], ["1:root"], ["1:root", "2:child"], ["1:root", "2:child"], ["1:root"]];
+    const snapshots = [["1:root:0:0"], ["1:root:0:0"], ["1:root:1:0"], ["1:root:1:0", "2:child:0:0"], ["1:root:1:0"]];
     const activities: number[] = [];
     let index = 0;
 
@@ -35,9 +35,9 @@ describe("process tree activity monitor", () => {
     vi.advanceTimersByTime(10);
     expect(activities).toEqual([20]);
     vi.advanceTimersByTime(10);
-    expect(activities).toEqual([20]);
+    expect(activities).toEqual([20, 30]);
     vi.advanceTimersByTime(10);
-    expect(activities).toEqual([20, 40]);
+    expect(activities).toEqual([20, 30, 40]);
     stop();
   });
 

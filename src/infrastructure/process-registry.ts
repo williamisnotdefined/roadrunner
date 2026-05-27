@@ -150,7 +150,7 @@ async function withProcessRegistryLock<T>(context: ProjectContext, operation: ()
 async function currentProcessRegistryLock(): Promise<ProcessRegistryLock> {
   const info = await readProcessInfo(process.pid);
   const lock: ProcessRegistryLock = { pid: process.pid, startedAt: new Date().toISOString() };
-  /* v8 ignore next -- start-time identity is unavailable on non-Linux platforms. */
+  /* v8 ignore next -- /proc identity can be unavailable during defensive lock creation. */
   if (info?.startTimeTicks !== undefined) lock.startTimeTicks = info.startTimeTicks;
   return lock;
 }

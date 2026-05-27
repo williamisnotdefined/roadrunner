@@ -205,12 +205,12 @@ if (mode === "hang-once-plan-per-step" && prompt.includes("Roadrunner Plan Step"
 }
 
 if (mode === "slow-plan-success" && prompt.includes("Roadrunner Plan Step")) {
-  let ticks = 0;
-  const interval = setInterval(() => {
-    ticks += 1;
-    console.log("tick " + ticks);
-    if (ticks === 4) clearInterval(interval), outputPlan("Plan: slow success."), process.exit(0);
-  }, 20);
+  let ticks = 0; const interval = setInterval(() => { ticks += 1; console.log("tick " + ticks); if (ticks === 4) clearInterval(interval), outputPlan("Plan: slow success."), process.exit(0); }, 20);
+  await new Promise(() => {});
+}
+if (mode === "silent-cpu-child-plan" && prompt.includes("Roadrunner Plan Step")) {
+  const child = spawn(process.execPath, ["-e", "const end = Date.now() + 700; while (Date.now() < end) {}"], { stdio: "ignore" });
+  child.on("exit", () => { outputPlan("Plan: silent CPU child complete."), process.exit(0); });
   await new Promise(() => {});
 }
 

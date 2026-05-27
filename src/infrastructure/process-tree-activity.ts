@@ -1,4 +1,4 @@
-import { processTreeSnapshotKeys, type ProcessTreeRoot } from "./process-tree.js";
+import { processTreeActivityKeys, type ProcessTreeRoot } from "./process-tree.js";
 
 interface ProcessTreeActivityMonitorInput {
   intervalMs?: number;
@@ -7,7 +7,7 @@ interface ProcessTreeActivityMonitorInput {
   snapshotKeys?: (root: ProcessTreeRoot) => readonly string[];
 }
 
-export function startProcessTreeActivityMonitor({ intervalMs = 1_000, onActivity, root, snapshotKeys = processTreeSnapshotKeys }: ProcessTreeActivityMonitorInput): () => void {
+export function startProcessTreeActivityMonitor({ intervalMs = 1_000, onActivity, root, snapshotKeys = processTreeActivityKeys }: ProcessTreeActivityMonitorInput): () => void {
   let stopped = false;
   let previous = snapshotKeys(root);
   let timeout: NodeJS.Timeout | undefined;
